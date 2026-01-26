@@ -2,6 +2,14 @@
 .vscode/*
 z_artifacts
 test*.py
+api_info.md
+
+00_*
+01_*
+02_*
+03_*
+04_*
+analyze_results.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
