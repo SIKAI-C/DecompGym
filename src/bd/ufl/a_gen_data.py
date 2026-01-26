@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from utils.base_data import BaseInstanceGenerator, JsonDataMixin
 import matplotlib.pyplot as plt
 import numpy as np
+
+from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 # -----------------------
@@ -15,8 +16,8 @@ import numpy as np
 
 DIFFICULTY_CONFIG = {
     "easy": {
-        "m_range": (5, 10),   # facilities
-        "n_range": (15, 30),   # customers
+        "m_range": (5, 10),  # facilities
+        "n_range": (15, 30),  # customers
     },
     "medium": {
         "m_range": (10, 20),

@@ -9,7 +9,7 @@ from typing import Any, cast
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.base_data import BaseInstanceGenerator, JsonDataMixin
+from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 DIFFICULTY_CONFIG = {

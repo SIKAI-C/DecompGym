@@ -4,14 +4,14 @@ Prompt renderer for the Fixed-Charge Transportation Problem (FCTP).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 BASE_PROMPT_FCTP = """You are an expert operations research engineer and Python programmer.
 
 You are given a fixed-charge transportation problem:
-  First choose which factory-to-customer lanes to activate; each chosen lane costs a fixed fee and then allows up to a capacity of flow. 
-  After lanes are open, decide shipment quantities so every customer's demand is met without exceeding any factory's supply. 
+  First choose which factory-to-customer lanes to activate; each chosen lane costs a fixed fee and then allows up to a capacity of flow.
+  After lanes are open, decide shipment quantities so every customer's demand is met without exceeding any factory's supply.
   The total cost combines fixed activation and per-unit shipping. This mirrors "decide infrastructure first, operate flow second."
   Parameters:
   - There are m = {m} supply nodes and n = {n} demand nodes.
@@ -52,14 +52,14 @@ Assume gurobipy is available. Do not depend on any files other than data.json.
 """
 
 
-def _fmt_vector(name: str, vec: List[Any], limit: int = 5) -> str:
+def _fmt_vector(name: str, vec: list[Any], limit: int = 5) -> str:
     if len(vec) <= limit:
         return f"  {name} = {vec}"
     return f"  {name} = {vec[:limit]} ... (see data.json)"
 
 
-def _fmt_matrix(name: str, mat: List[List[Any]], limit: int = 4) -> str:
-    lines: List[str] = []
+def _fmt_matrix(name: str, mat: list[list[Any]], limit: int = 4) -> str:
+    lines: list[str] = []
     for i, row in enumerate(mat[:limit]):
         lines.append(f"  {name}[{i}] = {row}")
     if len(mat) > limit:
@@ -67,7 +67,7 @@ def _fmt_matrix(name: str, mat: List[List[Any]], limit: int = 4) -> str:
     return "\n".join(lines)
 
 
-def render_prompt(data: Dict[str, Any]) -> str:
+def render_prompt(data: dict[str, Any]) -> str:
     m = data.get("m", 0)
     n = data.get("n", 0)
     return BASE_PROMPT_FCTP.format(

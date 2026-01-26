@@ -4,7 +4,7 @@ Prompt renderer for the enumerated-route Location Routing Problem.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 BASE_PROMPT_LRP = """You are an expert operations research engineer and Python programmer.
@@ -52,14 +52,14 @@ Use gurobipy only and keep the code self-contained.
 """
 
 
-def _fmt_vector(name: str, vec: List[Any], limit: int = 6) -> str:
+def _fmt_vector(name: str, vec: list[Any], limit: int = 6) -> str:
     if len(vec) <= limit:
         return f"  {name} = {vec}"
     return f"  {name} = {vec[:limit]} ... (see data.json)"
 
 
-def _fmt_routes(routes: List[List[int]], route_depot: List[int], limit: int = 4) -> str:
-    lines: List[str] = []
+def _fmt_routes(routes: list[list[int]], route_depot: list[int], limit: int = 4) -> str:
+    lines: list[str] = []
     for r, custs in enumerate(routes[:limit]):
         depot = route_depot[r] if r < len(route_depot) else "?"
         lines.append(f"  Route {r} (depot {depot}): {custs}")
@@ -68,7 +68,7 @@ def _fmt_routes(routes: List[List[int]], route_depot: List[int], limit: int = 4)
     return "\n".join(lines)
 
 
-def render_prompt(data: Dict[str, Any]) -> str:
+def render_prompt(data: dict[str, Any]) -> str:
     return BASE_PROMPT_LRP.format(
         m=data.get("m", 0),
         n=data.get("n", 0),

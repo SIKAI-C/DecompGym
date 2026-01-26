@@ -4,7 +4,7 @@ Prompt template for the k-Median problem (Benders).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 BASE_PROMPT_KM = """You are an expert operations research engineer and Python programmer.
@@ -45,8 +45,8 @@ Use gurobipy only, do not rely on external resources beyond data.json.
 """
 
 
-def _fmt_matrix(name: str, mat: List[List[Any]], max_rows: int = 4) -> str:
-    lines: List[str] = []
+def _fmt_matrix(name: str, mat: list[list[Any]], max_rows: int = 4) -> str:
+    lines: list[str] = []
     for i, row in enumerate(mat[:max_rows]):
         lines.append(f"  {name}[{i}] = {row}")
     if len(mat) > max_rows:
@@ -54,7 +54,7 @@ def _fmt_matrix(name: str, mat: List[List[Any]], max_rows: int = 4) -> str:
     return "\n".join(lines)
 
 
-def render_prompt(data: Dict[str, Any]) -> str:
+def render_prompt(data: dict[str, Any]) -> str:
     return BASE_PROMPT_KM.format(
         m=data.get("m", 0),
         n=data.get("n", 0),

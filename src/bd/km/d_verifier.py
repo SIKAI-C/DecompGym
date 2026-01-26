@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
-def verify_solution(data_path: str | Path, output_path: str | Path, tol: float = 1e-6) -> Dict[str, Any]:
+def verify_solution(data_path: str | Path, output_path: str | Path, tol: float = 1e-6) -> dict[str, Any]:
     data = json.loads(Path(data_path).read_text())
     out = json.loads(Path(output_path).read_text())
 
@@ -20,7 +20,7 @@ def verify_solution(data_path: str | Path, output_path: str | Path, tol: float =
     y = out.get("y")
     x = out.get("x")
 
-    issues: List[str] = []
+    issues: list[str] = []
     if y is None or x is None:
         return {"ok": False, "issues": ["y or x missing in output.json"]}
     if len(y) != m:

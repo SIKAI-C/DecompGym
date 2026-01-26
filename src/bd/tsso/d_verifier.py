@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 def _to_float(val: Any):
@@ -16,7 +16,7 @@ def _to_float(val: Any):
         return None
 
 
-def _check_shape(arr: List, shape: tuple[int, ...]) -> bool:
+def _check_shape(arr: list, shape: tuple[int, ...]) -> bool:
     try:
         if len(arr) != shape[0]:
             return False
@@ -28,7 +28,7 @@ def _check_shape(arr: List, shape: tuple[int, ...]) -> bool:
         return False
 
 
-def verify_solution(data_path: str | Path, output_path: str | Path, tol: float = 1e-6) -> Dict[str, Any]:
+def verify_solution(data_path: str | Path, output_path: str | Path, tol: float = 1e-6) -> dict[str, Any]:
     data = json.loads(Path(data_path).read_text())
     out = json.loads(Path(output_path).read_text())
 
@@ -42,7 +42,7 @@ def verify_solution(data_path: str | Path, output_path: str | Path, tol: float =
     inv = out.get("inv")
     back = out.get("back")
 
-    issues: List[str] = []
+    issues: list[str] = []
 
     if y is None or not _check_shape(y, (n_products, n_periods)):
         issues.append("y missing or has incorrect shape")
@@ -94,13 +94,7 @@ def verify_solution(data_path: str | Path, output_path: str | Path, tol: float =
                     issues.append(f"scenario {s}: capacity violated at product {i}, period {t}")
                 inv_prev = inv_prev_val
                 back_prev = back_prev_val
-                balance = (
-                    x_reg_val
-                    + x_ot_val
-                    - inv_val
-                    + back_val
-                    - (dem_val - inv_prev + back_prev)
-                )
+                balance = x_reg_val + x_ot_val - inv_val + back_val - (dem_val - inv_prev + back_prev)
                 if abs(balance) > tol:
                     issues.append(f"scenario {s}: balance mismatch at product {i}, period {t}")
 

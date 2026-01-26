@@ -5,11 +5,12 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from benchmark.benders_decomp.base_bd_class import BaseBenders, MasterSolution, SubproblemResult
-from benchmark.benders_decomp.ufl.data import UFLInstance
 import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
+
+from src.bd.ufl.a_gen_data import UFLInstance
+from src.utils.base_bd_class import BaseBenders, MasterSolution, SubproblemResult
 
 
 @dataclass

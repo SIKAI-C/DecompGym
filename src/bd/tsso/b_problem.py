@@ -4,15 +4,15 @@ Prompt template and renderer for the TSSO (two-stage stochastic production) task
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 BASE_PROMPT_TSSO = """You are an expert operations research engineer and Python programmer.
 
 You are given a two-stage stochastic production planning problem with capacity expansion decisions.
-First, decide which production lines (regular capacity) to pay for across products and periods. 
-Later, when demand scenarios unfold, react by producing with regular or overtime capacity, 
-holding inventory, or backlogging unmet demand. The aim is to pick upfront capacities that keep the expected 
+First, decide which production lines (regular capacity) to pay for across products and periods.
+Later, when demand scenarios unfold, react by producing with regular or overtime capacity,
+holding inventory, or backlogging unmet demand. The aim is to pick upfront capacities that keep the expected
 total cost (activation + operations) low across scenarios.
 The instance describes:
   - n_products = {n_products}
@@ -70,7 +70,7 @@ Use gurobipy, avoid external files other than data.json, and keep code self-cont
 """
 
 
-def _fmt_matrix(name: str, mat: List[List[Any]], max_rows: int = 4) -> str:
+def _fmt_matrix(name: str, mat: list[list[Any]], max_rows: int = 4) -> str:
     if not mat:
         return f"{name}: []"
     lines = []
@@ -82,14 +82,14 @@ def _fmt_matrix(name: str, mat: List[List[Any]], max_rows: int = 4) -> str:
     return "\n".join(lines)
 
 
-def _fmt_prob(prob: List[Any], max_len: int = 6) -> str:
+def _fmt_prob(prob: list[Any], max_len: int = 6) -> str:
     if len(prob) <= max_len:
         return ", ".join(str(p) for p in prob)
     return ", ".join(str(prob[i]) for i in range(max_len)) + ", ..."
 
 
-def _fmt_demand(demand: List[List[List[Any]]], max_prods: int = 2, max_periods: int = 2) -> str:
-    lines: List[str] = []
+def _fmt_demand(demand: list[list[list[Any]]], max_prods: int = 2, max_periods: int = 2) -> str:
+    lines: list[str] = []
     for i, prod in enumerate(demand[:max_prods]):
         for t, values in enumerate(prod[:max_periods]):
             lines.append(f"  demand[{i},{t},:] = {values}")
@@ -97,7 +97,7 @@ def _fmt_demand(demand: List[List[List[Any]]], max_prods: int = 2, max_periods: 
     return "\n".join(lines)
 
 
-def _fmt_vector(name: str, vec: List[Any], max_len: int = 6) -> str:
+def _fmt_vector(name: str, vec: list[Any], max_len: int = 6) -> str:
     if not vec:
         return f"{name}: []"
     slice_ = vec[:max_len]
@@ -105,7 +105,7 @@ def _fmt_vector(name: str, vec: List[Any], max_len: int = 6) -> str:
     return f"{name}: {slice_}{suffix}"
 
 
-def render_prompt(data: Dict[str, Any]) -> str:
+def render_prompt(data: dict[str, Any]) -> str:
     n_products = data.get("n_products", 0)
     n_periods = data.get("n_periods", 0)
     n_scenarios = data.get("n_scenarios", 0)

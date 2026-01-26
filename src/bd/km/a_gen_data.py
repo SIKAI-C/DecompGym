@@ -7,7 +7,7 @@ from typing import Any, cast
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.base_data import BaseInstanceGenerator, JsonDataMixin
+from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 DIFFICULTY_CONFIG = {
@@ -167,7 +167,7 @@ def generate_km_instance(
     m = int(rng.integers(cfg["m_range"][0], cfg["m_range"][1] + 1))
     n = int(rng.integers(cfg["n_range"][0], cfg["n_range"][1] + 1))
     frac = rng.uniform(cfg["k_frac"][0], cfg["k_frac"][1])
-    k = max(1, min(m - 1, int(round(frac * m))))
+    k = max(1, min(m - 1, round(frac * m)))
 
     gen = KMedianGenerator(seed=seed)
     inst = gen.generate_instance(m=m, n=n, k=k, seed=seed)

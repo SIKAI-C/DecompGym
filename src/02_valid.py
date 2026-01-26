@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+import shutil
+from typing import Any
 
 
 def _load_objective(path: Path) -> float | None:
@@ -19,8 +19,8 @@ def _load_objective(path: Path) -> float | None:
         raise ValueError(f"failed to parse {path.name}: {exc}") from exc
 
 
-def validate_instance(inst_dir: Path) -> Dict[str, Any]:
-    result: Dict[str, Any] = {
+def validate_instance(inst_dir: Path) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "name": inst_dir.name,
         "path": str(inst_dir),
         "has_data": (inst_dir / "data.json").exists(),
@@ -60,18 +60,16 @@ def validate_instance(inst_dir: Path) -> Dict[str, Any]:
         result["status"] = "ok"
     else:
         result["status"] = "objective_mismatch"
-        result["issues"].append(
-            f"Objective mismatch: mono={result['mono_obj']}, bd={result['bd_obj']}"
-        )
+        result["issues"].append(f"Objective mismatch: mono={result['mono_obj']}, bd={result['bd_obj']}")
 
     return result
 
 
-def _find_instance_dirs(root: Path) -> List[Path]:
+def _find_instance_dirs(root: Path) -> list[Path]:
     if not root.exists():
         return []
 
-    dirs: Set[Path] = set()
+    dirs: set[Path] = set()
     if (root / "data.json").exists():
         dirs.add(root)
 
@@ -81,20 +79,20 @@ def _find_instance_dirs(root: Path) -> List[Path]:
     return sorted(dirs)
 
 
-def validate_all(instances_root: Path) -> List[Dict[str, Any]]:
+def validate_all(instances_root: Path) -> list[dict[str, Any]]:
     return [validate_instance(p) for p in _find_instance_dirs(instances_root)]
 
 
-def print_summary(results: List[Dict[str, Any]], root: Path) -> None:
+def print_summary(results: list[dict[str, Any]], root: Path) -> None:
     total = len(results)
     ok = [r for r in results if r["status"] == "ok"]
     missing = [r for r in results if r["status"] == "missing_ground_truth"]
     mismatch = [r for r in results if r["status"] == "objective_mismatch"]
     invalid = [r for r in results if r["status"] == "invalid_objectives"]
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"VALIDATION SUMMARY for {root}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Total instances:        {total}")
     print(f"  OK:                   {len(ok)}")
     print(f"  Missing ground truth: {len(missing)}")
@@ -111,10 +109,10 @@ def print_summary(results: List[Dict[str, Any]], root: Path) -> None:
 
 def remove_instances(
     instances_root: Path,
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     remove_missing: bool = False,
     remove_mismatch: bool = False,
-    pattern: Optional[str] = None,
+    pattern: str | None = None,
 ) -> int:
     removed = 0
     for r in results:

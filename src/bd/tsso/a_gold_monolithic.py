@@ -6,8 +6,8 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from benchmark.benders_decomp.base_baseline_class import BaseBaseline, BaselineSolution
-from tsso.a_gen_data import TSSOInstance
+from src.bd.tsso.a_gen_data import TSSOInstance
+from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
 class TSSOBaseline(BaseBaseline[TSSOInstance, gp.Model]):

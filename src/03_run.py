@@ -1,22 +1,24 @@
 from __future__ import annotations
 
 import argparse
-import importlib
+from collections.abc import Sequence
+from dataclasses import dataclass
+import importlib.util
 import json
+import os
+from pathlib import Path
 import shutil
 import subprocess
-import os
 import sys
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 from aider.coders import Coder
 from aider.io import InputOutput
 from aider.models import Model
 
-from utils.time_utils import get_current_time
-from utils.json_utils import safe_load_json
+from src.utils.json_utils import safe_load_json
+from src.utils.time_utils import get_current_time
+
 
 # Supported problem folders under benchmark root and outputs.
 PROBLEMS = ["tsso", "fctp", "km", "lrp", "ufl"]
@@ -28,16 +30,16 @@ class AttemptResult:
     status: str
     exec_ok: bool
     verify_ok: bool
-    objective: Optional[float]
-    gold_objective: Optional[float]
-    gap_to_gold: Optional[float]
-    issues: List[str]
+    objective: float | None
+    gold_objective: float | None
+    gap_to_gold: float | None
+    issues: list[str]
     reused_from_previous: bool = False
-    first_success_attempt: Optional[int] = None
+    first_success_attempt: int | None = None
     stdout: str | None = None
     stderr: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "attempt": self.attempt,
             "status": self.status,
@@ -92,10 +94,10 @@ def build_prev_debug_prompt(base_prompt: str, prior_notes: str) -> str:
     return "\n".join(context)
 
 
-def find_instances(root: Path) -> List[Path]:
+def find_instances(root: Path) -> list[Path]:
     if not root.exists():
         return []
-    out: List[Path] = []
+    out: list[Path] = []
     for p in sorted(root.iterdir()):
         if p.is_dir() and (p / "data.json").exists() and (p / "prompt.txt").exists():
             out.append(p)
@@ -109,7 +111,7 @@ def infer_problem_from_path(path: Path) -> str:
     raise ValueError(f"Could not infer problem type from path {path}")
 
 
-def ensure_output_root(problem: str, model_name: str, note: Optional[str] = None) -> Path:
+def ensure_output_root(problem: str, model_name: str, note: str | None = None) -> Path:
     model_safe = model_name.replace("/", "_").replace(":", "_")
     timestamp = get_current_time()
     if note:
@@ -121,12 +123,12 @@ def ensure_output_root(problem: str, model_name: str, note: Optional[str] = None
     return out_dir
 
 
-def copy_instance(src: Path, dest_root: Path, max_attempts: int) -> tuple[Path, List[Path]]:
+def copy_instance(src: Path, dest_root: Path, max_attempts: int) -> tuple[Path, list[Path]]:
     dest = dest_root / src.name
     shutil.copytree(src, dest)
     attempts_root = dest / "attempts"
     attempts_root.mkdir(parents=True, exist_ok=True)
-    attempt_dirs: List[Path] = []
+    attempt_dirs: list[Path] = []
 
     base_files = ["data.json", "prompt.txt", "gold_monolithic.json", "gold_bd.json", "meta.json"]
 
@@ -147,7 +149,7 @@ def copy_instance(src: Path, dest_root: Path, max_attempts: int) -> tuple[Path, 
     return dest, attempt_dirs
 
 
-def load_gold_objective(inst_dir: Path) -> Optional[float]:
+def load_gold_objective(inst_dir: Path) -> float | None:
     meta_path = inst_dir / "meta.json"
     if meta_path.exists():
         meta = safe_load_json(meta_path)
@@ -175,7 +177,7 @@ def load_gold_objective(inst_dir: Path) -> Optional[float]:
     return None
 
 
-def run_solver(attempt_dir: Path, timeout: int) -> tuple[bool, str, str, Optional[Dict[str, Any]]]:
+def run_solver(attempt_dir: Path, timeout: int) -> tuple[bool, str, str, dict[str, Any] | None]:
     attempt_dir = attempt_dir.resolve()
     solver_path = attempt_dir / "solver.py"
     # Guard against missing/empty solver.py
@@ -215,14 +217,23 @@ def run_solver(attempt_dir: Path, timeout: int) -> tuple[bool, str, str, Optiona
 
 
 def import_verifier(problem: str):
-    module_name = f"{problem}.d_verifier"
+    verifier_path = Path(__file__).resolve().parent / "bd" / problem / "d_verifier.py"
+    if not verifier_path.exists():
+        return None, f"verifier not found at {verifier_path}"
+
+    module_name = f"bd_{problem}_verifier"
+    spec = importlib.util.spec_from_file_location(module_name, verifier_path)
+    if spec is None or spec.loader is None:
+        return None, f"failed to load verifier from {verifier_path}"
+    module = importlib.util.module_from_spec(spec)
     try:
-        return importlib.import_module(module_name), None
+        spec.loader.exec_module(module)
     except Exception as exc:
-        return None, f"failed to import verifier '{module_name}': {exc}"
+        return None, f"failed to import verifier '{verifier_path}': {exc}"
+    return module, None
 
 
-def verify_output(problem: str, data_path: Path, output_path: Path, tol: float) -> Dict[str, Any]:
+def verify_output(problem: str, data_path: Path, output_path: Path, tol: float) -> dict[str, Any]:
     verifier, import_err = import_verifier(problem)
     if import_err:
         return {"ok": False, "issues": [import_err]}
@@ -241,9 +252,8 @@ def run_attempt(
     tol: float,
     gap_threshold: float,
     prev_debug: str,
-    gold_obj: Optional[float],
+    gold_obj: float | None,
 ) -> AttemptResult:
-
     # print(f"Running attempt {attempt_idx} in {attempt_dir}")
     # print(f"Previous debug: {prev_debug}")
     # print(f"Gold objective: {gold_obj}")
@@ -278,9 +288,8 @@ def run_attempt(
         "",
         f"STDERR:\n{stderr}",
     ]
-    
 
-    issues: List[str] = []
+    issues: list[str] = []
     objective = None
     verify_ok = False
 
@@ -343,18 +352,23 @@ def run_attempt(
         debug_md.write_text("Passed verification.")
 
     summary_path = attempt_dir / "summary.json"
-    summary_path.write_text(json.dumps(AttemptResult(
-        attempt=attempt_idx,
-        status=status,
-        exec_ok=exec_ok,
-        verify_ok=verify_ok,
-        objective=objective,
-        gold_objective=gold_obj,
-        gap_to_gold=gap,
-        issues=issues,
-        stdout=stdout,
-        stderr=stderr,
-    ).to_dict(), indent=2))
+    summary_path.write_text(
+        json.dumps(
+            AttemptResult(
+                attempt=attempt_idx,
+                status=status,
+                exec_ok=exec_ok,
+                verify_ok=verify_ok,
+                objective=objective,
+                gold_objective=gold_obj,
+                gap_to_gold=gap,
+                issues=issues,
+                stdout=stdout,
+                stderr=stderr,
+            ).to_dict(),
+            indent=2,
+        )
+    )
 
     return AttemptResult(
         attempt=attempt_idx,
@@ -371,7 +385,7 @@ def run_attempt(
 
 
 def collect_previous_debug(attempts_root: Path, current_idx: int) -> str:
-    pieces: List[str] = []
+    pieces: list[str] = []
     for idx in range(1, current_idx):
         dbg = attempts_root / f"attempt_{idx:02d}" / "debug.md"
         if dbg.exists():
@@ -379,14 +393,14 @@ def collect_previous_debug(attempts_root: Path, current_idx: int) -> str:
     return "\n\n".join(pieces)
 
 
-def collect_previous_attempt_files(attempts_root: Path, current_idx: int) -> List[str]:
+def collect_previous_attempt_files(attempts_root: Path, current_idx: int) -> list[str]:
     """
     Collect read-only files from prior attempts to give the coder more context:
     - solver.py
     - debug.md
     - summary.json
     """
-    ro: List[str] = []
+    ro: list[str] = []
     for idx in range(1, current_idx):
         a_dir = attempts_root / f"attempt_{idx:02d}"
         for name in ("solver.py", "debug.md", "summary.json"):
@@ -414,14 +428,14 @@ def run_instance(
     gap_threshold: float,
     auto_yes: bool,
     stream: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     dest_inst, attempt_dirs = copy_instance(instance_src, out_root, max_attempts)
     model = Model(model_name)
     gold_obj = load_gold_objective(dest_inst)
 
-    results: List[AttemptResult] = []
+    results: list[AttemptResult] = []
     last_good: AttemptResult | None = None
-    first_success_idx: Optional[int] = None
+    first_success_idx: int | None = None
     for idx, a_dir in enumerate(attempt_dirs, start=1):
         if last_good and can_early_stop(last_good, gap_threshold):
             res = AttemptResult(
@@ -481,7 +495,7 @@ def run_instance(
 def run_problem(
     problem: str,
     model_name: str,
-    note: Optional[str],
+    note: str | None,
     benchmark_root: Path,
     max_attempts: int,
     solver_timeout: int,
@@ -489,14 +503,14 @@ def run_problem(
     gap_threshold: float,
     auto_yes: bool,
     stream: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     inst_root = benchmark_root / problem
     instances = find_instances(inst_root)
     if not instances:
         raise RuntimeError(f"No instances found under {inst_root}")
     out_root = ensure_output_root(problem, model_name, note=note)
 
-    summaries: List[Dict[str, Any]] = []
+    summaries: list[dict[str, Any]] = []
     for inst in instances:
         summaries.append(
             run_instance(
@@ -525,7 +539,7 @@ def run_problem(
 
 def run_all_problems(
     model_name: str,
-    note: Optional[str],
+    note: str | None,
     benchmark_root: Path,
     problems: Sequence[str],
     max_attempts: int,
@@ -534,8 +548,8 @@ def run_all_problems(
     gap_threshold: float,
     auto_yes: bool,
     stream: bool,
-) -> List[Dict[str, Any]]:
-    all_summaries: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    all_summaries: list[dict[str, Any]] = []
     for prob in problems:
         if not (benchmark_root / prob).exists():
             continue
@@ -558,11 +572,17 @@ def run_all_problems(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run aider-driven benchmarks with multi-level orchestration.")
-    parser.add_argument("--model", type=str, default="azure/adeza3-DE00023575-gpt-4.1", help="Model identifier for aider.")
-    parser.add_argument("--note", type=str, default=None, help="Optional note to tag output folder for experiment tracking.")
+    parser.add_argument(
+        "--model", type=str, default="azure/adeza3-DE00023575-gpt-4.1", help="Model identifier for aider."
+    )
+    parser.add_argument(
+        "--note", type=str, default=None, help="Optional note to tag output folder for experiment tracking."
+    )
     parser.add_argument("--problem", type=str, nargs="*", default=None, help="Problem types to run (e.g., tsso, fctp).")
     parser.add_argument("--instance", type=str, default=None, help="Path to a single instance folder.")
-    parser.add_argument("--benchmark-root", type=str, default="z_artifacts/benchmarks", help="Root containing problem folders.")
+    parser.add_argument(
+        "--benchmark-root", type=str, default="z_artifacts/benchmarks", help="Root containing problem folders."
+    )
     parser.add_argument("--max-attempts", type=int, default=10, help="Max attempts per instance.")
     parser.add_argument("--solver-timeout", type=int, default=600, help="Timeout per solver run (seconds).")
     parser.add_argument("--tol", type=float, default=1e-6, help="Tolerance passed to verifiers.")

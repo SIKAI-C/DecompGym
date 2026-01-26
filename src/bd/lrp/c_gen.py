@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
-from lrp.a_gen_data import generate_lrp_instance
-from lrp.a_gold_bd import LRPBenders
-from lrp.a_gold_monolithic import LRPBaseline
-from lrp.b_problem import render_prompt
-from utils.json_utils import save_json, serialize_iter_records
+from src.bd.lrp.a_gen_data import generate_lrp_instance
+from src.bd.lrp.a_gold_bd import LRPBenders
+from src.bd.lrp.a_gold_monolithic import LRPBaseline
+from src.bd.lrp.b_problem import render_prompt
+from src.utils.json_utils import save_json, serialize_iter_records
 
 
 def generate_suite(
@@ -17,10 +17,10 @@ def generate_suite(
     *,
     seed_offset: int = 0,
     tol: float = 1e-4,
-) -> List[dict]:
+) -> list[dict]:
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
-    metas: List[dict] = []
+    metas: list[dict] = []
 
     for diff in difficulties:
         for seed in range(seed_offset, seed_offset + num_instances):

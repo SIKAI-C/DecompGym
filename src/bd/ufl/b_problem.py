@@ -4,7 +4,7 @@ Prompt template and renderer for UFL (Benders decomposition) instances.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 BASE_PROMPT_UFL = """You are an expert operations research engineer and Python programmer.
@@ -45,28 +45,28 @@ the internet or external files other than data.json.
 """
 
 
-def _fmt_customers(Xc: List[List[Any]]) -> str:
+def _fmt_customers(Xc: list[list[Any]]) -> str:
     lines = []
     for j, pt in enumerate(Xc):
         lines.append(f"  customer {j}: ({pt[0]}, {pt[1]})")
     return _truncate_block(lines)
 
 
-def _fmt_facilities(Xf: List[List[Any]]) -> str:
+def _fmt_facilities(Xf: list[list[Any]]) -> str:
     lines = []
     for i, pt in enumerate(Xf):
         lines.append(f"  facility {i}: ({pt[0]}, {pt[1]})")
     return _truncate_block(lines)
 
 
-def _fmt_fixed_costs(f: List[Any]) -> str:
+def _fmt_fixed_costs(f: list[Any]) -> str:
     lines = []
     for i, val in enumerate(f):
         lines.append(f"  facility {i}: fixed cost = {val}")
     return _truncate_block(lines)
 
 
-def _fmt_distance_matrix(D: List[List[Any]]) -> str:
+def _fmt_distance_matrix(D: list[list[Any]]) -> str:
     lines = []
     for i, row in enumerate(D):
         entries = ", ".join(f"i={i}->cust {j}: {row[j]}" for j in range(len(row)))
@@ -74,7 +74,7 @@ def _fmt_distance_matrix(D: List[List[Any]]) -> str:
     return _truncate_block(lines)
 
 
-def _truncate_block(lines: List[str]) -> str:
+def _truncate_block(lines: list[str]) -> str:
     if len(lines) <= 5:
         return "\n".join(lines)
     short_lines = lines[:5]
@@ -82,7 +82,7 @@ def _truncate_block(lines: List[str]) -> str:
     return "\n".join(short_lines)
 
 
-def render_prompt(data: Dict[str, Any]) -> str:
+def render_prompt(data: dict[str, Any]) -> str:
     m = data.get("m", 0)
     n = data.get("n", 0)
     Xc = data.get("Xc", [])
@@ -103,4 +103,3 @@ def render_prompt(data: Dict[str, Any]) -> str:
         f=f_block,
         D=D_block,
     )
-

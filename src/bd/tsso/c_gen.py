@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
-from tsso.a_gen_data import generate_tsso_instance
-from tsso.a_gold_bd import TSSOBenders
-from tsso.a_gold_monolithic import TSSOBaseline
-from tsso.b_problem import render_prompt
-from utils.json_utils import save_json, serialize_iter_records
+from src.bd.tsso.a_gen_data import generate_tsso_instance
+from src.bd.tsso.a_gold_bd import TSSOBenders
+from src.bd.tsso.a_gold_monolithic import TSSOBaseline
+from src.bd.tsso.b_problem import render_prompt
+from src.utils.json_utils import save_json, serialize_iter_records
 
 
 def generate_suite(
@@ -17,14 +17,14 @@ def generate_suite(
     *,
     tol: float = 1e-4,
     seed_offset: int = 0,
-) -> List[dict]:
+) -> list[dict]:
     """
     Generate a small TSSO benchmark suite with ground truths and prompts.
     """
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    metas: List[dict] = []
+    metas: list[dict] = []
 
     for diff in difficulties:
         for seed in range(seed_offset, seed_offset + num_instances):

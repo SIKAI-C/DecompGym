@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
-from ufl.a_gen_data import generate_ufl_instance
-from ufl.b_problem import render_prompt
-from ufl.b_gold_monolithic import UFLBaseline
-from ufl.b_gold_bd import UFLBenders
-from utils.json_utils import save_json, serialize_iter_records
+from src.bd.ufl.a_gen_data import generate_ufl_instance
+from src.bd.ufl.b_gold_bd import UFLBenders
+from src.bd.ufl.b_gold_monolithic import UFLBaseline
+from src.bd.ufl.b_problem import render_prompt
+from src.utils.json_utils import save_json, serialize_iter_records
 
 
 def generate_suite(
@@ -17,7 +17,7 @@ def generate_suite(
     *,
     tol: float = 1e-4,
     seed_offset: int = 0,
-) -> List[dict]:
+) -> list[dict]:
     """
     Generate a small UFL benchmark suite with ground truths.
 
@@ -33,7 +33,7 @@ def generate_suite(
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    metas: List[dict] = []
+    metas: list[dict] = []
 
     for diff in difficulties:
         for seed in range(seed_offset, seed_offset + num_instances):

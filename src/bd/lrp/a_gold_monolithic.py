@@ -6,8 +6,8 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from benchmark.benders_decomp.base_baseline_class import BaseBaseline, BaselineSolution
-from lrp.a_gen_data import LRPInstance
+from src.bd.lrp.a_gen_data import LRPInstance
+from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
 class LRPBaseline(BaseBaseline[LRPInstance, gp.Model]):
