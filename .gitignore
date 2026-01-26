@@ -1,3 +1,8 @@
+# custom files
+.vscode/*
+z_artifacts
+test*.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

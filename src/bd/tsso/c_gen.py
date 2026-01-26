@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Iterable, List
+
+from tsso.a_gen_data import generate_tsso_instance
+from tsso.a_gold_bd import TSSOBenders
+from tsso.a_gold_monolithic import TSSOBaseline
+from tsso.b_problem import render_prompt
+from utils.json_utils import save_json, serialize_iter_records
+
+
+def generate_suite(
+    difficulties: Iterable[str],
+    num_instances: int,
+    out_root: str | Path,
+    *,
+    tol: float = 1e-4,
+    seed_offset: int = 0,
+) -> List[dict]:
+    """
+    Generate a small TSSO benchmark suite with ground truths and prompts.
+    """
+    out_root = Path(out_root)
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    metas: List[dict] = []
+
+    for diff in difficulties:
+        for seed in range(seed_offset, seed_offset + num_instances):
+            folder_name = f"tsso_{diff}_seed{seed:03d}"
+            inst_dir = out_root / folder_name
+            inst_dir.mkdir(parents=True, exist_ok=True)
+
+            data = generate_tsso_instance(seed=seed, difficulty=diff, output_dir=inst_dir)
+
+            prompt_text = render_prompt(data)
+            (inst_dir / "prompt.txt").write_text(prompt_text)
+
+            data_path = str(inst_dir / "data.json")
+
+            mono_solver = TSSOBaseline(verbose=False)
+            mono_res = _make_serializable(mono_solver.run(data_path))
+            save_json(mono_res, inst_dir / "gold_monolithic.json")
+            mono_obj = mono_res.get("best_objective")
+
+            bd_solver = TSSOBenders(verbose=False)
+            bd_res = _make_serializable(bd_solver.run(data_path))
+            save_json(bd_res, inst_dir / "gold_bd.json")
+            bd_obj = bd_res.get("best_objective")
+
+            if mono_obj is None or bd_obj is None:
+                continue
+            if abs(mono_obj - bd_obj) > tol:
+                continue
+
+            meta = {
+                "seed": seed,
+                "difficulty": diff,
+                "n_products": data.get("n_products"),
+                "n_periods": data.get("n_periods"),
+                "n_scenarios": data.get("n_scenarios"),
+                "ground_truth_objective": mono_obj,
+                "folder": folder_name,
+            }
+            save_json(meta, inst_dir / "meta.json")
+            metas.append(meta)
+
+    return metas
+
+
+def _make_serializable(res: dict) -> dict:
+    out = dict(res)
+    if "iter_records" in out:
+        out["iter_records"] = serialize_iter_records(out["iter_records"])
+    return out
+
+
+if __name__ == "__main__":
+    generate_suite(difficulties=["easy", "medium", "hard"], num_instances=3, out_root="z_artifacts/benchmarks/tsso")
