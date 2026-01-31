@@ -1,266 +1,230 @@
-# Ground truth column generation solver for GAP
-import argparse
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from __future__ import annotations
+
+from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
 
+from src.cg.gap.a_gen_data import GAPInstance
+from src.utils.base_cg_class import (
+    BaseColumnGeneration,
+    IntegerMasterSolution,
+    MasterLPSolution,
+    PricingResult,
+)
 
-def load_gap_data(dir_path: Path) -> tuple[list[list[int]], list[list[float]], list[int]]:
-    data_path = dir_path / "data.json"
-    data = json.loads(data_path.read_text())
 
-    machines = sorted(data["machines"], key=lambda m: m["id"])
-    jobs = sorted(data["jobs"], key=lambda j: j["id"])
-
-    b = [int(m["capacity"]) for m in machines]
+def _extract(inst: GAPInstance) -> tuple[list[list[int]], list[list[float]], list[int]]:
+    machines = sorted(inst.machines, key=lambda m: m.id)
+    jobs = sorted(inst.jobs, key=lambda j: j.id)
+    b = [m.capacity for m in machines]
     n_jobs = len(jobs)
     n_machines = len(machines)
-
     a = [[0] * n_machines for _ in range(n_jobs)]
     c = [[0.0] * n_machines for _ in range(n_jobs)]
-
     for job in jobs:
-        i = int(job["id"])
-        for assignment in sorted(job["assignments"], key=lambda x: x["machine_id"]):
-            j = int(assignment["machine_id"])
-            a[i][j] = int(assignment["resource"])
-            c[i][j] = float(assignment["cost"])
-
+        for assign in job.assignments:
+            j = int(assign.machine_id)
+            a[job.id][j] = assign.resource
+            c[job.id][j] = assign.cost
     return a, c, b
 
 
-def pattern_key(machine: int, jobs_vec: list[int]) -> tuple[int, tuple[int, ...]]:
+def _pattern_key(machine: int, jobs_vec: list[int]) -> tuple[int, tuple[int, ...]]:
     return machine, tuple(jobs_vec)
 
 
-def initial_patterns(a: list[list[int]], b: list[int]) -> list[dict[str, Any]]:
-    n_jobs = len(a)
-    n_machines = len(b)
-    patterns: list[dict[str, Any]] = []
+class GAPColumnGeneration(BaseColumnGeneration[GAPInstance, dict[str, Any]]):
+    """Column generation for GAP using machine-specific patterns."""
 
-    for j in range(n_machines):
-        patterns.append({"machine": j, "jobs": [0] * n_jobs})  # empty pattern keeps feasibility
-        # single-job patterns
-        for i in range(n_jobs):
-            if a[i][j] <= b[j]:
-                jobs_vec = [0] * n_jobs
-                jobs_vec[i] = 1
-                patterns.append({"machine": j, "jobs": jobs_vec})
-        # greedy packed pattern to enable feasibility when jobs > machines
-        order = sorted(range(n_jobs), key=lambda i: a[i][j])
-        load = 0
-        greedy = [0] * n_jobs
-        for i in order:
-            if load + a[i][j] <= b[j]:
-                greedy[i] = 1
-                load += a[i][j]
-        if any(greedy):
-            patterns.append({"machine": j, "jobs": greedy})
-    return patterns
+    def __init__(
+        self,
+        *,
+        master_params: dict[str, Any] | None = None,
+        pricing_params: dict[str, Any] | None = None,
+        max_iters: int = 200,
+        rc_tol: float = 1e-6,
+        verbose: bool = False,
+    ) -> None:
+        super().__init__(max_iters=max_iters, verbose=verbose)
+        self.master_params = master_params or {}
+        self.pricing_params = pricing_params or {}
+        self.rc_tolerance = rc_tol
+        self._a: list[list[int]] | None = None
+        self._c: list[list[float]] | None = None
+        self._b: list[int] | None = None
 
+    # Helpers -----------------------------------------------------------------
+    def _init_matrices(self, inst: GAPInstance) -> None:
+        self._a, self._c, self._b = _extract(inst)
 
-def solve_master_lp(
-    patterns: list[dict[str, Any]],
-    a: list[list[int]],
-    c: list[list[float]],
-    b: list[int],
-) -> tuple[float, tuple[list[float], list[float]]]:
-    n_jobs = len(a)
-    n_machines = len(b)
-    P = range(len(patterns))
-    jobs = range(n_jobs)
-    machines = range(n_machines)
-
-    model = gp.Model("gap_master_lp")
-    model.setParam("OutputFlag", 0)
-
-    lam = model.addVars(P, vtype=GRB.CONTINUOUS, lb=0.0, name="lambda")
-
-    job_constrs = []
-    for i in jobs:
-        cstr = model.addConstr(
-            gp.quicksum(patterns[p]["jobs"][i] * lam[p] for p in P) == 1,
-            name=f"job_{i}",
-        )
-        job_constrs.append(cstr)
-
-    machine_constrs = []
-    for j in machines:
-        cstr = model.addConstr(
-            gp.quicksum(lam[p] for p in P if patterns[p]["machine"] == j) == 1,
-            name=f"machine_{j}",
-        )
-        machine_constrs.append(cstr)
-
-    def cost_of_pattern(p_idx: int) -> float:
-        pat = patterns[p_idx]
+    def _pattern_cost(self, pat: dict[str, Any]) -> float:
+        _ = self._a or []
+        c = self._c or []
+        jobs_vec = pat["jobs"]
         m = pat["machine"]
-        return sum(c[i][m] * pat["jobs"][i] for i in jobs)
+        return sum(c[i][m] * jobs_vec[i] for i in range(len(jobs_vec)))
 
-    model.setObjective(
-        gp.quicksum(cost_of_pattern(p) * lam[p] for p in P),
-        GRB.MINIMIZE,
-    )
-    model.optimize()
+    def initial_patterns(self, inst: GAPInstance) -> list[dict[str, Any]]:
+        self._init_matrices(inst)
+        a = self._a or []
+        b = self._b or []
+        n_jobs = len(a)
+        n_machines = len(b)
+        patterns: list[dict[str, Any]] = []
+        for j in range(n_machines):
+            # empty pattern keeps feasibility of machine selection
+            patterns.append({"machine": j, "jobs": [0] * n_jobs})
+            # single-job patterns
+            for i in range(n_jobs):
+                if a[i][j] <= b[j]:
+                    vec = [0] * n_jobs
+                    vec[i] = 1
+                    patterns.append({"machine": j, "jobs": vec})
+        return patterns
 
-    if model.Status != GRB.OPTIMAL:
-        raise RuntimeError(f"Master LP not optimal, status={model.Status}")
+    def load_instance(self, instance_name: str) -> GAPInstance:
+        return GAPInstance.from_json_file(instance_name)
 
-    pi = [cstr.Pi for cstr in job_constrs]
-    sigma = [cstr.Pi for cstr in machine_constrs]
-    return float(model.ObjVal), (pi, sigma)
+    def solve_restricted_master(
+        self,
+        inst: GAPInstance,
+        patterns: list[dict[str, Any]],
+    ) -> MasterLPSolution[dict[str, Any]]:
+        a = self._a or []
+        b = self._b or []
+        c = self._c or []
+        n_jobs = len(a)
+        n_machines = len(b)
+        P = range(len(patterns))
+        jobs = range(n_jobs)
+        machines = range(n_machines)
 
+        model = gp.Model("gap_master_lp")
+        model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.master_params.items():
+            model.setParam(k, v)
 
-def solve_pricing_for_machine(
-    machine: int,
-    a: list[list[int]],
-    c: list[list[float]],
-    b: list[int],
-    pi: list[float],
-    sigma_j: float,
-    rc_tol: float = 1e-9,
-) -> tuple[list[int], float]:
-    n_jobs = len(a)
-    jobs = range(n_jobs)
+        lam = model.addVars(P, vtype=GRB.CONTINUOUS, lb=0.0, name="lambda")
 
-    model = gp.Model(f"gap_pricing_{machine}")
-    model.setParam("OutputFlag", 0)
+        job_constrs = []
+        for i in jobs:
+            cstr = model.addConstr(gp.quicksum(patterns[p]["jobs"][i] * lam[p] for p in P) == 1, name=f"job_{i}")
+            job_constrs.append(cstr)
 
-    z = model.addVars(jobs, vtype=GRB.BINARY, name="z")
-    model.addConstr(
-        gp.quicksum(a[i][machine] * z[i] for i in jobs) <= b[machine],
-        name="capacity",
-    )
-    model.addConstr(gp.quicksum(z[i] for i in jobs) >= 1, name="nonempty")
-
-    model.setObjective(
-        gp.quicksum((pi[i] - c[i][machine]) * z[i] for i in jobs) + sigma_j,
-        GRB.MAXIMIZE,
-    )
-    model.optimize()
-
-    if model.Status != GRB.OPTIMAL:
-        return [0] * n_jobs, 0.0
-
-    jobs_vec = [int(round(z[i].X)) for i in jobs]
-    pattern_cost = sum(c[i][machine] * jobs_vec[i] for i in jobs)
-    reduced_cost = pattern_cost - sum(pi[i] * jobs_vec[i] for i in jobs) - sigma_j
-
-    if sum(jobs_vec) == 0:
-        reduced_cost = 0.0
-    if reduced_cost > -rc_tol:
-        reduced_cost = max(reduced_cost, 0.0)
-    return jobs_vec, reduced_cost
-
-
-def solve_column_generation(
-    a: list[list[int]],
-    c: list[list[float]],
-    b: list[int],
-    rc_tol: float = 1e-6,
-) -> dict[str, Any]:
-    n_jobs = len(a)
-    n_machines = len(b)
-    jobs = range(n_jobs)
-    machines = range(n_machines)
-
-    patterns = initial_patterns(a, b)
-    seen = {pattern_key(p["machine"], p["jobs"]) for p in patterns}
-
-    while True:
-        _, (pi, sigma) = solve_master_lp(patterns, a, c, b)
-        best_rc = 0.0
-        new_patterns: list[dict[str, Any]] = []
-
+        mach_constrs = []
         for j in machines:
-            jobs_vec, rc = solve_pricing_for_machine(j, a, c, b, pi, sigma[j], rc_tol=rc_tol)
-            if rc < best_rc:
-                best_rc = rc
-            key = pattern_key(j, jobs_vec)
-            if rc < -rc_tol and key not in seen:
-                seen.add(key)
-                new_patterns.append({"machine": j, "jobs": jobs_vec})
-
-        if best_rc >= -rc_tol or not new_patterns:
-            break
-
-        patterns.extend(new_patterns)
-
-    P = range(len(patterns))
-    model_int = gp.Model("gap_master_int")
-    model_int.setParam("OutputFlag", 0)
-    lam = model_int.addVars(P, vtype=GRB.BINARY, name="lambda")
-
-    for i in jobs:
-        model_int.addConstr(
-            gp.quicksum(patterns[p]["jobs"][i] * lam[p] for p in P) == 1,
-            name=f"job_{i}",
-        )
-    for j in machines:
-        model_int.addConstr(
-            gp.quicksum(lam[p] for p in P if patterns[p]["machine"] == j) == 1,
-            name=f"machine_{j}",
-        )
-
-    def cost_of_pattern(p_idx: int) -> float:
-        pat = patterns[p_idx]
-        m = pat["machine"]
-        return sum(c[i][m] * pat["jobs"][i] for i in jobs)
-
-    model_int.setObjective(
-        gp.quicksum(cost_of_pattern(p) * lam[p] for p in P),
-        GRB.MINIMIZE,
-    )
-    model_int.optimize()
-
-    if model_int.Status != GRB.OPTIMAL:
-        raise RuntimeError(f"Integer master not optimal, status={model_int.Status}")
-
-    assignments = []
-    chosen_patterns = []
-    for p in P:
-        val = lam[p].X
-        if val > 0.5:
-            pat = patterns[p]
-            chosen_patterns.append(
-                {
-                    "pattern_id": p,
-                    "machine_id": pat["machine"],
-                    "jobs": [i for i in jobs if pat["jobs"][i] == 1],
-                    "usage": 1,
-                }
+            cstr = model.addConstr(
+                gp.quicksum(lam[p] for p in P if patterns[p]["machine"] == j) == 1,
+                name=f"machine_{j}",
             )
-            for i in jobs:
-                if pat["jobs"][i] == 1:
-                    assignments.append({"job_id": i, "machine_id": pat["machine"]})
+            mach_constrs.append(cstr)
 
-    sol = {
-        "status": "optimal",
-        "method": "gap_column_generation",
-        "objective_value": float(model_int.ObjVal),
-        "solution": {
-            "assignments": assignments,
-            "patterns": chosen_patterns,
-        },
-    }
-    return sol
+        def cost(p_idx: int) -> float:
+            pat = patterns[p_idx]
+            m = pat["machine"]
+            return sum(c[i][m] * pat["jobs"][i] for i in jobs)
 
+        model.setObjective(gp.quicksum(cost(p) * lam[p] for p in P), GRB.MINIMIZE)
+        model.optimize()
+        if model.Status != GRB.OPTIMAL:
+            raise RuntimeError(f"GAP master LP not optimal (status={model.Status})")
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Solve GAP instance with column generation.")
-    parser.add_argument("--dir", type=Path, default=Path("."), help="Directory containing data.json")
-    args = parser.parse_args()
+        pi = [cstr.Pi for cstr in job_constrs]
+        sigma = [cstr.Pi for cstr in mach_constrs]
+        return MasterLPSolution(objective=float(model.ObjVal), duals={"pi": pi, "sigma": sigma})
 
-    a, c, b = load_gap_data(args.dir)
-    sol = solve_column_generation(a, c, b)
+    def solve_pricing(
+        self,
+        inst: GAPInstance,
+        master_solution: MasterLPSolution[dict[str, Any]],
+        patterns: list[dict[str, Any]],
+    ) -> PricingResult[dict[str, Any]]:
+        a = self._a or []
+        b = self._b or []
+        c = self._c or []
+        pi = master_solution.duals["pi"]
+        sigma = master_solution.duals["sigma"]
+        n_jobs = len(a)
+        n_machines = len(b)
+        jobs = range(n_jobs)
+        best_pat: dict[str, Any] | None = None
+        best_rc = 0.0
 
-    out_path = args.dir / "ground_truth_cg.json"
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(sol, f, indent=2)
+        for j in range(n_machines):
+            model = gp.Model(f"gap_pricing_{j}")
+            model.Params.OutputFlag = 0
+            for k, v in self.pricing_params.items():
+                model.setParam(k, v)
 
+            z = model.addVars(jobs, vtype=GRB.BINARY, name="z")
+            model.addConstr(gp.quicksum(a[i][j] * z[i] for i in jobs) <= b[j], name="capacity")
+            model.addConstr(gp.quicksum(z[i] for i in jobs) >= 1, name="nonempty")
 
-if __name__ == "__main__":
-    main()
+            model.setObjective(gp.quicksum((pi[i] - c[i][j]) * z[i] for i in jobs) + sigma[j], GRB.MAXIMIZE)
+            model.optimize()
+            if model.Status != GRB.OPTIMAL:
+                continue
+
+            jobs_vec = [round(z[i].X) for i in jobs]
+            pattern_cost = sum(c[i][j] * jobs_vec[i] for i in jobs)
+            reduced_cost = pattern_cost - sum(pi[i] * jobs_vec[i] for i in jobs) - sigma[j]
+            if sum(jobs_vec) == 0:
+                reduced_cost = 0.0
+
+            if reduced_cost < best_rc - 1e-12:
+                best_rc = reduced_cost
+                best_pat = {"machine": j, "jobs": jobs_vec}
+
+        return PricingResult(pattern=best_pat, reduced_cost=best_rc)
+
+    def solve_integer_master(
+        self,
+        inst: GAPInstance,
+        patterns: list[dict[str, Any]],
+    ) -> IntegerMasterSolution[dict[str, Any]]:
+        a = self._a or []
+        b = self._b or []
+        c = self._c or []
+        n_jobs = len(a)
+        n_machines = len(b)
+        jobs = range(n_jobs)
+        machines = range(n_machines)
+        P = range(len(patterns))
+
+        model = gp.Model("gap_master_int")
+        model.Params.OutputFlag = 1 if self.verbose else 0
+
+        lam = model.addVars(P, vtype=GRB.BINARY, name="lambda")
+
+        for i in jobs:
+            model.addConstr(gp.quicksum(patterns[p]["jobs"][i] * lam[p] for p in P) == 1, name=f"job_{i}")
+        for j in machines:
+            model.addConstr(gp.quicksum(lam[p] for p in P if patterns[p]["machine"] == j) == 1, name=f"machine_{j}")
+
+        def cost(p_idx: int) -> float:
+            pat = patterns[p_idx]
+            m = pat["machine"]
+            return sum(c[i][m] * pat["jobs"][i] for i in jobs)
+
+        model.setObjective(gp.quicksum(cost(p) * lam[p] for p in P), GRB.MINIMIZE)
+        model.optimize()
+        if model.Status != GRB.OPTIMAL:
+            raise RuntimeError(f"GAP integer master not optimal (status={model.Status})")
+
+        usage: dict[int, float] = {}
+        assignments: list[dict[str, Any]] = []
+        for p in P:
+            val = lam[p].X
+            if val > 0.5:
+                usage[p] = float(val)
+                pat = patterns[p]
+                for i in jobs:
+                    if pat["jobs"][i] > 0:
+                        assignments.append({"job_id": i, "machine_id": pat["machine"]})
+
+        return IntegerMasterSolution(
+            objective=float(model.ObjVal),
+            pattern_usages=usage,
+            metadata={"patterns": patterns, "assignments": assignments},
+        )

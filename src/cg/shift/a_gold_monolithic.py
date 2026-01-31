@@ -1,88 +1,81 @@
-# Ground truth monolithic solver for shift scheduling
-import argparse
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from __future__ import annotations
+
+from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
+import numpy as np
+
+from src.cg.shift.a_gen_data import ShiftInstance
+from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
-def load_shift_data(dir_path: Path) -> tuple[list[int], int, int, float]:
-    data = json.loads((dir_path / "data.json").read_text())
-    demand = [int(d) for d in data["demand"]]
-    L_min = int(data["shift_min_length"])
-    L_max = int(data["shift_max_length"])
-    shift_cost = float(data.get("shift_cost", 1.0))
-    return demand, L_min, L_max, shift_cost
-
-
-def enumerate_shifts(T: int, L_min: int, L_max: int) -> list[tuple[int, int]]:
+def _enumerate_shifts(inst: ShiftInstance) -> list[tuple[int, int]]:
+    T = len(inst.time_slots)
     shifts: list[tuple[int, int]] = []
-    for s in range(T):
-        for e in range(s + L_min - 1, min(T - 1, s + L_max - 1) + 1):
-            shifts.append((s, e))
+    for start in range(T):
+        for length in range(inst.shift_min_length, inst.shift_max_length + 1):
+            end = start + length - 1
+            if end >= T:
+                break
+            shifts.append((start, end))
     return shifts
 
 
-def solve_monolithic(
-    demand: list[int],
-    L_min: int,
-    L_max: int,
-    shift_cost: float,
-) -> dict[str, Any]:
-    T = len(demand)
-    shifts = enumerate_shifts(T, L_min, L_max)
-    P = range(len(shifts))
+class ShiftBaseline(BaseBaseline[ShiftInstance, gp.Model]):
+    """Monolithic set-covering model for shifts."""
 
-    model = gp.Model("shift_monolith")
-    model.setParam("OutputFlag", 0)
+    def __init__(self, *, params: dict[str, Any] | None = None, verbose: bool = False) -> None:
+        super().__init__(verbose=verbose)
+        self.params = params or {}
 
-    x = model.addVars(P, vtype=GRB.INTEGER, lb=0, name="x")
+    def load_instance(self, instance_name: str) -> ShiftInstance:
+        return ShiftInstance.from_json_file(instance_name)
 
-    for t in range(T):
-        model.addConstr(
-            gp.quicksum(x[p] for p in P if shifts[p][0] <= t <= shifts[p][1]) >= demand[t],
-            name=f"cov_{t}",
+    def build_model(self, inst: ShiftInstance) -> gp.Model:
+        shifts = _enumerate_shifts(inst)
+        T = len(inst.time_slots)
+        shift_idx = range(len(shifts))
+        slots = range(T)
+
+        model = gp.Model("shift_monolithic")
+        model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.params.items():
+            model.setParam(k, v)
+
+        x = model.addVars(shift_idx, vtype=GRB.INTEGER, lb=0, name="x")
+
+        for t in slots:
+            cover_expr = gp.quicksum(x[s] for s, (start, end) in enumerate(shifts) if start <= t <= end)
+            model.addConstr(cover_expr >= inst.demand[t], name=f"cover_{t}")
+
+        model.setObjective(gp.quicksum(x[s] for s in shift_idx), GRB.MINIMIZE)
+        model._vars = {"x": x, "shifts": shifts}
+        return model
+
+    def solve_model(self, inst: ShiftInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
+        model.optimize()
+        if model.Status != GRB.OPTIMAL:
+            raise RuntimeError(f"Shift baseline not optimal (status={model.Status})")
+
+        vars_ = model._vars  # type: ignore[attr-defined]
+        x = vars_["x"]
+        shifts = vars_["shifts"]
+        x_vals = np.array([x[i].X for i in range(len(shifts))], dtype=float)
+
+        var_dict: dict[str, Any] = {}
+        shift_list = []
+        for idx, (start, end) in enumerate(shifts):
+            val = round(x_vals[idx])
+            var_dict[f"x_{idx}"] = float(x_vals[idx])
+            if val > 0:
+                shift_list.append({"start": start, "end": end, "usage": val})
+
+        best_bound = float(model.ObjBound) if model.ObjBound < 1e20 else None
+        return BaselineSolution(
+            objective=float(model.ObjVal),
+            vars=var_dict,
+            best_bound=best_bound,
+            model_state=model,
+            metadata={"shifts": shift_list},
         )
-
-    model.setObjective(
-        shift_cost * gp.quicksum(x[p] for p in P),
-        GRB.MINIMIZE,
-    )
-    model.optimize()
-
-    if model.Status != GRB.OPTIMAL:
-        raise RuntimeError(f"Monolithic shift model not optimal, status={model.Status}")
-
-    solution_shifts = []
-    for p in P:
-        cnt = int(round(x[p].X))
-        if cnt > 0:
-            s, e = shifts[p]
-            solution_shifts.append({"shift_id": p, "start_slot": s, "end_slot": e, "count": cnt})
-
-    sol = {
-        "status": "optimal",
-        "method": "shift_monolithic_set_cover",
-        "objective_value": float(model.ObjVal),
-        "solution": {"shifts": solution_shifts},
-    }
-    return sol
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Solve shift scheduling instance monolithically.")
-    parser.add_argument("--dir", type=Path, default=Path("."), help="Directory containing data.json")
-    args = parser.parse_args()
-
-    demand, L_min, L_max, shift_cost = load_shift_data(args.dir)
-    sol = solve_monolithic(demand, L_min, L_max, shift_cost)
-
-    out_path = args.dir / "ground_truth_monolithic.json"
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(sol, f, indent=2)
-
-
-if __name__ == "__main__":
-    main()

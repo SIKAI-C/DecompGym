@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 
 INT_TOL = 1e-6
@@ -14,7 +14,7 @@ def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
         return None, f"{field} is not numeric"
     if abs(val - round(val)) > INT_TOL:
         return None, f"{field} is not an integer: {value}"
-    return int(round(val)), None
+    return round(val), None
 
 
 def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
@@ -39,15 +39,15 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
         if not isinstance(shift, dict):
             return {"feasible": False, "objective_value": None, "message": f"shift {idx} not a dict"}
 
-        start = shift.get("start_slot")
-        end = shift.get("end_slot")
+        start = shift.get("start_slot", shift.get("start"))
+        end = shift.get("end_slot", shift.get("end"))
         try:
             start = int(start)
             end = int(end)
         except (TypeError, ValueError):
             return {"feasible": False, "objective_value": None, "message": f"shift {idx} start/end not int"}
 
-        count_raw = shift.get("count", 1)
+        count_raw = shift.get("count", shift.get("usage", 1))
         count, err = _coerce_int(count_raw, f"shifts[{idx}].count")
         if err:
             return {"feasible": False, "objective_value": None, "message": err}

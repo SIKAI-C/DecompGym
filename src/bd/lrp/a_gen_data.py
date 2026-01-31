@@ -12,10 +12,10 @@ import numpy as np
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-DIFFICULTY_CONFIG = {
-    "easy": {"m_range": (3, 4), "n_range": (6, 8), "max_stops": 4},
+SIZE_CONFIG = {
+    "small": {"m_range": (3, 4), "n_range": (6, 8), "max_stops": 4},
     "medium": {"m_range": (4, 6), "n_range": (8, 10), "max_stops": 5},
-    "hard": {"m_range": (5, 7), "n_range": (10, 14), "max_stops": 6},
+    "large": {"m_range": (5, 7), "n_range": (10, 14), "max_stops": 6},
 }
 
 
@@ -241,12 +241,12 @@ class LRPGenerator(BaseInstanceGenerator[LRPInstance]):
 
 def generate_lrp_instance(
     seed: int,
-    difficulty: str = "easy",
+    size: str = "small",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    if difficulty not in DIFFICULTY_CONFIG:
-        raise ValueError(f"Unknown difficulty '{difficulty}'. Expected one of {list(DIFFICULTY_CONFIG)}.")
-    cfg = DIFFICULTY_CONFIG[difficulty]
+    if size not in SIZE_CONFIG:
+        raise ValueError(f"Unknown size '{size}'. Expected one of {list(SIZE_CONFIG)}.")
+    cfg = SIZE_CONFIG[size]
     rng = np.random.default_rng(seed)
     m = int(rng.integers(cfg["m_range"][0], cfg["m_range"][1] + 1))
     n = int(rng.integers(cfg["n_range"][0], cfg["n_range"][1] + 1))

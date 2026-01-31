@@ -1,95 +1,90 @@
-# Ground truth monolithic solver for GAP
-import argparse
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from __future__ import annotations
+
+from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
+import numpy as np
+
+from src.cg.gap.a_gen_data import GAPInstance
+from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
-def load_gap_data(dir_path: Path) -> tuple[list[list[int]], list[list[float]], list[int]]:
-    data_path = dir_path / "data.json"
-    data = json.loads(data_path.read_text())
-
-    machines = sorted(data["machines"], key=lambda m: m["id"])
-    jobs = sorted(data["jobs"], key=lambda j: j["id"])
-
-    b = [int(m["capacity"]) for m in machines]
+def _extract(inst: GAPInstance) -> tuple[list[list[int]], list[list[float]], list[int]]:
+    machines = sorted(inst.machines, key=lambda m: m.id)
+    jobs = sorted(inst.jobs, key=lambda j: j.id)
+    b = [m.capacity for m in machines]
     n_jobs = len(jobs)
     n_machines = len(machines)
-
     a = [[0] * n_machines for _ in range(n_jobs)]
     c = [[0.0] * n_machines for _ in range(n_jobs)]
-
     for job in jobs:
-        i = int(job["id"])
-        for assignment in sorted(job["assignments"], key=lambda x: x["machine_id"]):
-            j = int(assignment["machine_id"])
-            a[i][j] = int(assignment["resource"])
-            c[i][j] = float(assignment["cost"])
-
+        for assign in job.assignments:
+            j = int(assign.machine_id)
+            a[job.id][j] = assign.resource
+            c[job.id][j] = assign.cost
     return a, c, b
 
 
-def solve_monolithic(a: list[list[int]], c: list[list[float]], b: list[int]) -> dict[str, Any]:
-    n_jobs = len(a)
-    n_machines = len(b)
-    jobs = range(n_jobs)
-    machines = range(n_machines)
+class GAPBaseline(BaseBaseline[GAPInstance, gp.Model]):
+    """Monolithic MIP for GAP."""
 
-    model = gp.Model("gap_monolith")
-    model.setParam("OutputFlag", 0)
+    def __init__(self, *, params: dict[str, Any] | None = None, verbose: bool = False) -> None:
+        super().__init__(verbose=verbose)
+        self.params = params or {}
 
-    x = model.addVars(n_jobs, n_machines, vtype=GRB.BINARY, name="x")
+    def load_instance(self, instance_name: str) -> GAPInstance:
+        return GAPInstance.from_json_file(instance_name)
 
-    for i in jobs:
-        model.addConstr(gp.quicksum(x[i, j] for j in machines) == 1, name=f"assign_{i}")
+    def build_model(self, inst: GAPInstance) -> gp.Model:
+        a, c, b = _extract(inst)
+        n_jobs = len(a)
+        n_machines = len(b)
+        jobs = range(n_jobs)
+        machines = range(n_machines)
 
-    for j in machines:
-        model.addConstr(
-            gp.quicksum(a[i][j] * x[i, j] for i in jobs) <= b[j],
-            name=f"cap_{j}",
-        )
+        model = gp.Model("gap_monolithic")
+        model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.params.items():
+            model.setParam(k, v)
 
-    model.setObjective(
-        gp.quicksum(c[i][j] * x[i, j] for i in jobs for j in machines),
-        GRB.MINIMIZE,
-    )
-    model.optimize()
+        x = model.addVars(n_jobs, n_machines, vtype=GRB.BINARY, name="x")
 
-    if model.Status != GRB.OPTIMAL:
-        raise RuntimeError(f"Monolithic GAP model not optimal, status={model.Status}")
-
-    assignments = []
-    for i in jobs:
+        for i in jobs:
+            model.addConstr(gp.quicksum(x[i, j] for j in machines) == 1, name=f"assign_{i}")
         for j in machines:
-            if x[i, j].X > 0.5:
-                assignments.append({"job_id": i, "machine_id": j})
+            model.addConstr(gp.quicksum(a[i][j] * x[i, j] for i in jobs) <= b[j], name=f"cap_{j}")
 
-    sol = {
-        "status": "optimal",
-        "method": "gap_monolithic_mip",
-        "objective_value": float(model.ObjVal),
-        "solution": {
-            "assignments": assignments,
-        },
-    }
-    return sol
+        model.setObjective(gp.quicksum(c[i][j] * x[i, j] for i in jobs for j in machines), GRB.MINIMIZE)
+        model._vars = {"x": x, "a": a, "c": c}  # type: ignore[attr-defined]
+        return model
 
+    def solve_model(self, inst: GAPInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
+        model.optimize()
+        if model.Status != GRB.OPTIMAL:
+            raise RuntimeError(f"GAP monolithic not optimal (status={model.Status})")
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Solve GAP instance with monolithic MIP.")
-    parser.add_argument("--dir", type=Path, default=Path("."), help="Directory containing data.json")
-    args = parser.parse_args()
+        vars_ = model._vars  # type: ignore[attr-defined]
+        x = vars_["x"]
+        n_jobs = len(inst.jobs)
+        n_machines = len(inst.machines)
 
-    a, c, b = load_gap_data(args.dir)
-    sol = solve_monolithic(a, c, b)
+        var_dict: dict[str, Any] = {}
+        assignments = []
+        x_mat = np.zeros((n_jobs, n_machines), dtype=float)
+        for i in range(n_jobs):
+            for j in range(n_machines):
+                val = float(x[i, j].X)
+                var_dict[f"x_{i}_{j}"] = val
+                x_mat[i, j] = val
+                if val > 0.5:
+                    assignments.append({"job_id": i, "machine_id": j})
 
-    out_path = args.dir / "ground_truth_monolithic.json"
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(sol, f, indent=2)
-
-
-if __name__ == "__main__":
-    main()
+        best_bound = float(model.ObjBound) if model.ObjBound < 1e20 else None
+        return BaselineSolution(
+            objective=float(model.ObjVal),
+            vars=var_dict,
+            best_bound=best_bound,
+            model_state=model,
+            metadata={"assignments": assignments, "x_assignment": x_mat.tolist()},
+        )

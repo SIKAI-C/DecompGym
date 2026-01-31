@@ -9,10 +9,10 @@ import numpy as np
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-DIFFICULTY_CONFIG = {
-    "easy": {"products": (2, 3), "periods": (3, 5), "scenarios": (2, 3)},
+SIZE_CONFIG = {
+    "small": {"products": (2, 3), "periods": (3, 5), "scenarios": (2, 3)},
     "medium": {"products": (3, 5), "periods": (5, 8), "scenarios": (3, 5)},
-    "hard": {"products": (5, 7), "periods": (8, 10), "scenarios": (6, 8)},
+    "large": {"products": (5, 7), "periods": (8, 10), "scenarios": (6, 8)},
 }
 
 
@@ -134,17 +134,17 @@ class TSSOGenerator(BaseInstanceGenerator[TSSOInstance]):
 
 def generate_tsso_instance(
     seed: int,
-    difficulty: str = "easy",
+    size: str = "small",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """
-    Sample sizes from a difficulty definition and write data.json under output_dir.
+    Sample sizes from a size definition and write data.json under output_dir.
     Returns the raw dictionary representation.
     """
-    if difficulty not in DIFFICULTY_CONFIG:
-        raise ValueError(f"Unknown difficulty '{difficulty}'. Expected one of {list(DIFFICULTY_CONFIG)}.")
+    if size not in SIZE_CONFIG:
+        raise ValueError(f"Unknown size '{size}'. Expected one of {list(SIZE_CONFIG)}.")
 
-    cfg = DIFFICULTY_CONFIG[difficulty]
+    cfg = SIZE_CONFIG[size]
     rng = np.random.default_rng(seed)
 
     n_products = int(rng.integers(cfg["products"][0], cfg["products"][1] + 1))

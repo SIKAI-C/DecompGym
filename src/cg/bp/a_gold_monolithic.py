@@ -1,157 +1,105 @@
-# bp__gt_monolith.py
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from __future__ import annotations
+
+from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
+import numpy as np
+
+from src.cg.bp.a_gen_data import BinPackingInstance
+from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
-def load_data(path: str = "data.json") -> tuple[int, list[int], list[int]]:
-    """Load bin packing instance from data.json.
-
-    Returns:
-        bin_capacity: C
-        sizes: list of item sizes (ordered by type)
-        demands: list of demands per type
-
-    """
-    data = json.loads(Path(path).read_text())
-
-    # Capacity key variants
-    if "bin_capacity" in data:
-        bin_capacity = int(data["bin_capacity"])
-    elif "stock_size" in data:
-        bin_capacity = int(data["stock_size"])
-    elif "roll_width" in data:
-        bin_capacity = int(data["roll_width"])
-    else:
-        raise KeyError("Expected one of 'bin_capacity', 'stock_size', or 'roll_width' in data.json")
-
-    # Item schema variants
-    if "item_types" in data:
-        items = sorted(data["item_types"], key=lambda it: it["id"])
-        # allow either "size" (BPP style) or "width" (CSP style)
-        sizes = [int(it.get("size", it.get("width"))) for it in items]
-        demands = [int(it.get("demand", 1)) for it in items]
-    elif "items" in data:
-        # Each item appears once; aggregate by size to get (size, demand)
-        items = data["items"]
-        size_counts: dict[int, int] = {}
-        for it in items:
-            s = int(it["size"])
-            size_counts[s] = size_counts.get(s, 0) + 1
-        sizes = sorted(size_counts.keys())
-        demands = [size_counts[s] for s in sizes]
-    else:
-        raise KeyError("Expected 'item_types' or 'items' in data.json")
-
-    return bin_capacity, sizes, demands
+def _aggregate_items(inst: BinPackingInstance) -> tuple[list[int], list[int]]:
+    """Convert item list into (sizes, demands) by unique size."""
+    size_counts: dict[int, int] = {}
+    for it in inst.items:
+        size_counts[it.size] = size_counts.get(it.size, 0) + 1
+    sizes = sorted(size_counts.keys())
+    demands = [size_counts[s] for s in sizes]
+    return sizes, demands
 
 
-def solve_monolithic(bin_capacity: int, sizes: list[int], demands: list[int]) -> dict[str, Any]:
-    """Monolithic MIP for bin packing (identical bins):
+class BinPackingBaseline(BaseBaseline[BinPackingInstance, gp.Model]):
+    """Full MIP for bin packing using BaseBaseline structure."""
 
-    - Bins b = 0..B-1, where B is an upper bound on #bins.
-    - Variables:
-        y_b = 1 if bin b is used (binary)
-        x_{i,b} = number of items of type i assigned to bin b (integer >= 0)
-    - Constraints:
-        sum_i size_i * x_{i,b} <= bin_capacity * y_b   for each b
-        sum_b x_{i,b} >= demand_i                      for each i
-    - Objective: minimize sum_b y_b
-    """
-    n_items = len(sizes)
-    # Very simple upper bound: each item type contributes demand_i items,
-    # and each bin must hold at least one item.
-    max_bins = sum(demands)
+    def __init__(self, *, params: dict[str, Any] | None = None, verbose: bool = False) -> None:
+        super().__init__(verbose=verbose)
+        self.params = params or {}
 
-    model = gp.Model("bp_monolithic")
-    model.setParam("OutputFlag", 0)
+    def load_instance(self, instance_name: str) -> BinPackingInstance:
+        return BinPackingInstance.from_json_file(instance_name)
 
-    bins = range(max_bins)
-    items = range(n_items)
+    def build_model(self, inst: BinPackingInstance) -> gp.Model:
+        sizes, demands = _aggregate_items(inst)
+        n_types = len(sizes)
+        max_bins = sum(demands)
 
-    y = model.addVars(bins, vtype=GRB.BINARY, name="y")
-    x = model.addVars(items, bins, vtype=GRB.INTEGER, lb=0, name="x")
+        model = gp.Model("bp_monolithic")
+        model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.params.items():
+            model.setParam(k, v)
 
-    # Capacity constraints
-    for b in bins:
-        model.addConstr(
-            gp.quicksum(sizes[i] * x[i, b] for i in items) <= bin_capacity * y[b],
-            name=f"cap_{b}",
-        )
+        bins = range(max_bins)
+        items = range(n_types)
 
-    # Demand constraints
-    for i in items:
-        model.addConstr(
-            gp.quicksum(x[i, b] for b in bins) >= demands[i],
-            name=f"demand_{i}",
-        )
+        y = model.addVars(bins, vtype=GRB.BINARY, name="y")
+        x = model.addVars(items, bins, vtype=GRB.INTEGER, lb=0, name="x")
 
-    # Objective: minimize number of bins
-    model.setObjective(gp.quicksum(y[b] for b in bins), GRB.MINIMIZE)
-    model.optimize()
+        for b in bins:
+            model.addConstr(
+                gp.quicksum(sizes[i] * x[i, b] for i in items) <= inst.bin_capacity * y[b],
+                name=f"cap_{b}",
+            )
+        for i in items:
+            model.addConstr(gp.quicksum(x[i, b] for b in bins) >= demands[i], name=f"demand_{i}")
 
-    if model.Status != GRB.OPTIMAL:
-        raise RuntimeError(f"Monolithic MIP not optimal, status={model.Status}")
+        model.setObjective(gp.quicksum(y[b] for b in bins), GRB.MINIMIZE)
+        model._vars = {"x": x, "y": y, "sizes": sizes, "demands": demands, "bins": list(bins)}  # type: ignore[attr-defined]
+        return model
 
-    obj = float(model.ObjVal)
+    def solve_model(self, inst: BinPackingInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
+        model.optimize()
+        if model.Status != GRB.OPTIMAL:
+            raise RuntimeError(f"Baseline model not optimal (status={model.Status})")
 
-    # Represent each used bin as a pattern with usage=1
-    patterns = []
-    pattern_id = 0
-    for b in bins:
-        if y[b].X > 0.5:
+        vars_ = model._vars  # type: ignore[attr-defined]
+        x = vars_["x"]
+        y = vars_["y"]
+        bins = vars_["bins"]
+        sizes: list[int] = vars_["sizes"]
+
+        x_val = np.asarray([[x[i, b].X for b in bins] for i in range(len(sizes))], dtype=float)
+        y_val = np.asarray([y[b].X for b in bins], dtype=float)
+
+        var_dict: dict[str, Any] = {}
+        for b, yb in y.items():
+            var_dict[f"y_{b}"] = float(yb.X)
+            for i in range(len(sizes)):
+                var_dict[f"x_{i}_{b}"] = float(x[i, b].X)
+
+        patterns = []
+        pattern_id = 0
+        for b in bins:
+            if y[b].X <= 0.5:
+                continue
             contents = []
-            for i in items:
-                cnt = int(round(x[i, b].X))
+            for i in range(len(sizes)):
+                cnt = round(x[i, b].X)
                 if cnt > 0:
                     contents.append({"item_id": i, "count": cnt})
-            patterns.append(
-                {
-                    "pattern_id": pattern_id,
-                    "usage": 1,
-                    "contents": contents,
-                }
-            )
+            patterns.append({"pattern_id": pattern_id, "usage": 1, "contents": contents})
             pattern_id += 1
 
-    sol = {
-        "status": "optimal",
-        "method": "bin_packing_monolithic_mip",
-        "objective_value": obj,
-        "solution": {"bins": patterns},
-    }
-    return sol
-
-
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Compute monolithic MIP ground truth for a bin packing instance.")
-    parser.add_argument(
-        "--dir",
-        type=str,
-        default=".",
-        help="Directory containing data.json (output written there too). Default: current directory.",
-    )
-    args = parser.parse_args()
-
-    work_dir = Path(args.dir)
-    data_path = work_dir / "data.json"
-    out_path = work_dir / "ground_truth_monolithic.json"
-
-    bin_capacity, sizes, demands = load_data(str(data_path))
-
-    for s in sizes:
-        if s > bin_capacity:
-            raise ValueError(f"Item size {s} exceeds bin capacity {bin_capacity}; infeasible instance.")
-
-    sol = solve_monolithic(bin_capacity, sizes, demands)
-    out_path.write_text(json.dumps(sol, indent=2))
-    print(f"[BP monolithic] objective_value={sol['objective_value']} -> {out_path}")
-
-
-if __name__ == "__main__":
-    main()
+        best_bound = float(model.ObjBound) if model.ObjBound < 1e20 else None
+        return BaselineSolution(
+            objective=float(model.ObjVal),
+            vars=var_dict,
+            best_bound=best_bound,
+            model_state=model,
+            metadata={
+                "patterns": patterns,
+                "y_assignment": y_val.tolist(),
+                "x_assignment": x_val.tolist(),
+            },
+        )

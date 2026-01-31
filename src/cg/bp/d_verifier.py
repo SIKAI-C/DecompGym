@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 
 INT_TOL = 1e-6
@@ -14,7 +14,7 @@ def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
         return None, f"{field} is not numeric"
     if abs(val - round(val)) > INT_TOL:
         return None, f"{field} is not an integer: {value}"
-    return int(round(val)), None
+    return round(val), None
 
 
 def _load_bp_data(data: dict[str, Any]) -> dict[str, Any]:

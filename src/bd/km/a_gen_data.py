@@ -10,10 +10,10 @@ import numpy as np
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-DIFFICULTY_CONFIG = {
-    "easy": {"m_range": (5, 10), "n_range": (10, 20), "k_frac": (0.2, 0.3)},
+SIZE_CONFIG = {
+    "small": {"m_range": (5, 10), "n_range": (10, 20), "k_frac": (0.2, 0.3)},
     "medium": {"m_range": (10, 15), "n_range": (20, 30), "k_frac": (0.2, 0.35)},
-    "hard": {"m_range": (15, 20), "n_range": (30, 40), "k_frac": (0.15, 0.35)},
+    "large": {"m_range": (15, 20), "n_range": (30, 40), "k_frac": (0.15, 0.35)},
 }
 
 
@@ -157,12 +157,12 @@ class KMedianGenerator(BaseInstanceGenerator[KMedianInstance]):
 
 def generate_km_instance(
     seed: int,
-    difficulty: str = "easy",
+    size: str = "small",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    if difficulty not in DIFFICULTY_CONFIG:
-        raise ValueError(f"Unknown difficulty '{difficulty}'. Expected one of {list(DIFFICULTY_CONFIG)}.")
-    cfg = DIFFICULTY_CONFIG[difficulty]
+    if size not in SIZE_CONFIG:
+        raise ValueError(f"Unknown size '{size}'. Expected one of {list(SIZE_CONFIG)}.")
+    cfg = SIZE_CONFIG[size]
     rng = np.random.default_rng(seed)
     m = int(rng.integers(cfg["m_range"][0], cfg["m_range"][1] + 1))
     n = int(rng.integers(cfg["n_range"][0], cfg["n_range"][1] + 1))

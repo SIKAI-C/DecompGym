@@ -11,7 +11,7 @@ from src.utils.json_utils import save_json, serialize_iter_records
 
 
 def generate_suite(
-    difficulties: Iterable[str],
+    sizes: Iterable[str],
     num_instances: int,
     out_root: str | Path,
     *,
@@ -21,8 +21,8 @@ def generate_suite(
     """
     Generate a small UFL benchmark suite with ground truths.
 
-    For each difficulty and seed in range(num_instances):
-      - build instance folder: ufl_{difficulty}_seedXXX
+    For each size and seed in range(num_instances):
+      - build instance folder: ufl_{size}_seedXXX
       - write data.json via generate_ufl_instance
       - write prompt.txt via render_prompt
       - run gold monolithic and gold Benders solvers
@@ -35,14 +35,14 @@ def generate_suite(
 
     metas: list[dict] = []
 
-    for diff in difficulties:
+    for size in sizes:
         for seed in range(seed_offset, seed_offset + num_instances):
-            folder_name = f"ufl_{diff}_seed{seed:03d}"
+            folder_name = f"ufl_{size}_seed{seed:03d}"
             inst_dir = out_root / folder_name
             inst_dir.mkdir(parents=True, exist_ok=True)
 
             # 1) Generate instance (writes data.json)
-            data = generate_ufl_instance(seed=seed, difficulty=diff, output_dir=inst_dir)
+            data = generate_ufl_instance(seed=seed, size=size, output_dir=inst_dir)
 
             # 2) Write prompt.txt
             prompt_text = render_prompt(data)
@@ -72,7 +72,7 @@ def generate_suite(
 
             meta = {
                 "seed": seed,
-                "difficulty": diff,
+                "size": size,
                 "m": data.get("m"),
                 "n": data.get("n"),
                 "ground_truth_objective": mono_obj,
@@ -92,4 +92,4 @@ def _make_serializable(res: dict) -> dict:
 
 
 if __name__ == "__main__":
-    generate_suite(difficulties=["easy", "medium", "hard"], num_instances=3, out_root="z_artifacts/benchmarks/ufl")
+    generate_suite(sizes=["small", "medium", "large"], num_instances=3, out_root="z_artifacts/benchmarks/bd/ufl")

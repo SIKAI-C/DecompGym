@@ -11,7 +11,7 @@ from src.utils.json_utils import save_json, serialize_iter_records
 
 
 def generate_suite(
-    difficulties: Iterable[str],
+    sizes: Iterable[str],
     num_instances: int,
     out_root: str | Path,
     *,
@@ -26,13 +26,13 @@ def generate_suite(
 
     metas: list[dict] = []
 
-    for diff in difficulties:
+    for size in sizes:
         for seed in range(seed_offset, seed_offset + num_instances):
-            folder_name = f"tsso_{diff}_seed{seed:03d}"
+            folder_name = f"tsso_{size}_seed{seed:03d}"
             inst_dir = out_root / folder_name
             inst_dir.mkdir(parents=True, exist_ok=True)
 
-            data = generate_tsso_instance(seed=seed, difficulty=diff, output_dir=inst_dir)
+            data = generate_tsso_instance(seed=seed, size=size, output_dir=inst_dir)
 
             prompt_text = render_prompt(data)
             (inst_dir / "prompt.txt").write_text(prompt_text)
@@ -56,7 +56,7 @@ def generate_suite(
 
             meta = {
                 "seed": seed,
-                "difficulty": diff,
+                "size": size,
                 "n_products": data.get("n_products"),
                 "n_periods": data.get("n_periods"),
                 "n_scenarios": data.get("n_scenarios"),
@@ -77,4 +77,4 @@ def _make_serializable(res: dict) -> dict:
 
 
 if __name__ == "__main__":
-    generate_suite(difficulties=["easy", "medium", "hard"], num_instances=3, out_root="z_artifacts/benchmarks/tsso")
+    generate_suite(["small", "medium", "large"], num_instances=3, out_root="z_artifacts/benchmarks/bd/tsso")

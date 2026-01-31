@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 
 INT_TOL = 1e-6
@@ -14,15 +14,11 @@ def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
         return None, f"{field} is not numeric"
     if abs(val - round(val)) > INT_TOL:
         return None, f"{field} is not an integer: {value}"
-    return int(round(val)), None
+    return round(val), None
 
 
 def _load_csp_data(data: dict[str, Any]) -> tuple[int, list[int], list[int]]:
-    if "roll_width" in data:
-        roll_width = int(data["roll_width"])
-    else:
-        roll_width = int(data["stock_size"])
-
+    roll_width = int(data.get("roll_width", data.get("stock_size")))
     items = sorted(data["item_types"], key=lambda it: it["id"])
     widths = [int(it.get("width", it.get("size"))) for it in items]
     demands = [int(it["demand"]) for it in items]

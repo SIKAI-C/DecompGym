@@ -11,10 +11,10 @@ import numpy as np
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-DIFFICULTY_CONFIG = {
-    "easy": {"m_range": (2, 3), "n_range": (3, 5)},
+SIZE_CONFIG = {
+    "small": {"m_range": (2, 3), "n_range": (3, 5)},
     "medium": {"m_range": (3, 4), "n_range": (4, 6)},
-    "hard": {"m_range": (4, 5), "n_range": (6, 8)},
+    "large": {"m_range": (4, 5), "n_range": (6, 8)},
 }
 
 
@@ -204,12 +204,12 @@ class FCTPGenerator(BaseInstanceGenerator[FCTPInstance]):
 
 def generate_fctp_instance(
     seed: int,
-    difficulty: str = "easy",
+    size: str = "small",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    if difficulty not in DIFFICULTY_CONFIG:
-        raise ValueError(f"Unknown difficulty '{difficulty}'. Expected one of {list(DIFFICULTY_CONFIG)}.")
-    cfg = DIFFICULTY_CONFIG[difficulty]
+    if size not in SIZE_CONFIG:
+        raise ValueError(f"Unknown size '{size}'. Expected one of {list(SIZE_CONFIG)}.")
+    cfg = SIZE_CONFIG[size]
     rng = np.random.default_rng(seed)
     m = int(rng.integers(cfg["m_range"][0], cfg["m_range"][1] + 1))
     n = int(rng.integers(cfg["n_range"][0], cfg["n_range"][1] + 1))

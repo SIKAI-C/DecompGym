@@ -14,8 +14,8 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 # Instance generation
 # -----------------------
 
-DIFFICULTY_CONFIG = {
-    "easy": {
+SIZE_CONFIG = {
+    "small": {
         "m_range": (5, 10),  # facilities
         "n_range": (15, 30),  # customers
     },
@@ -23,7 +23,7 @@ DIFFICULTY_CONFIG = {
         "m_range": (10, 20),
         "n_range": (30, 60),
     },
-    "hard": {
+    "large": {
         "m_range": (20, 40),
         "n_range": (60, 120),
     },
@@ -180,17 +180,17 @@ class UFLGenerator(BaseInstanceGenerator[UFLInstance]):
 
 def generate_ufl_instance(
     seed: int,
-    difficulty: str = "easy",
+    size: str = "small",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """
-    Sample (m, n) from difficulty-specific ranges, generate a UFL instance,
+    Sample (m, n) from size-specific ranges, generate a UFL instance,
     optionally write it to output_dir/data.json, and return the data dict.
     """
-    if difficulty not in DIFFICULTY_CONFIG:
-        raise ValueError(f"Unknown difficulty '{difficulty}'. Expected one of {list(DIFFICULTY_CONFIG)}.")
+    if size not in SIZE_CONFIG:
+        raise ValueError(f"Unknown size '{size}'. Expected one of {list(SIZE_CONFIG)}.")
 
-    cfg = DIFFICULTY_CONFIG[difficulty]
+    cfg = SIZE_CONFIG[size]
     rng = np.random.default_rng(seed)
 
     m = int(rng.integers(cfg["m_range"][0], cfg["m_range"][1] + 1))

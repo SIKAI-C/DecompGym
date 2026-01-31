@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 
 def _load_gap_data(data: dict[str, Any]) -> tuple[list[list[int]], list[list[float]], list[int]]:
@@ -51,10 +51,7 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
     assignments = solution.get("assignments")
     if assignments is None:
         patterns = solution.get("patterns", [])
-        if isinstance(patterns, list):
-            assignments = _assignments_from_patterns(patterns)
-        else:
-            assignments = None
+        assignments = _assignments_from_patterns(patterns) if isinstance(patterns, list) else None
 
     if not isinstance(assignments, list):
         return {"feasible": False, "objective_value": None, "message": "solution.assignments missing or not a list"}
