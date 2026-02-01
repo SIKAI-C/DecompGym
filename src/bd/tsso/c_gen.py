@@ -51,8 +51,6 @@ def generate_suite(
 
             if mono_obj is None or bd_obj is None:
                 continue
-            if abs(mono_obj - bd_obj) > tol:
-                continue
 
             meta = {
                 "seed": seed,

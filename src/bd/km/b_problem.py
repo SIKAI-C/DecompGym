@@ -29,19 +29,19 @@ Cost rows:
 {D}
 
 Task:
-Write solver.py that:
-  1) Loads data.json.
-  2) Solves the k-median formulation using Benders decomposition
-  3) Writes output.json with at least:
-     {{
-       "status": "optimal | feasible | infeasible | error",
-       "method": "benders_decomposition",
-       "objective_value": <float>,
-       "y": [0/1 list length m],
-       "x": [[assignment matrix m x n]]
-     }}
-
-Use gurobipy only, do not rely on external resources beyond data.json.
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {{
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition",
+      "objective_value": <float>,
+      "y": [0/1 list length m],
+      "x": [[assignment matrix m x n]]
+    }}
 """
 
 

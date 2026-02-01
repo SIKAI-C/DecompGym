@@ -27,10 +27,13 @@ Sample assignments:
 {sample_lines}
 
 Task:
-Write solver.py that loads data.json, solves the GAP, and writes output.json with at least:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the GAP,
+3) writes output.json with at least:
 {{
   "status": "optimal | feasible | infeasible | error",
-  "method": "<approach name>",
+  "method": "column_generation",
   "objective_value": <float>,
   "solution": {{
      "assignments": [{{"job_id": i, "machine_id": j}}, ...]

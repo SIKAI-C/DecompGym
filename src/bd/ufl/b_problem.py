@@ -26,11 +26,11 @@ decide which facilities to open and how to assign each customer so total open-pl
 All data are stored in a JSON file named data.json in the current directory.
 
 Task:
-Write a Python program solver.py that:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) Reads data.json from the current directory.
-2) Solves the UFL using Benders decomposition with gurobipy.
-3) Organizes the code in a class with clear functions for the master problem, subproblem, and the
-   generation of feasibility and optimality cuts (as applicable).
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
 4) Writes a JSON file output.json with at least:
    {{
      "status": "optimal | feasible | infeasible | error",
@@ -39,9 +39,6 @@ Write a Python program solver.py that:
      "y": [0/1 list of length m indicating open facilities],
      "x": [[0/1 matrix of shape (m, n) indicating assignments]]
    }}
-
-Assume you can use gurobipy. Do not require any command-line arguments or user input. Do not access
-the internet or external files other than data.json.
 """
 
 

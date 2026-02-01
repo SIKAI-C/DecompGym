@@ -1,5 +1,8 @@
 """
 Unified generator + validator for BD/CG benchmarks.
+
+python -m src.01_gen -s all -m both -vl simple # generate and validate all instances
+python -m src.01_gen -s all -m validate -vl simple # validate all instances
 """
 
 from __future__ import annotations

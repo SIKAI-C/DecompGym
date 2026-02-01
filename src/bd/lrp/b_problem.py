@@ -34,21 +34,19 @@ Example routes:
 {routes}
 
 Task:
-Write solver.py that:
-  1) Reads data.json.
-  2) Implements Benders decomposition with binary variables y[j] for depots and a theta variable capturing routing cost.
-     Subproblem: LP over route selection (lambda[r] >= 0) covering each customer exactly once and bounded by depot capacities.
-  3) Generates feasibility and optimality cuts until convergence.
-  4) Writes output.json containing at least:
-     {{
-       "status": "optimal | feasible | infeasible | error",
-       "method": "benders_decomposition",
-       "objective_value": <float>,
-       "y": [length m],
-       "lambda": [length R]  # final fractional/rounded routing plan
-     }}
-
-Use gurobipy only and keep the code self-contained.
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {{
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition",
+      "objective_value": <float>,
+      "y": [length m],
+      "lambda": [length R]  # final fractional/rounded routing plan
+    }}
 """
 
 

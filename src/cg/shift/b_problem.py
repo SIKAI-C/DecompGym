@@ -2,9 +2,10 @@
 Prompt renderer for shift scheduling (set covering) instances.
 """
 
-# ruff: noqa: I001
 from __future__ import annotations
+
 from typing import Any
+
 
 SIZE_FLAVOR = "an operation scheduling staff shifts to cover time-varying demand"
 
@@ -26,10 +27,13 @@ Sample demand (slot label : demand):
 {demand_lines}
 
 Task:
-Write solver.py that loads data.json, builds a shift-cover model, and writes output.json with at least:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the shift-cover problem,
+3) writes output.json with at least:
 {{
   "status": "optimal | feasible | infeasible | error",
-  "method": "<approach name>",
+  "method": "column_generation",
   "objective_value": <#shifts>,
   "solution": {{
      "shifts": [{{"start": <int>, "end": <int>, "usage": <int>}}, ...]  # end is inclusive index

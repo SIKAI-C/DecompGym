@@ -27,25 +27,25 @@ Examples from this instance:
 {item_lines}
 
 Task:
-Write solver.py that
-  1) loads data.json,
-  2) solves the bin-packing problem (you may use any exact method; a MIP with binaries is acceptable),
-  3) writes output.json with at least:
-     {{
-       "status": "optimal | feasible | infeasible | error",
-       "method": "<approach name>",
-       "objective_value": <#bins used as float>,
-       "solution": {{
-         "bins": [
-           {{
-             "usage": <int>,              # number of identical bins of this pattern
-             "contents": [{{"item_id": <int>, "count": <int>}}, ...]
-           }},
-           ...
-         ]
-       }}
-     }}
-    Each item id from data.json must appear exactly once across the bins (count=1 for single items).
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the bin-packing problem.
+3) writes output.json with at least:
+    {{
+      "status": "optimal | feasible | infeasible | error",
+      "method": "column_generation",
+      "objective_value": <#bins used as float>,
+      "solution": {{
+        "bins": [
+          {{
+            "usage": <int>,              # number of identical bins of this pattern
+            "contents": [{{"item_id": <int>, "count": <int>}}, ...]
+          }},
+          ...
+        ]
+      }}
+    }}
+  Each item id from data.json must appear exactly once across the bins (count=1 for single items).
 """
 
 

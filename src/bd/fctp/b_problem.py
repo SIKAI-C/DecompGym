@@ -34,21 +34,19 @@ Unit costs:
 {unit_cost}
 
 Task:
-Write solver.py that:
-  1) Loads data.json.
-  2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-     and the subproblem solves the linear transportation LP given a fixed y.
-  3) Generates feasibility cuts when the LP is infeasible and optimality cuts otherwise.
-  4) Writes output.json with at least:
-     {{
-       "status": "optimal | feasible | infeasible | error",
-       "method": "benders_decomposition",
-       "objective_value": <float>,
-       "y": [[...]],  # m x n
-       "x": [[...]]   # m x n representing the last transportation plan
-     }}
-
-Assume gurobipy is available. Do not depend on any files other than data.json.
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {{
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition", # or "monolithic"
+      "objective_value": <float>,
+      "y": [[...]],  # m x n
+      "x": [[...]]   # m x n representing the last subproblem solution
+    }}
 """
 
 

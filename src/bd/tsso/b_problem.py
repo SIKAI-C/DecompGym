@@ -51,22 +51,22 @@ Initial backlog B0:
 {B0}
 
 Task:
-Write solver.py that:
-  1) Loads data.json.
-  2) Solves the TSSO using Benders decomposition with gurobipy.
-  3) Writes output.json with at least:
-     {{
-       "status": "optimal | feasible | infeasible | error",
-       "method": "benders_decomposition",
-       "objective_value": <float>,
-       "y": [[...]],          # shape (n_products, n_periods)
-       "x_reg": [[[...]]],    # shape (n_products, n_periods, n_scenarios)
-       "x_ot": [[[...]]],     # shape (n_products, n_periods, n_scenarios)
-       "inv": [[[...]]],      # shape (n_products, n_periods, n_scenarios)
-       "back": [[[...]]]      # shape (n_products, n_periods, n_scenarios)
-     }}
-
-Use gurobipy, avoid external files other than data.json, and keep code self-contained.
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {{
+    "status": "optimal | feasible | infeasible | error",
+    "method": "benders_decomposition",
+    "objective_value": <float>,
+    "y": [[...]],          # shape (n_products, n_periods)
+    "x_reg": [[[...]]],    # shape (n_products, n_periods, n_scenarios)
+    "x_ot": [[[...]]],     # shape (n_products, n_periods, n_scenarios)
+    "inv": [[[...]]],      # shape (n_products, n_periods, n_scenarios)
+    "back": [[[...]]]      # shape (n_products, n_periods, n_scenarios)
+    }}
 """
 
 
