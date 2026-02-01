@@ -17,19 +17,38 @@ def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
     return round(val), None
 
 
-def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
-    try:
-        demand = [int(d) for d in data["demand"]]
-        L_min = int(data["shift_min_length"])
-        L_max = int(data["shift_max_length"])
-        shift_cost = float(data.get("shift_cost", 1.0))
-    except Exception as exc:
-        return {"feasible": False, "objective_value": None, "message": f"data load error: {exc}"}
+def _load_json_if_path(obj: Any) -> dict[str, Any]:
+    if isinstance(obj, (str, Path)):
+        return json.loads(Path(obj).read_text())
+    if isinstance(obj, dict):
+        return obj
+    raise TypeError("expected dict or path-like input")
 
-    solution = output.get("solution", {})
+
+def _result(ok: bool, message: str, objective_value: float | None = None) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "issues": [] if ok else [message],
+        "objective_value": objective_value,
+    }
+
+
+def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[str, Any]:
+    _ = tol
+    try:
+        data_dict = _load_json_if_path(data)
+        output_dict = _load_json_if_path(output)
+        demand = [int(d) for d in data_dict["demand"]]
+        L_min = int(data_dict["shift_min_length"])
+        L_max = int(data_dict["shift_max_length"])
+        shift_cost = float(data_dict.get("shift_cost", 1.0))
+    except Exception as exc:
+        return _result(False, f"data load error: {exc}")
+
+    solution = output_dict.get("solution", {})
     shifts = solution.get("shifts")
     if not isinstance(shifts, list):
-        return {"feasible": False, "objective_value": None, "message": "solution.shifts missing or not a list"}
+        return _result(False, "solution.shifts missing or not a list")
 
     T = len(demand)
     coverage = [0] * T
@@ -37,7 +56,7 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
 
     for idx, shift in enumerate(shifts):
         if not isinstance(shift, dict):
-            return {"feasible": False, "objective_value": None, "message": f"shift {idx} not a dict"}
+            return _result(False, f"shift {idx} not a dict")
 
         start = shift.get("start_slot", shift.get("start"))
         end = shift.get("end_slot", shift.get("end"))
@@ -45,25 +64,25 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
             start = int(start)
             end = int(end)
         except (TypeError, ValueError):
-            return {"feasible": False, "objective_value": None, "message": f"shift {idx} start/end not int"}
+            return _result(False, f"shift {idx} start/end not int")
 
         count_raw = shift.get("count", shift.get("usage", 1))
         count, err = _coerce_int(count_raw, f"shifts[{idx}].count")
         if err:
-            return {"feasible": False, "objective_value": None, "message": err}
+            return _result(False, err)
         if count < 0:
-            return {"feasible": False, "objective_value": None, "message": f"shift {idx} has negative count"}
+            return _result(False, f"shift {idx} has negative count")
         if count == 0:
             continue
 
         if start < 0 or end < 0 or start >= T or end >= T:
-            return {"feasible": False, "objective_value": None, "message": f"shift {idx} out of range"}
+            return _result(False, f"shift {idx} out of range")
         if end < start:
-            return {"feasible": False, "objective_value": None, "message": f"shift {idx} end before start"}
+            return _result(False, f"shift {idx} end before start")
 
         length = end - start + 1
         if length < L_min or length > L_max:
-            return {"feasible": False, "objective_value": None, "message": f"shift {idx} length outside bounds"}
+            return _result(False, f"shift {idx} length outside bounds")
 
         total_shifts += count
         for t in range(start, end + 1):
@@ -71,9 +90,9 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
 
     for t, need in enumerate(demand):
         if coverage[t] < need:
-            return {"feasible": False, "objective_value": None, "message": f"demand not met at slot {t}"}
+            return _result(False, f"demand not met at slot {t}")
 
-    return {"feasible": True, "objective_value": float(shift_cost * total_shifts), "message": "ok"}
+    return _result(True, "ok", float(shift_cost * total_shifts))
 
 
 def main() -> None:

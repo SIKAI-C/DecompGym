@@ -39,22 +39,41 @@ def _assignments_from_patterns(patterns: list[dict[str, Any]]) -> list[dict[str,
     return assignments
 
 
-def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+def _load_json_if_path(obj: Any) -> dict[str, Any]:
+    if isinstance(obj, (str, Path)):
+        return json.loads(Path(obj).read_text())
+    if isinstance(obj, dict):
+        return obj
+    raise TypeError("expected dict or path-like input")
+
+
+def _result(ok: bool, message: str, objective_value: float | None = None) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "issues": [] if ok else [message],
+        "objective_value": objective_value,
+    }
+
+
+def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[str, Any]:
+    _ = tol
     try:
-        a, c, b = _load_gap_data(data)
+        data_dict = _load_json_if_path(data)
+        output_dict = _load_json_if_path(output)
+        a, c, b = _load_gap_data(data_dict)
     except Exception as exc:
-        return {"feasible": False, "objective_value": None, "message": f"data load error: {exc}"}
+        return _result(False, f"data load error: {exc}")
 
     n_jobs = len(a)
     n_machines = len(b)
-    solution = output.get("solution", {})
+    solution = output_dict.get("solution", {})
     assignments = solution.get("assignments")
     if assignments is None:
         patterns = solution.get("patterns", [])
         assignments = _assignments_from_patterns(patterns) if isinstance(patterns, list) else None
 
     if not isinstance(assignments, list):
-        return {"feasible": False, "objective_value": None, "message": "solution.assignments missing or not a list"}
+        return _result(False, "solution.assignments missing or not a list")
 
     assigned = [-1] * n_jobs
     load = [0] * n_machines
@@ -62,21 +81,21 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
 
     for idx, assign in enumerate(assignments):
         if not isinstance(assign, dict):
-            return {"feasible": False, "objective_value": None, "message": f"assignment {idx} not a dict"}
+            return _result(False, f"assignment {idx} not a dict")
         job_id = assign.get("job_id")
         machine_id = assign.get("machine_id")
         try:
             job_id = int(job_id)
             machine_id = int(machine_id)
         except (TypeError, ValueError):
-            return {"feasible": False, "objective_value": None, "message": f"assignment {idx} ids not int"}
+            return _result(False, f"assignment {idx} ids not int")
 
         if job_id < 0 or job_id >= n_jobs:
-            return {"feasible": False, "objective_value": None, "message": f"job_id out of range: {job_id}"}
+            return _result(False, f"job_id out of range: {job_id}")
         if machine_id < 0 or machine_id >= n_machines:
-            return {"feasible": False, "objective_value": None, "message": f"machine_id out of range: {machine_id}"}
+            return _result(False, f"machine_id out of range: {machine_id}")
         if assigned[job_id] != -1:
-            return {"feasible": False, "objective_value": None, "message": f"job {job_id} assigned multiple times"}
+            return _result(False, f"job {job_id} assigned multiple times")
 
         assigned[job_id] = machine_id
         load[machine_id] += a[job_id][machine_id]
@@ -84,13 +103,13 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
 
     missing = [i for i, m in enumerate(assigned) if m == -1]
     if missing:
-        return {"feasible": False, "objective_value": None, "message": f"unassigned jobs: {missing}"}
+        return _result(False, f"unassigned jobs: {missing}")
 
     for j in range(n_machines):
         if load[j] > b[j]:
-            return {"feasible": False, "objective_value": None, "message": f"capacity exceeded on machine {j}"}
+            return _result(False, f"capacity exceeded on machine {j}")
 
-    return {"feasible": True, "objective_value": float(objective), "message": "ok"}
+    return _result(True, "ok", float(objective))
 
 
 def main() -> None:

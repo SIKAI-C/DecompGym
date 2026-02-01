@@ -188,30 +188,51 @@ def _verify_with_items(
     return True, "ok", float(total_usage)
 
 
-def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
-    try:
-        bp_data = _load_bp_data(data)
-    except Exception as exc:
-        return {"feasible": False, "objective_value": None, "message": f"data load error: {exc}"}
+def _load_json_if_path(obj: Any) -> dict[str, Any]:
+    if isinstance(obj, (str, Path)):
+        return json.loads(Path(obj).read_text())
+    if isinstance(obj, dict):
+        return obj
+    raise TypeError("expected dict or path-like input")
 
-    solution = output.get("solution", {})
+
+def _result(ok: bool, message: str, objective_value: float | None = None) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "issues": [] if ok else [message],
+        "objective_value": objective_value,
+    }
+
+
+def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[str, Any]:
+    _ = tol
+    try:
+        data_dict = _load_json_if_path(data)
+        output_dict = _load_json_if_path(output)
+        bp_data = _load_bp_data(data_dict)
+    except Exception as exc:
+        return _result(False, f"data load error: {exc}")
+
+    solution = output_dict.get("solution")
+    if solution is None:
+        return _result(False, "missing solution")
     bins, err = _parse_bins(solution)
     if err:
-        return {"feasible": False, "objective_value": None, "message": err}
+        return _result(False, err)
     if bins is None:
-        return {"feasible": False, "objective_value": None, "message": "no bins found"}
+        return _result(False, "no bins found")
 
     capacity = bp_data["capacity"]
     if bp_data["mode"] == "types":
         ok, msg, obj = _verify_with_types(bins, capacity, bp_data["sizes"], bp_data["demands"])
-        return {"feasible": ok, "objective_value": obj if ok else None, "message": msg}
+        return _result(ok, msg, obj if ok else None)
 
     ok, msg, obj = _verify_with_types(bins, capacity, bp_data["type_sizes"], bp_data["type_demands"])
     if ok:
-        return {"feasible": True, "objective_value": obj, "message": msg}
+        return _result(True, msg, obj)
 
     ok2, msg2, obj2 = _verify_with_items(bins, capacity, bp_data["sizes_by_id"])
-    return {"feasible": ok2, "objective_value": obj2 if ok2 else None, "message": msg2}
+    return _result(ok2, msg2, obj2 if ok2 else None)
 
 
 def main() -> None:

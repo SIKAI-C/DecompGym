@@ -25,16 +25,35 @@ def _load_csp_data(data: dict[str, Any]) -> tuple[int, list[int], list[int]]:
     return roll_width, widths, demands
 
 
-def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
-    try:
-        roll_width, widths, demands = _load_csp_data(data)
-    except Exception as exc:
-        return {"feasible": False, "objective_value": None, "message": f"data load error: {exc}"}
+def _load_json_if_path(obj: Any) -> dict[str, Any]:
+    if isinstance(obj, (str, Path)):
+        return json.loads(Path(obj).read_text())
+    if isinstance(obj, dict):
+        return obj
+    raise TypeError("expected dict or path-like input")
 
-    solution = output.get("solution", {})
+
+def _result(ok: bool, message: str, objective_value: float | None = None) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "issues": [] if ok else [message],
+        "objective_value": objective_value,
+    }
+
+
+def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[str, Any]:
+    _ = tol
+    try:
+        data_dict = _load_json_if_path(data)
+        output_dict = _load_json_if_path(output)
+        roll_width, widths, demands = _load_csp_data(data_dict)
+    except Exception as exc:
+        return _result(False, f"data load error: {exc}")
+
+    solution = output_dict.get("solution", {})
     patterns = solution.get("patterns")
     if not isinstance(patterns, list):
-        return {"feasible": False, "objective_value": None, "message": "solution.patterns missing or not a list"}
+        return _result(False, "solution.patterns missing or not a list")
 
     n_items = len(widths)
     totals = [0] * n_items
@@ -42,41 +61,41 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
 
     for idx, pattern in enumerate(patterns):
         if not isinstance(pattern, dict):
-            return {"feasible": False, "objective_value": None, "message": f"pattern {idx} is not a dict"}
+            return _result(False, f"pattern {idx} is not a dict")
 
         usage_raw = pattern.get("usage", 1)
         usage, err = _coerce_int(usage_raw, f"patterns[{idx}].usage")
         if err:
-            return {"feasible": False, "objective_value": None, "message": err}
+            return _result(False, err)
         if usage < 0:
-            return {"feasible": False, "objective_value": None, "message": f"patterns[{idx}].usage < 0"}
+            return _result(False, f"patterns[{idx}].usage < 0")
         if usage == 0:
             continue
 
         cuts = pattern.get("cuts", [])
         if not isinstance(cuts, list):
-            return {"feasible": False, "objective_value": None, "message": f"patterns[{idx}].cuts not a list"}
+            return _result(False, f"patterns[{idx}].cuts not a list")
 
         width_sum = 0
         for cut in cuts:
             if not isinstance(cut, dict):
-                return {"feasible": False, "objective_value": None, "message": f"patterns[{idx}].cuts entry not a dict"}
+                return _result(False, f"patterns[{idx}].cuts entry not a dict")
             item_id = cut.get("item_id")
             if item_id is None:
-                return {"feasible": False, "objective_value": None, "message": f"patterns[{idx}].cuts missing item_id"}
+                return _result(False, f"patterns[{idx}].cuts missing item_id")
             try:
                 item_id = int(item_id)
             except (TypeError, ValueError):
-                return {"feasible": False, "objective_value": None, "message": f"patterns[{idx}].cuts item_id not int"}
+                return _result(False, f"patterns[{idx}].cuts item_id not int")
             if item_id < 0 or item_id >= n_items:
-                return {"feasible": False, "objective_value": None, "message": f"item_id out of range: {item_id}"}
+                return _result(False, f"item_id out of range: {item_id}")
 
             count_raw = cut.get("count", 1)
             count, err = _coerce_int(count_raw, f"patterns[{idx}].cuts[{item_id}].count")
             if err:
-                return {"feasible": False, "objective_value": None, "message": err}
+                return _result(False, err)
             if count < 0:
-                return {"feasible": False, "objective_value": None, "message": f"negative cut count for item {item_id}"}
+                return _result(False, f"negative cut count for item {item_id}")
             if count == 0:
                 continue
 
@@ -84,15 +103,15 @@ def verify_solution(data: dict[str, Any], output: dict[str, Any]) -> dict[str, A
             totals[item_id] += usage * count
 
         if width_sum > roll_width + 1e-6:
-            return {"feasible": False, "objective_value": None, "message": f"pattern {idx} exceeds roll width"}
+            return _result(False, f"pattern {idx} exceeds roll width")
 
         total_usage += usage
 
     for i, demand in enumerate(demands):
         if totals[i] < demand:
-            return {"feasible": False, "objective_value": None, "message": f"demand not met for item {i}"}
+            return _result(False, f"demand not met for item {i}")
 
-    return {"feasible": True, "objective_value": float(total_usage), "message": "ok"}
+    return _result(True, "ok", float(total_usage))
 
 
 def main() -> None:
