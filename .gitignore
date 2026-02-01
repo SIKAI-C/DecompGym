@@ -2,6 +2,7 @@
 .vscode/*
 z_artifacts
 test*.py
+test*.md
 api_info.md
 
 # Byte-compiled / optimized / DLL files
