@@ -360,14 +360,15 @@ class ExperimentRunner:
         stream: bool,
         suite: str,
     ) -> dict[str, Any]:
-        dest_inst, attempt_dirs = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
+        dest_inst, attempts_root = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
         model = Model(model_name)
         gold_obj = OutputVerifier.load_gold_objective(dest_inst, suite=suite)
 
         results: list[AttemptResult] = []
         last_good: AttemptResult | None = None
         first_success_idx: int | None = None
-        for idx, a_dir in enumerate(attempt_dirs, start=1):
+        for idx in range(1, max_attempts + 1):
+            a_dir = attempts_root / f"attempt_{idx:02d}"
             if last_good and ExperimentRunner.can_early_stop(last_good, gap_threshold):
                 res = AttemptResult(
                     attempt=idx,
@@ -385,6 +386,7 @@ class ExperimentRunner:
                 )
             else:
                 prev_debug = ArtifactManager.collect_previous_debug(dest_inst / "attempts", idx) if idx > 1 else ""
+                ArtifactManager.ensure_dir(a_dir, exist_ok=True)
                 res = ExperimentRunner.run_attempt(
                     attempt_idx=idx,
                     attempt_dir=a_dir,

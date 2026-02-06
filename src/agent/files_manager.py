@@ -46,12 +46,11 @@ class ArtifactManager:
         return out_dir
 
     @staticmethod
-    def copy_instance(src: Path, dest_root: Path, max_attempts: int, suite: str) -> tuple[Path, list[Path]]:
+    def copy_instance(src: Path, dest_root: Path, max_attempts: int, suite: str) -> tuple[Path, Path]:
         dest = dest_root / src.name
         dest.mkdir(parents=True, exist_ok=False)
         attempts_root = dest / "attempts"
         attempts_root.mkdir(parents=True, exist_ok=True)
-        attempt_dirs: list[Path] = []
 
         base_files = ["data.json", "prompt.txt", "gold_monolithic.json", "meta.json"]
         for fname in base_files:
@@ -59,12 +58,7 @@ class ArtifactManager:
             dst_path = dest / fname
             if src_path.exists():
                 shutil.copy2(src_path, dst_path)
-
-        for idx in range(1, max_attempts + 1):
-            a_dir = attempts_root / f"attempt_{idx:02d}"
-            a_dir.mkdir(parents=True, exist_ok=True)
-            attempt_dirs.append(a_dir)
-        return dest, attempt_dirs
+        return dest, attempts_root
 
     @staticmethod
     def collect_previous_debug(attempts_root: Path, current_idx: int) -> str:
