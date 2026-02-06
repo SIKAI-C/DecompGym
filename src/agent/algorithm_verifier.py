@@ -9,7 +9,7 @@ from aider.io import InputOutput
 from aider.models import Model
 
 from pathlib import Path
-from src.agent.artifact_manager import ArtifactManager
+from src.agent.files_manager import ArtifactManager
 
 class AlgorithmVerifier:
     def run_llm_verifier(

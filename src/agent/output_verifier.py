@@ -14,7 +14,7 @@ class OutputVerifier:
 
     @staticmethod
     def import_verifier(suite: str, problem: str):
-        verifier_path = Path(__file__).resolve().parent / suite / problem / "d_verifier.py"
+        verifier_path = Path(__file__).resolve().parent.parent / suite / problem / "d_verifier.py"
         if not verifier_path.exists():
             return None, f"verifier not found at {verifier_path}"
 
