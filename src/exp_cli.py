@@ -5,11 +5,7 @@ CLI entrypoint for Experiment 2.
 from __future__ import annotations
 
 import argparse
-import json
-from pathlib import Path
-
-from src.agent.experiment_runner import ALL_PROBLEMS, SUITE_PROBLEMS, ExperimentRunner
-from src.agent.files_manager import ArtifactManager, InstanceManager
+from src.agent.experiment_runner import ExperimentRunner
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,46 +51,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    benchmark_root = Path(args.benchmark_root) / args.suite
-    if args.instance:
-        inst_path = Path(args.instance).resolve()
-        suite = InstanceManager.infer_suite_from_path(inst_path, SUITE_PROBLEMS)
-        problem = args.problem[0] if args.problem else InstanceManager.infer_problem_from_path(inst_path, ALL_PROBLEMS)
-        out_root = ArtifactManager.ensure_output_root(suite, problem, args.model, note=args.note)
-        summary = ExperimentRunner.run_instance(
-            inst_path,
-            out_root,
-            model_name=args.model,
-            max_attempts=args.max_attempts,
-            solver_timeout=args.solver_timeout,
-            tol=args.tol,
-            gap_threshold=args.gap_threshold,
-            auto_yes=args.auto_yes,
-            stream=args.stream,
-            suite=suite,
-        )
-        print(json.dumps(summary, indent=2))
-        return
-
-    if args.run_all or args.problem is None:
-        problems = [p for p in SUITE_PROBLEMS[args.suite] if (benchmark_root / p).exists()]
-    else:
-        problems = args.problem
-
-    summaries = ExperimentRunner.run_all_problems(
-        suite=args.suite,
+    runner = ExperimentRunner(
         model_name=args.model,
         note=args.note,
-        benchmark_root=benchmark_root,
-        problems=problems,
+        suite=args.suite,
+        problems=args.problem,
+        instance=args.instance,
+        benchmark_root=args.benchmark_root,
         max_attempts=args.max_attempts,
         solver_timeout=args.solver_timeout,
         tol=args.tol,
         gap_threshold=args.gap_threshold,
         auto_yes=args.auto_yes,
         stream=args.stream,
+        run_all=args.run_all,
     )
-    print(json.dumps(summaries, indent=2))
+    runner.run()
 
 
 if __name__ == "__main__":

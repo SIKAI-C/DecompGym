@@ -69,6 +69,88 @@ class AttemptResult:
 
 
 class ExperimentRunner:
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        note: str | None,
+        suite: str,
+        problems: Sequence[str] | None,
+        instance: str | None,
+        benchmark_root: str,
+        max_attempts: int,
+        solver_timeout: int,
+        tol: float,
+        gap_threshold: float,
+        auto_yes: bool,
+        stream: bool,
+        run_all: bool,
+    ) -> None:
+        self.model_name = model_name
+        self.note = note
+        self.suite = suite
+        self.problems = list(problems) if problems is not None else None
+        self.instance = instance
+        self.benchmark_root = benchmark_root
+        self.max_attempts = max_attempts
+        self.solver_timeout = solver_timeout
+        self.tol = tol
+        self.gap_threshold = gap_threshold
+        self.auto_yes = auto_yes
+        self.stream = stream
+        self.run_all = run_all
+
+    def run(self) -> None:
+        benchmark_root = Path(self.benchmark_root) / self.suite
+        if self.instance:
+            self._run_single_instance()
+            return
+
+        problems = self._select_problems(benchmark_root)
+
+        summaries = ExperimentRunner.run_all_problems(
+            suite=self.suite,
+            model_name=self.model_name,
+            note=self.note,
+            benchmark_root=benchmark_root,
+            problems=problems,
+            max_attempts=self.max_attempts,
+            solver_timeout=self.solver_timeout,
+            tol=self.tol,
+            gap_threshold=self.gap_threshold,
+            auto_yes=self.auto_yes,
+            stream=self.stream,
+        )
+        print(json.dumps(summaries, indent=2))
+
+    def _run_single_instance(self) -> None:
+        inst_path = Path(self.instance).resolve()
+        suite = InstanceManager.infer_suite_from_path(inst_path, SUITE_PROBLEMS)
+        problem = (
+            self.problems[0]
+            if self.problems
+            else InstanceManager.infer_problem_from_path(inst_path, ALL_PROBLEMS)
+        )
+        out_root = ArtifactManager.ensure_output_root(suite, problem, self.model_name, note=self.note)
+        summary = ExperimentRunner.run_instance(
+            instance_src=inst_path,
+            out_root=out_root,
+            model_name=self.model_name,
+            max_attempts=self.max_attempts,
+            solver_timeout=self.solver_timeout,
+            tol=self.tol,
+            gap_threshold=self.gap_threshold,
+            auto_yes=self.auto_yes,
+            stream=self.stream,
+            suite=suite,
+        )
+        print(json.dumps(summary, indent=2))
+
+    def _select_problems(self, benchmark_root: Path) -> list[str]:
+        if self.run_all or self.problems is None:
+            return [p for p in SUITE_PROBLEMS[self.suite] if (benchmark_root / p).exists()]
+        return self.problems
+
     @staticmethod
     def run_solver(attempt_dir: Path, timeout: int) -> tuple[bool, str, str, dict[str, Any] | None]:
         attempt_dir = attempt_dir.resolve()
