@@ -58,3 +58,15 @@ class PromptBuilder:
         if location_note in base_prompt:
             return base_prompt
         return base_prompt.rstrip() + "\n\n" + location_note
+
+    @staticmethod
+    def ensure_lazy_prompt(base_prompt: str, suite: str, enable_lazy: bool) -> str:
+        """
+        Optionally add lazy-constraint guidance to the prompt (BD only).
+        """
+        if not enable_lazy or suite != "bd":
+            return base_prompt
+        lazy_note = "In the implementation of the benders decomposition, please use the the gurobi's lazy constraints.\n\n"
+        if lazy_note in base_prompt:
+            return base_prompt
+        return base_prompt.rstrip() + "\n\n" + lazy_note

@@ -44,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auto-yes", "-ay", action="store_true", default=True, help="Auto-confirm for aider.")
     parser.add_argument("--stream", "-st", action="store_true", help="Stream aider output.")
     parser.add_argument("--reflection", "-rfl", action="store_true", help="Enable reflection workflow.")
+    parser.add_argument("--lazy", "-lz", action="store_true", help="Enable lazy-constraint guidance for BD.")
     parser.add_argument(
         "--run-all", "-ra", action="store_true", help="Run all available problems under benchmark root."
     )
@@ -66,6 +67,7 @@ def main() -> None:
         auto_yes=args.auto_yes,
         stream=args.stream,
         reflection=args.reflection,
+        lazy=args.lazy,
         run_all=args.run_all,
     )
     runner.run()

@@ -18,20 +18,31 @@ class AlgorithmVerifier:
         auto_yes: bool,
         stream: bool,
         suite: str,
+        lazy: bool,
     ) -> tuple[str | None, str]:
         instance_root = attempt_dir.parent.parent
         verifier_md = ArtifactManager.write_text(attempt_dir, "alg_verifier.md", "")
         solver_path = attempt_dir / "solver.py"
         data_path = instance_root / "data.json"
         prompt_path = instance_root / "prompt.txt"
-        prompt = (
-            "You are the LLM verifier. Inspect solver.py and judge whether it actually implements "
-            f"{'Benders Decomposition' if suite == 'bd' else 'Column Generation'} rather than solving a trivial monolithic MIP.\n"
-            "Return a short decision in alg_verifier.md.\n\n"
-            "Format:\n"
-            "VERDICT: PASS or FAIL\n"
-            "NOTES: <1-3 bullet points>\n"
-        )
+        if suite == "bd" and lazy:
+            prompt = (
+                "You are the LLM verifier. Inspect solver.py and judge whether it actually implements "
+                "Benders Decomposition using Gurobi lazy constraints rather than solving a monolithic MIP or a non-lazy approach.\n"
+                "Return a short decision in alg_verifier.md.\n\n"
+                "Format:\n"
+                "VERDICT: PASS or FAIL\n"
+                "NOTES: <1-3 bullet points>\n"
+            )
+        else:
+            prompt = (
+                "You are the LLM verifier. Inspect solver.py and judge whether it actually implements "
+                f"{'Benders Decomposition' if suite == 'bd' else 'Column Generation'} rather than solving a trivial monolithic MIP.\n"
+                "Return a short decision in alg_verifier.md.\n\n"
+                "Format:\n"
+                "VERDICT: PASS or FAIL\n"
+                "NOTES: <1-3 bullet points>\n"
+            )
         coder = Coder.create(
             main_model=model,
             fnames=[str(verifier_md)],

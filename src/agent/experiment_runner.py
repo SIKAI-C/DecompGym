@@ -85,6 +85,7 @@ class ExperimentRunner:
         auto_yes: bool,
         stream: bool,
         reflection: bool,
+        lazy: bool,
         run_all: bool,
     ) -> None:
         self.model_name = model_name
@@ -100,6 +101,7 @@ class ExperimentRunner:
         self.auto_yes = auto_yes
         self.stream = stream
         self.reflection = reflection
+        self.lazy = lazy
         self.run_all = run_all
 
     def run(self) -> None:
@@ -123,6 +125,7 @@ class ExperimentRunner:
             auto_yes=self.auto_yes,
             stream=self.stream,
             reflection=self.reflection,
+            lazy=self.lazy,
         )
         print(json.dumps(summaries, indent=2))
 
@@ -147,6 +150,7 @@ class ExperimentRunner:
             stream=self.stream,
             suite=suite,
             reflection=self.reflection,
+            lazy=self.lazy,
         )
         print(json.dumps(summary, indent=2))
 
@@ -208,6 +212,7 @@ class ExperimentRunner:
         gold_obj: float | None,
         suite: str,
         reflection: bool,
+        lazy: bool,
     ) -> AttemptResult:
         # print(f"Running attempt {attempt_idx} in {attempt_dir}")
         # print(f"Previous debug: {prev_debug}")
@@ -218,6 +223,7 @@ class ExperimentRunner:
         prompt_path = instance_root / "prompt.txt"
         base_prompt = prompt_path.read_text()
         base_prompt = PromptBuilder.ensure_location_prompt(base_prompt)
+        base_prompt = PromptBuilder.ensure_lazy_prompt(base_prompt, suite, lazy)
         ArtifactManager.write_text(instance_root, "prompt.txt", base_prompt)
         prompt_for_agent = base_prompt if not prev_debug else PromptBuilder.build_prev_debug_prompt(base_prompt, prev_debug)
 
@@ -269,6 +275,7 @@ class ExperimentRunner:
             auto_yes=auto_yes,
             stream=stream,
             suite=suite,
+            lazy=lazy,
         )
         if llm_verdict is None or llm_verdict != "pass":
             verify_ok = False
@@ -370,6 +377,7 @@ class ExperimentRunner:
         stream: bool,
         suite: str,
         reflection: bool,
+        lazy: bool,
     ) -> dict[str, Any]:
         dest_inst, attempts_root = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
         model = Model(model_name)
@@ -415,6 +423,7 @@ class ExperimentRunner:
                     gold_obj=gold_obj,
                     suite=suite,
                     reflection=reflection,
+                    lazy=lazy,
                 )
                 if res.exec_ok and res.verify_ok:
                     if first_success_idx is None:
@@ -449,6 +458,7 @@ class ExperimentRunner:
         auto_yes: bool,
         stream: bool,
         reflection: bool,
+        lazy: bool,
     ) -> dict[str, Any]:
         inst_root = benchmark_root / problem
         instances = InstanceManager.find_instances(inst_root)
@@ -471,6 +481,7 @@ class ExperimentRunner:
                     stream=stream,
                     suite=suite,
                     reflection=reflection,
+                    lazy=lazy,
                 )
             )
 
@@ -498,6 +509,7 @@ class ExperimentRunner:
         auto_yes: bool,
         stream: bool,
         reflection: bool,
+        lazy: bool,
     ) -> list[dict[str, Any]]:
         all_summaries: list[dict[str, Any]] = []
         for prob in problems:
@@ -517,6 +529,7 @@ class ExperimentRunner:
                     auto_yes=auto_yes,
                     stream=stream,
                     reflection=reflection,
+                    lazy=lazy,
                 )
             )
         return all_summaries
