@@ -11,7 +11,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 from typing import Any
@@ -20,8 +19,8 @@ from aider.coders import Coder
 from aider.io import InputOutput
 from aider.models import Model
 
+from src.agent.artifact_manager import ArtifactManager
 from src.utils.json_utils import safe_load_json
-from src.utils.time_utils import get_current_time
 
 
 # Supported problem folders under benchmark root and outputs.
@@ -131,39 +130,6 @@ def infer_suite_from_path(path: Path) -> str:
     raise ValueError(f"Could not infer suite from path {path}")
 
 
-def ensure_output_root(suite: str, problem: str, model_name: str, note: str | None = None) -> Path:
-    model_safe = model_name.replace("/", "_").replace(":", "_")
-    timestamp = get_current_time()
-    if note:
-        note_safe = note.replace(" ", "_")
-        out_dir = Path("z_artifacts") / "output" / "exp2" / suite / problem / model_safe / note_safe / timestamp
-    else:
-        out_dir = Path("z_artifacts") / "output" / "exp2" / suite / problem / model_safe / timestamp
-    out_dir.mkdir(parents=True, exist_ok=False)
-    return out_dir
-
-
-def copy_instance(src: Path, dest_root: Path, max_attempts: int, suite: str) -> tuple[Path, list[Path]]:
-    dest = dest_root / src.name
-    dest.mkdir(parents=True, exist_ok=False)
-    attempts_root = dest / "attempts"
-    attempts_root.mkdir(parents=True, exist_ok=True)
-    attempt_dirs: list[Path] = []
-
-    base_files = ["data.json", "prompt.txt", "gold_monolithic.json", "meta.json"]
-    for fname in base_files:
-        src_path = src / fname
-        dst_path = dest / fname
-        if src_path.exists():
-            shutil.copy2(src_path, dst_path)
-
-    for idx in range(1, max_attempts + 1):
-        a_dir = attempts_root / f"attempt_{idx:02d}"
-        a_dir.mkdir(parents=True, exist_ok=True)
-        attempt_dirs.append(a_dir)
-    return dest, attempt_dirs
-
-
 def load_gold_objective(inst_dir: Path, suite: str) -> float | None:
     meta_path = inst_dir / "meta.json"
     if meta_path.exists():
@@ -240,8 +206,7 @@ def run_llm_verifier(
     suite: str,
 ) -> tuple[str | None, str]:
     instance_root = attempt_dir.parent.parent
-    verifier_md = attempt_dir / "alg_verifier.md"
-    verifier_md.write_text("")
+    verifier_md = ArtifactManager.write_text(attempt_dir, "alg_verifier.md", "")
     solver_path = attempt_dir / "solver.py"
     data_path = instance_root / "data.json"
     prompt_path = instance_root / "prompt.txt"
@@ -326,13 +291,12 @@ def run_attempt(
     )
     if location_note not in base_prompt:
         base_prompt = base_prompt.rstrip() + "\n\n" + location_note
-        prompt_path.write_text(base_prompt)
+        ArtifactManager.write_text(instance_root, "prompt.txt", base_prompt)
     prompt_for_agent = base_prompt if not prev_debug else build_prev_debug_prompt(base_prompt, prev_debug)
 
     # First, let the agent edit solver.py using prior reflections (if any).
-    attempt_dir.mkdir(parents=True, exist_ok=True)
-    solver_path = attempt_dir / "solver.py"
-    solver_path.write_text("")
+    ArtifactManager.ensure_dir(attempt_dir, exist_ok=True)
+    solver_path = ArtifactManager.write_text(attempt_dir, "solver.py", "")
     fnames = [str(solver_path)]
     attempts_root = attempt_dir.parent
     prev_ro = collect_previous_attempt_files(attempts_root, attempt_idx)
@@ -399,7 +363,7 @@ def run_attempt(
     exec_lines.append("")
     exec_lines.append("=== LLM VERIFIER ===")
     exec_lines.append(llm_notes or "No verifier output.")
-    exec_log.write_text("\n".join(exec_lines))
+    ArtifactManager.write_text(attempt_dir, "exec.log", "\n".join(exec_lines))
 
     gap = None
     if objective is not None and gold_obj is not None:
@@ -417,7 +381,7 @@ def run_attempt(
         status = "ok"
     debug_md = attempt_dir / "debug.md"
     if status != "ok":
-        debug_md.write_text("")  # placeholder; aider will fill reflection
+        ArtifactManager.write_text(attempt_dir, "debug.md", "")  # placeholder; aider will fill reflection
         # Ask aider to update debug.md based on exec.log and current solver (read-only)
         gap_info = f"Gap to gold: {gap}" if gap is not None else None
         reflection_prompt = build_reflection_prompt(base_prompt, gap_info=gap_info)
@@ -438,10 +402,12 @@ def run_attempt(
         )
         reflection_coder.run(reflection_prompt)
     else:
-        debug_md.write_text("Passed verification.")
+        ArtifactManager.write_text(attempt_dir, "debug.md", "Passed verification.")
 
     summary_path = attempt_dir / "summary.json"
-    summary_path.write_text(
+    ArtifactManager.write_text(
+        attempt_dir,
+        "summary.json",
         json.dumps(
             AttemptResult(
                 attempt=attempt_idx,
@@ -523,7 +489,7 @@ def run_instance(
     stream: bool,
     suite: str,
 ) -> dict[str, Any]:
-    dest_inst, attempt_dirs = copy_instance(instance_src, out_root, max_attempts, suite=suite)
+    dest_inst, attempt_dirs = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
     model = Model(model_name)
     gold_obj = load_gold_objective(dest_inst, suite=suite)
 
@@ -577,7 +543,7 @@ def run_instance(
         "gold_objective": gold_obj,
         "attempts": [r.to_dict() for r in results],
     }
-    (dest_inst / "instance_summary.json").write_text(json.dumps(inst_summary, indent=2))
+    ArtifactManager.write_text(dest_inst, "instance_summary.json", json.dumps(inst_summary, indent=2))
     return inst_summary
 
 
@@ -598,7 +564,7 @@ def run_problem(
     instances = find_instances(inst_root)
     if not instances:
         raise RuntimeError(f"No instances found under {inst_root}")
-    out_root = ensure_output_root(suite, problem, model_name, note=note)
+    out_root = ArtifactManager.ensure_output_root(suite, problem, model_name, note=note)
 
     summaries: list[dict[str, Any]] = []
     for inst in instances:
@@ -624,7 +590,7 @@ def run_problem(
         "num_instances": len(summaries),
         "instances": summaries,
     }
-    (out_root / "problem_summary.json").write_text(json.dumps(problem_summary, indent=2))
+    ArtifactManager.write_text(out_root, "problem_summary.json", json.dumps(problem_summary, indent=2))
     return problem_summary
 
 
@@ -711,7 +677,7 @@ def main() -> None:
         inst_path = Path(args.instance).resolve()
         suite = infer_suite_from_path(inst_path)
         problem = args.problem[0] if args.problem else infer_problem_from_path(inst_path)
-        out_root = ensure_output_root(suite, problem, args.model, note=args.note)
+        out_root = ArtifactManager.ensure_output_root(suite, problem, args.model, note=args.note)
         summary = run_instance(
             inst_path,
             out_root,
