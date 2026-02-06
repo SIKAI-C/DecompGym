@@ -20,6 +20,7 @@ from aider.io import InputOutput
 from aider.models import Model
 
 from src.agent.artifact_manager import ArtifactManager
+from src.agent.prompt_builder import PromptBuilder
 from src.utils.json_utils import safe_load_json
 
 
@@ -65,45 +66,6 @@ class AttemptResult:
             "stdout": self.stdout,
             "stderr": self.stderr,
         }
-
-
-def build_reflection_prompt(base_prompt: str, gap_info: str | None = None) -> str:
-    """
-    Construct the follow-up prompt for aider after a failed attempt.
-    The agent should read solver.py and exec.log (read-only), diagnose the failure,
-    and write guidance for the next attempt into debug.md. Do not edit solver.py in this step.
-    """
-    gap_text = gap_info if gap_info is not None else "unknown"
-    debug_context = [
-        "You are making an attempt to solve the following problem.",
-        base_prompt,
-        "",
-        "You have generated the solver.py file based on the problem description and the data.json file.",
-        "And the exec.log file shows the output of the solver.py file.",
-        "You also have alg_verifier.md with an LLM-based algorithm check; use it to improve the reflection.",
-        f"The current objective gap to the optimal solution is: {gap_text}",
-        "Your tasks:",
-        "1) Read exec.log and solver.py to understand why the current attempt failed to execute or failed to find the optimal solution.\
-            you need to reasoning the current solver.py and exec.log.",
-        "2) Write a concise reflection to debug.md: what likely went wrong and what the next attempt should change",
-        "3) Provide concrete tips for the following attempts, based on the reflection and write into the debug.md file.",
-    ]
-    return "\n".join(debug_context)
-
-
-def build_prev_debug_prompt(base_prompt: str, prior_notes: str) -> str:
-    """
-    Prompt used before generating a new solver attempt, surfacing lessons from previous failures.
-    """
-    context = [
-        base_prompt,
-        "",
-        "You have prior failed attempts with reflections (and you can read their solver.py, debug.md, summary.json):",
-        prior_notes or "(no prior reflections)",
-        "",
-        "Incorporate the lessons above to avoid repeating mistakes. Use the prior files as read-only context.",
-    ]
-    return "\n".join(context)
 
 
 def find_instances(root: Path) -> list[Path]:
@@ -284,15 +246,9 @@ def run_attempt(
     data_path = instance_root / "data.json"
     prompt_path = instance_root / "prompt.txt"
     base_prompt = prompt_path.read_text()
-    location_note = (
-        "IMPORTANT: data.json and prompt.txt are located two levels up (../../). "
-        "Read data from ../../data.json and ../../prompt.txt, and write output.json in the current folder. "
-        "Do NOT read from ../data.json or attempts/data.json.\n\n"
-    )
-    if location_note not in base_prompt:
-        base_prompt = base_prompt.rstrip() + "\n\n" + location_note
-        ArtifactManager.write_text(instance_root, "prompt.txt", base_prompt)
-    prompt_for_agent = base_prompt if not prev_debug else build_prev_debug_prompt(base_prompt, prev_debug)
+    base_prompt = PromptBuilder.ensure_location_prompt(base_prompt)
+    ArtifactManager.write_text(instance_root, "prompt.txt", base_prompt)
+    prompt_for_agent = base_prompt if not prev_debug else PromptBuilder.build_prev_debug_prompt(base_prompt, prev_debug)
 
     # First, let the agent edit solver.py using prior reflections (if any).
     ArtifactManager.ensure_dir(attempt_dir, exist_ok=True)
@@ -384,7 +340,7 @@ def run_attempt(
         ArtifactManager.write_text(attempt_dir, "debug.md", "")  # placeholder; aider will fill reflection
         # Ask aider to update debug.md based on exec.log and current solver (read-only)
         gap_info = f"Gap to gold: {gap}" if gap is not None else None
-        reflection_prompt = build_reflection_prompt(base_prompt, gap_info=gap_info)
+        reflection_prompt = PromptBuilder.build_reflection_prompt(base_prompt, gap_info=gap_info)
         reflection_coder = Coder.create(
             main_model=model,
             fnames=[str(debug_md)],
