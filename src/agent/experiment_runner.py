@@ -84,6 +84,7 @@ class ExperimentRunner:
         gap_threshold: float,
         auto_yes: bool,
         stream: bool,
+        reflection: bool,
         run_all: bool,
     ) -> None:
         self.model_name = model_name
@@ -98,6 +99,7 @@ class ExperimentRunner:
         self.gap_threshold = gap_threshold
         self.auto_yes = auto_yes
         self.stream = stream
+        self.reflection = reflection
         self.run_all = run_all
 
     def run(self) -> None:
@@ -120,6 +122,7 @@ class ExperimentRunner:
             gap_threshold=self.gap_threshold,
             auto_yes=self.auto_yes,
             stream=self.stream,
+            reflection=self.reflection,
         )
         print(json.dumps(summaries, indent=2))
 
@@ -143,6 +146,7 @@ class ExperimentRunner:
             auto_yes=self.auto_yes,
             stream=self.stream,
             suite=suite,
+            reflection=self.reflection,
         )
         print(json.dumps(summary, indent=2))
 
@@ -203,6 +207,7 @@ class ExperimentRunner:
         prev_debug: str,
         gold_obj: float | None,
         suite: str,
+        reflection: bool,
     ) -> AttemptResult:
         # print(f"Running attempt {attempt_idx} in {attempt_dir}")
         # print(f"Previous debug: {prev_debug}")
@@ -221,7 +226,11 @@ class ExperimentRunner:
         solver_path = ArtifactManager.write_text(attempt_dir, "solver.py", "")
         fnames = [str(solver_path)]
         attempts_root = attempt_dir.parent
-        prev_ro = ArtifactManager.collect_previous_attempt_files(attempts_root, attempt_idx)
+        prev_ro = (
+            ArtifactManager.collect_previous_attempt_files(attempts_root, attempt_idx)
+            if reflection
+            else []
+        )
         ro_files = [str(data_path.resolve()), str(prompt_path.resolve()), *prev_ro]
         coder = Coder.create(
             main_model=model,
@@ -276,30 +285,31 @@ class ExperimentRunner:
             gap_threshold=gap_threshold,
         )
         
-        debug_md = attempt_dir / "debug.md"
-        if status != "ok":
-            ArtifactManager.write_text(attempt_dir, "debug.md", "")  # placeholder; aider will fill reflection
-            # Ask aider to update debug.md based on exec.log and current solver (read-only)
-            gap_info = f"Gap to gold: {gap}" if gap is not None else None
-            reflection_prompt = PromptBuilder.build_reflection_prompt(base_prompt, gap_info=gap_info)
-            reflection_coder = Coder.create(
-                main_model=model,
-                fnames=[str(debug_md)],
-                read_only_fnames=[
-                    str(solver_path.resolve()),
-                    str(prompt_path.resolve()),
-                    str(exec_log.resolve()),
-                    str((attempt_dir / "alg_verifier.md").resolve()),
-                    str((attempt_dir / "output.json").resolve()),
-                ],
-                io=InputOutput(yes=auto_yes),
-                stream=stream,
-                use_git=False,
-                edit_format="diff",
-            )
-            reflection_coder.run(reflection_prompt)
-        else:
-            ArtifactManager.write_text(attempt_dir, "debug.md", "Passed verification.")
+        if reflection:
+            debug_md = attempt_dir / "debug.md"
+            if status != "ok":
+                ArtifactManager.write_text(attempt_dir, "debug.md", "")  # placeholder; aider will fill reflection
+                # Ask aider to update debug.md based on exec.log and current solver (read-only)
+                gap_info = f"Gap to gold: {gap}" if gap is not None else None
+                reflection_prompt = PromptBuilder.build_reflection_prompt(base_prompt, gap_info=gap_info)
+                reflection_coder = Coder.create(
+                    main_model=model,
+                    fnames=[str(debug_md)],
+                    read_only_fnames=[
+                        str(solver_path.resolve()),
+                        str(prompt_path.resolve()),
+                        str(exec_log.resolve()),
+                        str((attempt_dir / "alg_verifier.md").resolve()),
+                        str((attempt_dir / "output.json").resolve()),
+                    ],
+                    io=InputOutput(yes=auto_yes),
+                    stream=stream,
+                    use_git=False,
+                    edit_format="diff",
+                )
+                reflection_coder.run(reflection_prompt)
+            else:
+                ArtifactManager.write_text(attempt_dir, "debug.md", "Passed verification.")
 
         summary_path = attempt_dir / "summary.json"
         ArtifactManager.write_text(
@@ -359,6 +369,7 @@ class ExperimentRunner:
         auto_yes: bool,
         stream: bool,
         suite: str,
+        reflection: bool,
     ) -> dict[str, Any]:
         dest_inst, attempts_root = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
         model = Model(model_name)
@@ -385,7 +396,11 @@ class ExperimentRunner:
                     stderr=None,
                 )
             else:
-                prev_debug = ArtifactManager.collect_previous_debug(dest_inst / "attempts", idx) if idx > 1 else ""
+                prev_debug = (
+                    ArtifactManager.collect_previous_debug(dest_inst / "attempts", idx)
+                    if (idx > 1 and reflection)
+                    else ""
+                )
                 ArtifactManager.ensure_dir(a_dir, exist_ok=True)
                 res = ExperimentRunner.run_attempt(
                     attempt_idx=idx,
@@ -399,6 +414,7 @@ class ExperimentRunner:
                     prev_debug=prev_debug,
                     gold_obj=gold_obj,
                     suite=suite,
+                    reflection=reflection,
                 )
                 if res.exec_ok and res.verify_ok:
                     if first_success_idx is None:
@@ -432,6 +448,7 @@ class ExperimentRunner:
         gap_threshold: float,
         auto_yes: bool,
         stream: bool,
+        reflection: bool,
     ) -> dict[str, Any]:
         inst_root = benchmark_root / problem
         instances = InstanceManager.find_instances(inst_root)
@@ -453,6 +470,7 @@ class ExperimentRunner:
                     auto_yes=auto_yes,
                     stream=stream,
                     suite=suite,
+                    reflection=reflection,
                 )
             )
 
@@ -479,6 +497,7 @@ class ExperimentRunner:
         gap_threshold: float,
         auto_yes: bool,
         stream: bool,
+        reflection: bool,
     ) -> list[dict[str, Any]]:
         all_summaries: list[dict[str, Any]] = []
         for prob in problems:
@@ -497,6 +516,7 @@ class ExperimentRunner:
                     gap_threshold=gap_threshold,
                     auto_yes=auto_yes,
                     stream=stream,
+                    reflection=reflection,
                 )
             )
         return all_summaries
