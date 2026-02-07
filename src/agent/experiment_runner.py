@@ -69,6 +69,7 @@ class AttemptResult:
 
 
 class ExperimentRunner:
+    """Orchestrate experiments across attempts, instances, and problems."""
     def __init__(
         self,
         *,
@@ -88,6 +89,7 @@ class ExperimentRunner:
         lazy: bool,
         run_all: bool,
     ) -> None:
+        """Initialize runner with CLI-provided configuration."""
         self.model_name = model_name
         self.note = note
         self.suite = suite
@@ -105,6 +107,7 @@ class ExperimentRunner:
         self.run_all = run_all
 
     def run(self) -> None:
+        """Execute a run based on instance/suite/problem configuration."""
         benchmark_root = Path(self.benchmark_root) / self.suite
         if self.instance:
             self._run_single_instance()
@@ -130,6 +133,7 @@ class ExperimentRunner:
         print(json.dumps(summaries, indent=2))
 
     def _run_single_instance(self) -> None:
+        """Run a single instance selected via --instance."""
         inst_path = Path(self.instance).resolve()
         suite = InstanceManager.infer_suite_from_path(inst_path, SUITE_PROBLEMS)
         problem = (
@@ -155,12 +159,14 @@ class ExperimentRunner:
         print(json.dumps(summary, indent=2))
 
     def _select_problems(self, benchmark_root: Path) -> list[str]:
+        """Select problems based on run_all flag and availability."""
         if self.run_all or self.problems is None:
             return [p for p in SUITE_PROBLEMS[self.suite] if (benchmark_root / p).exists()]
         return self.problems
 
     @staticmethod
     def run_solver(attempt_dir: Path, timeout: int) -> tuple[bool, str, str, dict[str, Any] | None]:
+        """Execute solver.py in the attempt directory and parse output.json."""
         attempt_dir = attempt_dir.resolve()
         solver_path = attempt_dir / "solver.py"
         # Guard against missing/empty solver.py
@@ -215,6 +221,7 @@ class ExperimentRunner:
         reflection: bool,
         lazy: bool,
     ) -> AttemptResult:
+        """Run a single attempt and return the attempt summary."""
         # print(f"Running attempt {attempt_idx} in {attempt_dir}")
         # print(f"Previous debug: {prev_debug}")
         # print(f"Gold objective: {gold_obj}")
@@ -366,6 +373,7 @@ class ExperimentRunner:
 
     @staticmethod
     def can_early_stop(res: AttemptResult, gap_threshold: float) -> bool:
+        """Check whether attempts can early-stop based on latest result."""
         if not (res.exec_ok and res.verify_ok):
             return False
         if res.gap_to_gold is None:
@@ -387,6 +395,7 @@ class ExperimentRunner:
         reflection: bool,
         lazy: bool,
     ) -> dict[str, Any]:
+        """Run all attempts for a single instance and return its summary."""
         dest_inst, attempts_root = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
         model = Model(model_name)
         gold_obj = OutputVerifier.load_gold_objective(dest_inst, suite=suite)
@@ -462,6 +471,7 @@ class ExperimentRunner:
         reflection: bool,
         lazy: bool,
     ) -> dict[str, Any]:
+        """Run all instances for one problem and return the problem summary."""
         inst_root = benchmark_root / problem
         instances = InstanceManager.find_instances(inst_root)
         if not instances:
@@ -513,6 +523,7 @@ class ExperimentRunner:
         reflection: bool,
         lazy: bool,
     ) -> list[dict[str, Any]]:
+        """Run all requested problems and return their summaries."""
         all_summaries: list[dict[str, Any]] = []
         for prob in problems:
             if not (benchmark_root / prob).exists():

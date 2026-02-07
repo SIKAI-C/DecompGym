@@ -6,6 +6,7 @@ from __future__ import annotations
 
 
 class PromptBuilder:
+    """Build prompts for agent generation and reflection workflows."""
     @staticmethod
     def build_reflection_prompt(base_prompt: str, gap_info: str | None = None) -> str:
         """

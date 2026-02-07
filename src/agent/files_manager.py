@@ -35,6 +35,7 @@ class ArtifactManager:
 
     @staticmethod
     def ensure_output_root(suite: str, problem: str, model_name: str, note: str | None = None) -> Path:
+        """Create and return a unique output root directory."""
         model_safe = model_name.replace("/", "_").replace(":", "_")
         timestamp = get_current_time()
         if note:
@@ -47,6 +48,7 @@ class ArtifactManager:
 
     @staticmethod
     def copy_instance(src: Path, dest_root: Path, max_attempts: int, suite: str) -> tuple[Path, Path]:
+        """Copy instance files into a new output directory and create attempts root."""
         dest = dest_root / src.name
         dest.mkdir(parents=True, exist_ok=False)
         attempts_root = dest / "attempts"
@@ -62,6 +64,7 @@ class ArtifactManager:
 
     @staticmethod
     def collect_previous_debug(attempts_root: Path, current_idx: int) -> str:
+        """Aggregate prior debug.md contents up to current_idx."""
         pieces: list[str] = []
         for idx in range(1, current_idx):
             dbg = attempts_root / f"attempt_{idx:02d}" / "debug.md"
@@ -71,12 +74,7 @@ class ArtifactManager:
 
     @staticmethod
     def collect_previous_attempt_files(attempts_root: Path, current_idx: int) -> list[str]:
-        """
-        Collect read-only files from prior attempts to give the coder more context:
-        - solver.py
-        - debug.md
-        - summary.json
-        """
+        """Collect read-only prior attempt files for context."""
         ro: list[str] = []
         for idx in range(1, current_idx):
             a_dir = attempts_root / f"attempt_{idx:02d}"
@@ -91,6 +89,7 @@ class InstanceManager:
 
     @staticmethod
     def find_instances(root: Path) -> list[Path]:
+        """Find instance directories that contain required input files."""
         if not root.exists():
             return []
         out: list[Path] = []
@@ -101,6 +100,7 @@ class InstanceManager:
 
     @staticmethod
     def ensure_files_exist(parent_dir: Path, filenames: list[str]) -> bool:
+        """Return True if all filenames exist under parent_dir."""
         for name in filenames:
             if not (parent_dir / name).exists():
                 return False
@@ -108,6 +108,7 @@ class InstanceManager:
 
     @staticmethod
     def infer_problem_from_path(path: Path, all_problems: set[str]) -> str:
+        """Infer problem name by walking parents and matching known problems."""
         for parent in path.resolve().parents:
             if parent.name in all_problems:
                 return parent.name
@@ -115,6 +116,7 @@ class InstanceManager:
 
     @staticmethod
     def infer_suite_from_path(path: Path, suite_problems: dict[str, list[str]]) -> str:
+        """Infer suite name by walking parents and matching known suites."""
         for parent in path.resolve().parents:
             if parent.name in suite_problems:
                 return parent.name

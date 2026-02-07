@@ -12,6 +12,7 @@ from pathlib import Path
 from src.agent.files_manager import ArtifactManager
 
 class AlgorithmVerifier:
+    """LLM-based verifier for checking algorithmic correctness."""
     def run_llm_verifier(
         attempt_dir: Path,
         model: Model,
@@ -20,6 +21,7 @@ class AlgorithmVerifier:
         suite: str,
         lazy: bool,
     ) -> tuple[str | None, str]:
+        """Run LLM-based algorithm verification and return verdict and notes."""
         instance_root = attempt_dir.parent.parent
         verifier_md = ArtifactManager.write_text(attempt_dir, "alg_verifier.md", "")
         solver_path = attempt_dir / "solver.py"

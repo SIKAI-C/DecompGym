@@ -11,9 +11,11 @@ from typing import Any
 from src.utils.json_utils import safe_load_json
 
 class OutputVerifier:
+    """Verify solution outputs and compute status metrics."""
 
     @staticmethod
     def import_verifier(suite: str, problem: str):
+        """Load the problem verifier module for a suite/problem."""
         verifier_path = Path(__file__).resolve().parent.parent / suite / problem / "d_verifier.py"
         if not verifier_path.exists():
             return None, f"verifier not found at {verifier_path}"
@@ -32,6 +34,7 @@ class OutputVerifier:
 
     @staticmethod
     def verify_output(suite: str, problem: str, data_path: Path, output_path: Path, tol: float) -> dict[str, Any]:
+        """Run the problem verifier on an output file."""
         verifier, import_err = OutputVerifier.import_verifier(suite, problem)
         if import_err:
             return {"ok": False, "issues": [import_err]}
@@ -41,6 +44,7 @@ class OutputVerifier:
 
     @staticmethod
     def load_gold_objective(inst_dir: Path, suite: str) -> float | None:
+        """Load the gold objective from metadata or gold files."""
         meta_path = inst_dir / "meta.json"
         if meta_path.exists():
             meta = safe_load_json(meta_path)
@@ -70,6 +74,7 @@ class OutputVerifier:
 
     @staticmethod
     def extract_objective(output: dict[str, Any] | None) -> tuple[float | None, list[str], str | None]:
+        """Extract objective value and message from output payload."""
         issues: list[str] = []
         if output is None:
             return None, issues, None
@@ -93,6 +98,7 @@ class OutputVerifier:
         gold_obj: float | None,
         gap_threshold: float | None,
     ) -> tuple[str, float | None]:
+        """Compute status and gap from execution/verifier results."""
         gap = None
         if objective is not None and gold_obj is not None:
             gap = abs(objective - gold_obj) / max(1.0, abs(gold_obj))
