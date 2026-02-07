@@ -5,7 +5,9 @@ CLI entrypoint for Experiment 2.
 from __future__ import annotations
 
 import argparse
-from src.agent.experiment_runner import ExperimentRunner
+from pathlib import Path
+from src.agent.experiment_runner import ALL_PROBLEMS, SUITE_PROBLEMS, ExperimentRunner
+from src.agent.files_manager import InstanceManager
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,8 +53,33 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def validate_args(args: argparse.Namespace) -> None:
+    if args.suite not in SUITE_PROBLEMS:
+        raise ValueError(f"Invalid suite '{args.suite}'. Must be one of {sorted(SUITE_PROBLEMS)}.")
+    if args.lazy and args.suite != "bd":
+        raise ValueError("--lazy is only supported for suite 'bd'.")
+    if args.problem:
+        invalid = [p for p in args.problem if p not in SUITE_PROBLEMS[args.suite]]
+        if invalid:
+            raise ValueError(
+                f"Problems {invalid} are not valid for suite '{args.suite}'. "
+                f"Allowed: {SUITE_PROBLEMS[args.suite]}"
+            )
+    if args.instance:
+        inst_path = Path(args.instance).resolve()
+        inferred_suite = InstanceManager.infer_suite_from_path(inst_path, SUITE_PROBLEMS)
+        if inferred_suite != args.suite:
+            raise ValueError(f"Instance suite '{inferred_suite}' does not match --suite '{args.suite}'.")
+        inferred_problem = InstanceManager.infer_problem_from_path(inst_path, ALL_PROBLEMS)
+        if args.problem and args.problem[0] != inferred_problem:
+            raise ValueError(
+                f"Instance problem '{inferred_problem}' does not match --problem '{args.problem[0]}'."
+            )
+
+
 def main() -> None:
     args = parse_args()
+    validate_args(args)
     runner = ExperimentRunner(
         model_name=args.model,
         note=args.note,
