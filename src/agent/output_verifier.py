@@ -99,7 +99,9 @@ class OutputVerifier:
 
         gap_ok = (gap is None) or (gap_threshold is None) or (gap <= gap_threshold)
 
-        if not exec_ok or output is None:
+        if objective is None:
+            status = "objective_not_available"
+        elif not exec_ok or output is None:
             status = "exec_failed"
         elif not verify_ok:
             status = "verify_failed"  # infeasible or failed verifier

@@ -186,6 +186,8 @@ class ExperimentRunner:
 
         stdout = proc.stdout[-4000:]
         stderr = proc.stderr[-4000:]
+        if stderr:
+            return False, stdout, stderr, None
         if proc.returncode != 0:
             # Return stderr so caller can see the actual error message
             return False, stdout, stderr or f"returncode={proc.returncode}", None
