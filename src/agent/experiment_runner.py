@@ -230,6 +230,7 @@ class ExperimentRunner:
             else ""
         )
         prompt_for_agent = base_prompt if not prev_debug else PromptBuilder.build_prev_debug_prompt(base_prompt, prev_debug)
+        ArtifactManager.write_text(attempt_dir, "agent_prompt.md", prompt_for_agent)
 
         # First, let the agent edit solver.py using prior reflections (if any).
         ArtifactManager.ensure_dir(attempt_dir, exist_ok=True)
@@ -303,6 +304,7 @@ class ExperimentRunner:
                 # Ask aider to update debug.md based on exec.log and current solver (read-only)
                 gap_info = f"Gap to gold: {gap}" if gap is not None else None
                 reflection_prompt = PromptBuilder.build_reflection_prompt(base_prompt, gap_info=gap_info)
+                ArtifactManager.write_text(attempt_dir, "reflection_prompt.md", reflection_prompt)
                 reflection_coder = Coder.create(
                     main_model=model,
                     fnames=[str(debug_md)],
