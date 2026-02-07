@@ -208,7 +208,6 @@ class ExperimentRunner:
         solver_timeout: int,
         tol: float,
         gap_threshold: float,
-        prev_debug: str,
         gold_obj: float | None,
         suite: str,
         reflection: bool,
@@ -225,6 +224,11 @@ class ExperimentRunner:
         base_prompt = PromptBuilder.ensure_location_prompt(base_prompt)
         base_prompt = PromptBuilder.ensure_lazy_prompt(base_prompt, suite, lazy)
         ArtifactManager.write_text(instance_root, "prompt.txt", base_prompt)
+        prev_debug = (
+            ArtifactManager.collect_previous_debug(attempt_dir.parent, attempt_idx)
+            if reflection and attempt_idx > 1
+            else ""
+        )
         prompt_for_agent = base_prompt if not prev_debug else PromptBuilder.build_prev_debug_prompt(base_prompt, prev_debug)
 
         # First, let the agent edit solver.py using prior reflections (if any).
@@ -404,11 +408,6 @@ class ExperimentRunner:
                     stderr=None,
                 )
             else:
-                prev_debug = (
-                    ArtifactManager.collect_previous_debug(dest_inst / "attempts", idx)
-                    if (idx > 1 and reflection)
-                    else ""
-                )
                 ArtifactManager.ensure_dir(a_dir, exist_ok=True)
                 res = ExperimentRunner.run_attempt(
                     attempt_idx=idx,
@@ -419,7 +418,6 @@ class ExperimentRunner:
                     solver_timeout=solver_timeout,
                     tol=tol,
                     gap_threshold=gap_threshold,
-                    prev_debug=prev_debug,
                     gold_obj=gold_obj,
                     suite=suite,
                     reflection=reflection,
