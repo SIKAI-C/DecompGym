@@ -43,6 +43,7 @@ class AlgorithmVerifier:
                 "VERDICT: PASS or FAIL\n"
                 "NOTES: <1-3 bullet points>\n"
             )
+        ArtifactManager.write_text(attempt_dir, "llm_verifier_prompt.md", prompt)
         coder = Coder.create(
             main_model=model,
             fnames=[str(verifier_md)],
