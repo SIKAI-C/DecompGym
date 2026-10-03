@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "medium",
+  "n_products": 5,
+  "n_periods": 6,
+  "n_scenarios": 3,
+  "ground_truth_objective": 3178.520091316176,
+  "folder": "tsso_medium_seed002"
+}

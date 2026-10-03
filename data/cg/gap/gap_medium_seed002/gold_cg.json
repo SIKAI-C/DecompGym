@@ -1,0 +1,215 @@
+{
+  "best_objective": 58.08,
+  "global_lb": 58.08,
+  "global_ub": 58.08,
+  "iters": 3,
+  "total_time": 0.0028335830429568887,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.0010496250470168889,
+      "iter_time": 0.0010490830172784626,
+      "master_obj": 67.35,
+      "reduced_cost": -11.589999999999993,
+      "n_patterns": 13
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0020254580304026604,
+      "iter_time": 0.0009714579791761935,
+      "master_obj": 58.45,
+      "reduced_cost": -0.37000000000000544,
+      "n_patterns": 14
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.002832333033438772,
+      "iter_time": 0.0008040000102482736,
+      "master_obj": 58.08,
+      "reduced_cost": 0.0,
+      "n_patterns": 15
+    }
+  ],
+  "final_master_objective": 58.08,
+  "final_vars": {
+    "10": 1.0,
+    "14": 1.0
+  },
+  "master_metadata": {
+    "patterns": [
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          1,
+          1,
+          1,
+          0,
+          1
+        ]
+      }
+    ],
+    "assignments": [
+      {
+        "job_id": 3,
+        "machine_id": 1
+      },
+      {
+        "job_id": 0,
+        "machine_id": 0
+      },
+      {
+        "job_id": 1,
+        "machine_id": 0
+      },
+      {
+        "job_id": 2,
+        "machine_id": 0
+      },
+      {
+        "job_id": 4,
+        "machine_id": 0
+      }
+    ]
+  },
+  "sub_metadata": {}
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from src.bd.fctp.a_gen_data import generate_fctp_instance
+from src.bd.fctp.a_gen_data import FCTPGenerator, FCTPInstance, generate_fctp_instance
 from src.bd.fctp.a_gold_bd import FCTPBenders
 from src.bd.fctp.a_gold_monolithic import FCTPBaseline
 from src.bd.fctp.b_problem import render_prompt
@@ -57,6 +57,7 @@ def generate_suite(
             }
             save_json(meta, inst_dir / "meta.json")
             metas.append(meta)
+            _plot_artifacts(inst_dir, mono_res, bd_res, bd_solver)
 
     return metas
 
@@ -68,5 +69,16 @@ def _serialize(res: dict) -> dict:
     return out
 
 
+def _plot_artifacts(inst_dir: Path, mono_res: dict, bd_res: dict, bd_solver: FCTPBenders) -> None:
+    inst = FCTPInstance.from_json_file(inst_dir / "data.json")
+    gen = FCTPGenerator()
+    plots_dir = inst_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    gen.plot_instance(inst, output_path=plots_dir / "instance.pdf")
+    gen.plot_solution(inst, mono_res, output_path=plots_dir / "solution_monolithic.pdf")
+    gen.plot_solution(inst, bd_res, output_path=plots_dir / "solution_bd.pdf")
+    bd_solver.plot_bounds(output_dir=str(plots_dir))
+
+
 if __name__ == "__main__":
-    generate_suite(["small", "medium", "large"], num_instances=3, out_root="z_artifacts/benchmarks/bd/fctp")
+    generate_suite(["small", "medium", "large"], num_instances=1, out_root="z_artifacts/benchmarks/bd/fctp")

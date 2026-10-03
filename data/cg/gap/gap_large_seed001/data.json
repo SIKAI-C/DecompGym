@@ -1,0 +1,129 @@
+{
+  "instance_size": "large",
+  "machines": [
+    {
+      "id": 0,
+      "name": "Plant_0",
+      "capacity": 43
+    },
+    {
+      "id": 1,
+      "name": "Plant_1",
+      "capacity": 33
+    }
+  ],
+  "jobs": [
+    {
+      "id": 0,
+      "name": "Order_0",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 5,
+          "cost": 11.93
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 11.35
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Order_1",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 2,
+          "cost": 15.79
+        },
+        {
+          "machine_id": 1,
+          "resource": 8,
+          "cost": 15.01
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Order_2",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 8,
+          "cost": 10.57
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 12.43
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Order_3",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 19.58
+        },
+        {
+          "machine_id": 1,
+          "resource": 4,
+          "cost": 12.26
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Order_4",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 6.23
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 9.02
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Order_5",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 7,
+          "cost": 13.52
+        },
+        {
+          "machine_id": 1,
+          "resource": 3,
+          "cost": 20.02
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Order_6",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 15.07
+        },
+        {
+          "machine_id": 1,
+          "resource": 3,
+          "cost": 18.93
+        }
+      ]
+    }
+  ]
+}

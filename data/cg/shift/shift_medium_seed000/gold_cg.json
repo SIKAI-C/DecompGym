@@ -1,0 +1,105 @@
+{
+  "best_objective": 16.0,
+  "global_lb": 16.0,
+  "global_ub": 16.0,
+  "iters": 8,
+  "total_time": 0.0026397909969091415,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.0003785410081036389,
+      "iter_time": 0.00037825002800673246,
+      "master_obj": 37.0,
+      "reduced_cost": -2.0,
+      "n_patterns": 10
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0007135409978218377,
+      "iter_time": 0.0003328329767100513,
+      "master_obj": 24.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 11
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.0010273330262862146,
+      "iter_time": 0.0003123750211670995,
+      "master_obj": 22.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 12
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0013493330334313214,
+      "iter_time": 0.0003209999995306134,
+      "master_obj": 20.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 13
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.001682707981672138,
+      "iter_time": 0.00033191696275025606,
+      "master_obj": 20.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 14
+    },
+    {
+      "iteration": 6,
+      "elapsed_time": 0.0019988330313935876,
+      "iter_time": 0.00031504203798249364,
+      "master_obj": 19.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 15
+    },
+    {
+      "iteration": 7,
+      "elapsed_time": 0.0023199159768410027,
+      "iter_time": 0.00032012496376410127,
+      "master_obj": 17.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 16
+    },
+    {
+      "iteration": 8,
+      "elapsed_time": 0.0026390000130049884,
+      "iter_time": 0.000317834026645869,
+      "master_obj": 16.0,
+      "reduced_cost": 0.0,
+      "n_patterns": 17
+    }
+  ],
+  "final_master_objective": 16.0,
+  "final_vars": {
+    "10": 5.0,
+    "13": 5.0,
+    "15": 3.0,
+    "16": 3.0
+  },
+  "master_metadata": {
+    "shifts": [
+      {
+        "start": 3,
+        "end": 7,
+        "usage": 5
+      },
+      {
+        "start": 0,
+        "end": 4,
+        "usage": 5
+      },
+      {
+        "start": 5,
+        "end": 9,
+        "usage": 3
+      },
+      {
+        "start": 6,
+        "end": 10,
+        "usage": 3
+      }
+    ]
+  },
+  "sub_metadata": {}
+}

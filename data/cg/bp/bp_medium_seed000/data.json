@@ -1,0 +1,132 @@
+{
+  "instance_size": "medium",
+  "bin_capacity": 129,
+  "bin_unit": "volume_units",
+  "items": [
+    {
+      "id": 0,
+      "name": "Shipment_0",
+      "size": 65
+    },
+    {
+      "id": 1,
+      "name": "Shipment_1",
+      "size": 17
+    },
+    {
+      "id": 2,
+      "name": "Shipment_2",
+      "size": 45
+    },
+    {
+      "id": 3,
+      "name": "Shipment_3",
+      "size": 77
+    },
+    {
+      "id": 4,
+      "name": "Shipment_4",
+      "size": 74
+    },
+    {
+      "id": 5,
+      "name": "Shipment_5",
+      "size": 63
+    },
+    {
+      "id": 6,
+      "name": "Shipment_6",
+      "size": 50
+    },
+    {
+      "id": 7,
+      "name": "Shipment_7",
+      "size": 73
+    },
+    {
+      "id": 8,
+      "name": "Shipment_8",
+      "size": 57
+    },
+    {
+      "id": 9,
+      "name": "Shipment_9",
+      "size": 39
+    },
+    {
+      "id": 10,
+      "name": "Shipment_10",
+      "size": 76
+    },
+    {
+      "id": 11,
+      "name": "Shipment_11",
+      "size": 29
+    },
+    {
+      "id": 12,
+      "name": "Shipment_12",
+      "size": 48
+    },
+    {
+      "id": 13,
+      "name": "Shipment_13",
+      "size": 29
+    },
+    {
+      "id": 14,
+      "name": "Shipment_14",
+      "size": 24
+    },
+    {
+      "id": 15,
+      "name": "Shipment_15",
+      "size": 44
+    },
+    {
+      "id": 16,
+      "name": "Shipment_16",
+      "size": 30
+    },
+    {
+      "id": 17,
+      "name": "Shipment_17",
+      "size": 51
+    },
+    {
+      "id": 18,
+      "name": "Shipment_18",
+      "size": 24
+    },
+    {
+      "id": 19,
+      "name": "Shipment_19",
+      "size": 21
+    },
+    {
+      "id": 20,
+      "name": "Shipment_20",
+      "size": 54
+    },
+    {
+      "id": 21,
+      "name": "Shipment_21",
+      "size": 72
+    },
+    {
+      "id": 22,
+      "name": "Shipment_22",
+      "size": 24
+    },
+    {
+      "id": 23,
+      "name": "Shipment_23",
+      "size": 57
+    },
+    {
+      "id": 24,
+      "name": "Shipment_24",
+      "size": 67
+    }
+  ]
+}

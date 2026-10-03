@@ -1,0 +1,173 @@
+{
+  "best_objective": 43.0,
+  "global_lb": 43.0,
+  "global_ub": 43.0,
+  "iters": 5,
+  "total_time": 0.003794291988015175,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.001038125017657876,
+      "iter_time": 0.0010375830461271107,
+      "master_obj": 58.166666666666664,
+      "reduced_cost": -0.5,
+      "n_patterns": 4
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0017614579992368817,
+      "iter_time": 0.0007193330093286932,
+      "master_obj": 49.666666666666664,
+      "reduced_cost": -0.33333333333333326,
+      "n_patterns": 5
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.002340833016205579,
+      "iter_time": 0.0005772500298917294,
+      "master_obj": 45.0,
+      "reduced_cost": -0.16666666666666674,
+      "n_patterns": 6
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0031629999866709113,
+      "iter_time": 0.0008207079954445362,
+      "master_obj": 43.33333333333333,
+      "reduced_cost": -0.04166666666666652,
+      "n_patterns": 7
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.0037917919689789414,
+      "iter_time": 0.0006274589686654508,
+      "master_obj": 43.0,
+      "reduced_cost": 0.0,
+      "n_patterns": 8
+    }
+  ],
+  "final_master_objective": 43.0,
+  "final_vars": {
+    "4": 9.0,
+    "5": 18.0,
+    "6": 8.0,
+    "7": 8.0
+  },
+  "master_metadata": {
+    "patterns": [
+      [
+        6,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        1,
+        0,
+        1
+      ],
+      [
+        2,
+        2,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        4,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        1
+      ]
+    ],
+    "solution_patterns": [
+      {
+        "pattern_id": 4,
+        "usage": 9,
+        "cuts": [
+          {
+            "item_id": 1,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 5,
+        "usage": 18,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 2
+          },
+          {
+            "item_id": 1,
+            "count": 2
+          }
+        ]
+      },
+      {
+        "pattern_id": 6,
+        "usage": 8,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 2,
+            "count": 4
+          }
+        ]
+      },
+      {
+        "pattern_id": 7,
+        "usage": 8,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 2,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          }
+        ]
+      }
+    ]
+  },
+  "sub_metadata": {
+    "dual_value": 1.0
+  }
+}

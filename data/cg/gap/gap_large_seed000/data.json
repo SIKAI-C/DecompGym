@@ -1,0 +1,211 @@
+{
+  "instance_size": "large",
+  "machines": [
+    {
+      "id": 0,
+      "name": "Plant_0",
+      "capacity": 54
+    },
+    {
+      "id": 1,
+      "name": "Plant_1",
+      "capacity": 46
+    },
+    {
+      "id": 2,
+      "name": "Plant_2",
+      "capacity": 38
+    }
+  ],
+  "jobs": [
+    {
+      "id": 0,
+      "name": "Order_0",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 8.35
+        },
+        {
+          "machine_id": 1,
+          "resource": 8,
+          "cost": 9.79
+        },
+        {
+          "machine_id": 2,
+          "resource": 5,
+          "cost": 7.81
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Order_1",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 3,
+          "cost": 16.96
+        },
+        {
+          "machine_id": 1,
+          "resource": 4,
+          "cost": 13.87
+        },
+        {
+          "machine_id": 2,
+          "resource": 2,
+          "cost": 17.92
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Order_2",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 13.04
+        },
+        {
+          "machine_id": 1,
+          "resource": 8,
+          "cost": 11.04
+        },
+        {
+          "machine_id": 2,
+          "resource": 3,
+          "cost": 9.51
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Order_3",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 8,
+          "cost": 16.71
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 15.76
+        },
+        {
+          "machine_id": 2,
+          "resource": 4,
+          "cost": 14.79
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Order_4",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 3,
+          "cost": 17.4
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 13.7
+        },
+        {
+          "machine_id": 2,
+          "resource": 6,
+          "cost": 12.42
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Order_5",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 19.39
+        },
+        {
+          "machine_id": 1,
+          "resource": 2,
+          "cost": 17.81
+        },
+        {
+          "machine_id": 2,
+          "resource": 5,
+          "cost": 17.74
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Order_6",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 7,
+          "cost": 11.9
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 18.45
+        },
+        {
+          "machine_id": 2,
+          "resource": 4,
+          "cost": 13.82
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Order_7",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 8,
+          "cost": 8.79
+        },
+        {
+          "machine_id": 1,
+          "resource": 6,
+          "cost": 9.69
+        },
+        {
+          "machine_id": 2,
+          "resource": 8,
+          "cost": 13.88
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Order_8",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 5,
+          "cost": 12.76
+        },
+        {
+          "machine_id": 1,
+          "resource": 4,
+          "cost": 19.04
+        },
+        {
+          "machine_id": 2,
+          "resource": 5,
+          "cost": 12.9
+        }
+      ]
+    }
+  ]
+}

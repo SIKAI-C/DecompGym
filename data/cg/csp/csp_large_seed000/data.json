@@ -1,0 +1,49 @@
+{
+  "instance_size": "large",
+  "stock_size": 277,
+  "stock_unit": "cm",
+  "item_types": [
+    {
+      "id": 0,
+      "name": "PaperProduct_0",
+      "size": 134,
+      "demand": 74
+    },
+    {
+      "id": 1,
+      "name": "PaperProduct_1",
+      "size": 37,
+      "demand": 58
+    },
+    {
+      "id": 2,
+      "name": "PaperProduct_2",
+      "size": 93,
+      "demand": 40
+    },
+    {
+      "id": 3,
+      "name": "PaperProduct_3",
+      "size": 157,
+      "demand": 77
+    },
+    {
+      "id": 4,
+      "name": "PaperProduct_4",
+      "size": 151,
+      "demand": 30
+    },
+    {
+      "id": 5,
+      "name": "PaperProduct_5",
+      "size": 130,
+      "demand": 49
+    },
+    {
+      "id": 6,
+      "name": "PaperProduct_6",
+      "size": 104,
+      "demand": 30
+    }
+  ]
+}

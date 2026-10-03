@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from src.bd.tsso.a_gen_data import generate_tsso_instance
+from src.bd.tsso.a_gen_data import TSSOGenerator, TSSOInstance, generate_tsso_instance
 from src.bd.tsso.a_gold_bd import TSSOBenders
 from src.bd.tsso.a_gold_monolithic import TSSOBaseline
 from src.bd.tsso.b_problem import render_prompt
@@ -63,6 +63,7 @@ def generate_suite(
             }
             save_json(meta, inst_dir / "meta.json")
             metas.append(meta)
+            _plot_artifacts(inst_dir, mono_res, bd_res, bd_solver)
 
     return metas
 
@@ -74,5 +75,16 @@ def _make_serializable(res: dict) -> dict:
     return out
 
 
+def _plot_artifacts(inst_dir: Path, mono_res: dict, bd_res: dict, bd_solver: TSSOBenders) -> None:
+    inst = TSSOInstance.from_json_file(inst_dir / "data.json")
+    gen = TSSOGenerator()
+    plots_dir = inst_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    gen.plot_instance(inst, output_path=plots_dir / "instance.pdf")
+    gen.plot_solution(inst, mono_res, output_path=plots_dir / "solution_monolithic.pdf")
+    gen.plot_solution(inst, bd_res, output_path=plots_dir / "solution_bd.pdf")
+    bd_solver.plot_bounds(output_dir=str(plots_dir))
+
+
 if __name__ == "__main__":
-    generate_suite(["small", "medium", "large"], num_instances=3, out_root="z_artifacts/benchmarks/bd/tsso")
+    generate_suite(["small", "medium", "large"], num_instances=1, out_root="z_artifacts/benchmarks/bd/tsso")

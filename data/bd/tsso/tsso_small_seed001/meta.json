@@ -1,0 +1,9 @@
+{
+  "seed": 1,
+  "size": "small",
+  "n_products": 2,
+  "n_periods": 4,
+  "n_scenarios": 3,
+  "ground_truth_objective": 934.0524350574417,
+  "folder": "tsso_small_seed001"
+}

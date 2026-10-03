@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "large",
+  "m": 7,
+  "n": 11,
+  "routes": 1400,
+  "ground_truth_objective": 43.483234054759116,
+  "folder": "lrp_large_seed002"
+}

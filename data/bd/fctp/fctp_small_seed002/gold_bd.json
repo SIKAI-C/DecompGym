@@ -1,0 +1,259 @@
+{
+  "best_objective": 335.4077519188286,
+  "global_lb": 335.4077519188285,
+  "global_ub": 335.4077519188286,
+  "iters": 18,
+  "total_time": 0.04242691595572978,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.0016504160012118518,
+      "iter_time": 0.0016497500473633409,
+      "master_obj": 35.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.00394154095556587,
+      "iter_time": 0.0015921659651212394,
+      "master_obj": 40.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.006030666001606733,
+      "iter_time": 0.001508000015746802,
+      "master_obj": 45.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.008718749973922968,
+      "iter_time": 0.00209500000346452,
+      "master_obj": 53.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.011064958001952618,
+      "iter_time": 0.0017458330257795751,
+      "master_obj": 57.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 6,
+      "elapsed_time": 0.013324290979653597,
+      "iter_time": 0.0016719999839551747,
+      "master_obj": 58.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 7,
+      "elapsed_time": 0.015536832972429693,
+      "iter_time": 0.0016384170157834888,
+      "master_obj": 63.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 8,
+      "elapsed_time": 0.01802649995079264,
+      "iter_time": 0.0019117089686915278,
+      "master_obj": 66.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 9,
+      "elapsed_time": 0.020313499961048365,
+      "iter_time": 0.0017037919606082141,
+      "master_obj": 67.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 10,
+      "elapsed_time": 0.02298141596838832,
+      "iter_time": 0.002069625013973564,
+      "master_obj": 68.0,
+      "sub_bound": null,
+      "global_lb": -Infinity,
+      "global_ub": Infinity,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 11,
+      "elapsed_time": 0.02536962495651096,
+      "iter_time": 0.0017942919512279332,
+      "master_obj": 70.0,
+      "sub_bound": 411.3078306152815,
+      "global_lb": 70.0,
+      "global_ub": 481.3078306152815,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 1
+    },
+    {
+      "iteration": 12,
+      "elapsed_time": 0.027648290968500078,
+      "iter_time": 0.001534749986603856,
+      "master_obj": 114.3243264050918,
+      "sub_bound": null,
+      "global_lb": 70.0,
+      "global_ub": 481.3078306152815,
+      "n_feas_cuts": 1,
+      "n_opt_cuts": 0
+    },
+    {
+      "iteration": 13,
+      "elapsed_time": 0.02969816594850272,
+      "iter_time": 0.0014544159639626741,
+      "master_obj": 122.64471016316926,
+      "sub_bound": 259.19249836377,
+      "global_lb": 122.64471016316926,
+      "global_ub": 360.19249836377,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 1
+    },
+    {
+      "iteration": 14,
+      "elapsed_time": 0.0321919999551028,
+      "iter_time": 0.0018176669836975634,
+      "master_obj": 152.29122052559072,
+      "sub_bound": 252.563986439492,
+      "global_lb": 152.29122052559072,
+      "global_ub": 338.563986439492,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 1
+    },
+    {
+      "iteration": 15,
+      "elapsed_time": 0.034960374992806464,
+      "iter_time": 0.002062999992631376,
+      "master_obj": 322.11869328866266,
+      "sub_bound": 383.5536842859448,
+      "global_lb": 322.11869328866266,
+      "global_ub": 338.563986439492,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 1
+    },
+    {
+      "iteration": 16,
+      "elapsed_time": 0.037414415972307324,
+      "iter_time": 0.001777165976818651,
+      "master_obj": 328.563986439492,
+      "sub_bound": 340.715654111972,
+      "global_lb": 328.563986439492,
+      "global_ub": 338.563986439492,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 1
+    },
+    {
+      "iteration": 17,
+      "elapsed_time": 0.04008370795054361,
+      "iter_time": 0.0019510419806465507,
+      "master_obj": 332.11869328866266,
+      "sub_bound": 239.40775191882858,
+      "global_lb": 332.11869328866266,
+      "global_ub": 335.4077519188286,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 1
+    },
+    {
+      "iteration": 18,
+      "elapsed_time": 0.042424790968652815,
+      "iter_time": 0.0016385000199079514,
+      "master_obj": 335.4077519188285,
+      "sub_bound": 239.40775191882858,
+      "global_lb": 335.4077519188285,
+      "global_ub": 335.4077519188286,
+      "n_feas_cuts": 0,
+      "n_opt_cuts": 0
+    }
+  ],
+  "final_master_objective": 335.4077519188285,
+  "final_vars": {
+    "y_0_0": 1.0,
+    "y_0_1": 0.0,
+    "y_0_2": 1.0,
+    "y_1_0": 0.0,
+    "y_1_1": 1.0,
+    "y_1_2": 1.0,
+    "y_2_0": 0.0,
+    "y_2_1": 0.0,
+    "y_2_2": 1.0,
+    "z": 239.40775191882852
+  },
+  "master_metadata": {},
+  "sub_metadata": {
+    "y_assignment": [
+      [
+        1.0,
+        0.0,
+        1.0
+      ],
+      [
+        0.0,
+        1.0,
+        1.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "transport_cost": 239.40775191882858,
+    "theta": 239.40775191882852,
+    "x_assignment": [
+      [
+        14.0,
+        0.0,
+        18.0
+      ],
+      [
+        0.0,
+        16.0,
+        4.0
+      ],
+      [
+        0.0,
+        0.0,
+        17.0
+      ]
+    ]
+  }
+}

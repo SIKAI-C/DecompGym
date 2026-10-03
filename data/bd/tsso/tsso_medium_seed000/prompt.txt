@@ -1,0 +1,88 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a two-stage stochastic production planning problem with capacity expansion decisions.
+First, decide which production lines (regular capacity) to pay for across products and periods.
+Later, when demand scenarios unfold, react by producing with regular or overtime capacity,
+holding inventory, or backlogging unmet demand. The aim is to pick upfront capacities that keep the expected
+total cost (activation + operations) low across scenarios.
+The instance describes:
+  - n_products = 5
+  - n_periods = 7
+  - n_scenarios = 4 with probabilities 0.6605776278063374, 0.2797893043476967, 0.04249265502679791, 0.017140412819167932
+  - First-stage binary variables y[i,t] decide whether capacity is installed.
+  - Second-stage (recourse) variables for each scenario s: regular/OT production, inventory, backlog.
+
+The JSON file data.json contains:
+  - "F": fixed expansion cost matrix (n_products x n_periods)
+  - "K": capacity multipliers
+  - "c_reg", "c_ot": regular and overtime unit costs
+  - "h", "b": inventory holding and backlog penalty costs
+  - "demand": tensor (n_products x n_periods x n_scenarios)
+  - "prob": scenario probabilities
+  - "I0", "B0": initial inventory/backlog per product
+
+Key slices (first few rows) to orient yourself:
+Fixed cost F:
+  F[0] = [40.0, 78.0, 68.0, 84.0, 60.0, 66.0, 88.0]
+  F[1] = [73.0, 67.0, 62.0, 63.0, 86.0, 46.0, 78.0]
+  F[2] = [70.0, 30.0, 53.0, 81.0, 63.0, 32.0, 75.0]
+  F[3] = [73.0, 80.0, 40.0, 35.0, 81.0, 31.0, 62.0]
+  ... full data is in data.json
+Capacity coefficient K:
+  K[0] = [30.0, 25.0, 55.0, 48.0, 54.0, 36.0, 52.0]
+  K[1] = [59.0, 42.0, 45.0, 69.0, 61.0, 69.0, 42.0]
+  K[2] = [55.0, 67.0, 54.0, 62.0, 55.0, 56.0, 42.0]
+  K[3] = [64.0, 31.0, 51.0, 57.0, 63.0, 48.0, 41.0]
+  ... full data is in data.json
+Regular cost c_reg:
+  c_reg[0] = [1.7155903934181405, 2.143059661459522, 1.6437387821518843, 2.1886000603993936, 1.6758224510142665, 1.7832380010563225, 2.7805487040095844]
+  c_reg[1] = [1.4543151870667594, 2.246374289372085, 1.1680306871647697, 2.6652882953067953, 2.5741966149773665, 1.4787388859859043, 2.752968461621408]
+  c_reg[2] = [1.1171360696103887, 1.6722341210913207, 1.3005589337896781, 1.900678733298574, 2.5926485405745883, 1.4612844179874949, 1.1040426021288192]
+  c_reg[3] = [1.8091036796430564, 1.3970260890185107, 1.1815060912382438, 2.1606647719737015, 1.5973922656378452, 2.3439897559127187, 1.3990308879364266]
+  ... full data is in data.json
+Overtime cost c_ot:
+  c_ot[0] = [3.1154653698433172, 3.4533340112784128, 3.1879949245703374, 4.182715866681782, 3.614554860939585, 3.135292168227238, 4.489823318379534]
+  c_ot[1] = [2.851222421651902, 3.6815488816082094, 2.910973528021339, 3.9628753145336004, 4.255576901123842, 3.132110339573604, 4.671440085557462]
+  c_ot[2] = [2.055055229547475, 3.347052261582892, 3.21346764813915, 3.86219016120815, 3.4102961065330315, 3.297652526282186, 3.0814766502084323]
+  c_ot[3] = [3.7577558951762127, 2.375542903697508, 3.14866066782579, 4.0285874388383265, 3.3842408586895294, 3.7199752644821173, 2.4778783915035913]
+  ... full data is in data.json
+Holding cost h:
+  h[0] = [0.6392037173939366, 0.5686239481693981, 0.21701921906811264, 0.6315318636960443, 0.2095950377141432, 0.6547706014138569, 0.5076552339572469]
+  h[1] = [0.7574625324782038, 0.23964949803444485, 0.70479036776743, 0.24001400526026087, 0.40658598728247514, 0.4581792391687, 0.7796372484704422]
+  h[2] = [0.5373391053370743, 0.3553187559025594, 0.34500542845660703, 0.732870992395508, 0.33552165705039466, 0.2747328235011701, 0.3729984542045466]
+  h[3] = [0.5516738388876398, 0.5324543013039608, 0.6858264655476667, 0.5362855712037116, 0.37305272865872635, 0.44773780560853566, 0.6908725825825464]
+  ... full data is in data.json
+Backlog cost b:
+  b[0] = [3.016275841870317, 4.274897404155743, 2.1076672214205106, 4.056765700453755, 3.0384600934280614, 4.074509963195257, 2.02488640201823]
+  b[1] = [2.9126153943956767, 2.1965750929140997, 3.631536440841596, 2.684622746498893, 3.7566301766494656, 4.359503567355227, 2.3170427556531195]
+  b[2] = [4.161945738501935, 2.1486603790008463, 2.9519262707772236, 3.0744351529464415, 3.2221238670836607, 4.441155804840111, 3.9392279702545707]
+  b[3] = [2.7721434067981523, 2.6745919637520004, 4.157800510473295, 4.203267931844224, 3.276766263859113, 2.8607393274058133, 4.487293370402295]
+  ... full data is in data.json
+Demand samples:
+  demand[0,0,:] = [54.0, 44.0, 39.0, 49.0]
+  demand[0,1,:] = [55.0, 22.0, 36.0, 18.0]
+  demand[1,0,:] = [25.0, 15.0, 35.0, 55.0]
+  demand[1,1,:] = [13.0, 37.0, 31.0, 12.0]
+  ...
+Initial inventory I0:
+I0: [0.0, 0.0, 0.0, 0.0, 0.0]
+Initial backlog B0:
+B0: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {
+    "status": "optimal | feasible | infeasible | error",
+    "method": "benders_decomposition",
+    "objective_value": <float>,
+    "y": [[...]],          # shape (n_products, n_periods)
+    "x_reg": [[[...]]],    # shape (n_products, n_periods, n_scenarios)
+    "x_ot": [[[...]]],     # shape (n_products, n_periods, n_scenarios)
+    "inv": [[[...]]],      # shape (n_products, n_periods, n_scenarios)
+    "back": [[[...]]]      # shape (n_products, n_periods, n_scenarios)
+    }

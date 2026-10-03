@@ -65,9 +65,8 @@ def generate_suite(
                 cg_res = _serialize(cg_solver.run(data_path))
                 save_json(cg_res, inst_dir / "gold_cg.json")
                 cg_obj = cg_res.get("best_objective")
-            except Exception:
-                # print(f"Error running GAP column generation: {e}")
-                cg_obj = None
+            except Exception as exc:
+                raise RuntimeError(f"GAP column generation failed for {folder_name}") from exc
 
             meta = {
                 "seed": seed,

@@ -46,10 +46,12 @@ class ShiftColumnGeneration(BaseColumnGeneration[ShiftInstance, tuple[int, int]]
         return ShiftInstance.from_json_file(instance_name)
 
     def initial_patterns(self, inst: ShiftInstance) -> list[tuple[int, int]]:
-        if self._all_patterns is None:
-            self._all_patterns = _enumerate_shifts(inst)
-        # Seed with single-slot shifts for feasibility
-        return [(t, t) for t in range(len(inst.time_slots))]
+        self._all_patterns = _enumerate_shifts(inst)
+        # Minimum-length legal shifts cover every slot without introducing invalid columns.
+        patterns = [pattern for pattern in self._all_patterns if pattern[1] - pattern[0] + 1 == inst.shift_min_length]
+        if not patterns:
+            raise ValueError("No legal shift fits within the time horizon")
+        return patterns
 
     def solve_restricted_master(
         self,

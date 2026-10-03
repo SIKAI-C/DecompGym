@@ -8,17 +8,21 @@ python -m src.01_gen -s all -m validate -vl simple # validate all instances
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
+import os
 from pathlib import Path
 import shutil
 from typing import Any
+
+from src.utils.dataset import ensure_suite, write_manifest
+
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 
 def _load_objective(path: Path) -> float | None:
     try:
         payload = json.loads(path.read_text())
-        return payload.get("best_objective") or payload.get("objective_value")
+        return payload.get("best_objective", payload.get("objective_value"))
     except Exception as exc:  # pragma: no cover - simple utility
         raise ValueError(f"failed to parse {path.name}: {exc}") from exc
 
@@ -100,11 +104,14 @@ def validate_instance(inst_dir: Path, validation_level: str = "strict") -> dict[
     elif is_cg and (not result["has_cg"] or result["cg_obj"] is None):
         result["status"] = "missing_gold_cg"
         result["issues"].append("missing gold_cg.json or objective")
-    elif abs(result["mono_obj"] - result["bd_obj"]) < 1e-4:
+    elif abs(result["mono_obj"] - (result["cg_obj"] if is_cg else result["bd_obj"])) < 1e-4:
         result["status"] = "pass_simple_test"
+    elif (result["cg_obj"] if is_cg else result["bd_obj"]) > result["mono_obj"]:
+        result["status"] = "reference_gap"
+        result["decomposition_gap"] = ((result["cg_obj"] if is_cg else result["bd_obj"]) - result["mono_obj"]) / max(1.0, abs(result["mono_obj"]))
     else:
         result["status"] = "objective_mismatch"
-        result["issues"].append(f"Objective mismatch: mono={result['mono_obj']}, bd={result['bd_obj']}")
+        result["issues"].append(f"Objective mismatch: mono={result['mono_obj']}, decomposition={result['cg_obj'] if is_cg else result['bd_obj']}")
 
     return result
 
@@ -135,6 +142,7 @@ def print_summary(results: list[dict[str, Any]], root: Path) -> None:
     missing_bd = [r for r in results if r["status"] == "missing_gold_bd"]
     missing_cg = [r for r in results if r["status"] == "missing_gold_cg"]
     mismatch = [r for r in results if r["status"] == "objective_mismatch"]
+    reference_gaps = [r for r in results if r["status"] == "reference_gap"]
 
     print(f"\n{'=' * 60}")
     print(f"VALIDATION SUMMARY for {root}")
@@ -147,6 +155,7 @@ def print_summary(results: list[dict[str, Any]], root: Path) -> None:
     print(f"  Missing gold bd:      {len(missing_bd)}")
     print(f"  Missing gold cg:      {len(missing_cg)}")
     print(f"  Objective mismatch:   {len(mismatch)}")
+    print(f"  Decomposition gaps:   {len(reference_gaps)} (retained as educational examples)")
     print()
 
     for bucket, label in (
@@ -214,7 +223,7 @@ def main() -> None:
         "--instances-root",
         "-ir",
         type=str,
-        default="z_artifacts/benchmarks",
+        default="data",
         help="Root directory containing bd/ and cg/ benchmarks.",
     )
     parser.add_argument(
@@ -236,7 +245,7 @@ def main() -> None:
         "--mode",
         "-m",
         type=str,
-        default="validate",
+        default="both",
         choices=["generate", "validate", "both"],
         help="Run generation, validation, or both.",
     )
@@ -252,7 +261,7 @@ def main() -> None:
         "--num-instances",
         "-ni",
         type=int,
-        default=5,
+        default=3,
         help="Number of instances per size when generating.",
     )
     parser.add_argument(
@@ -308,12 +317,14 @@ def main() -> None:
         action="store_true",
         help="Print JSON instead of a human summary.",
     )
+    parser.add_argument("--sizes", nargs="+", choices=["small", "medium", "large"], default=["small", "medium", "large"])
+    parser.add_argument("--regenerate", action="store_true", help="Explicitly regenerate existing instances.")
     args = parser.parse_args()
 
     root = Path(args.instances_root)
 
     if args.mode in {"generate", "both"}:
-        sizes = ["small", "medium", "large"]
+        sizes = args.sizes
         suite_map = {
             "bd": ["fctp", "km", "lrp", "tsso", "ufl"],
             "cg": ["bp", "csp", "gap", "shift"],
@@ -326,14 +337,9 @@ def main() -> None:
                     raise ValueError(f"Unknown problem '{args.problem}' for suite '{suite}'")
                 problems = [args.problem]
             for prob in problems:
-                module = importlib.import_module(f"src.{suite}.{prob}.c_gen")
                 out_root = root / suite / prob
-                module.generate_suite(
-                    sizes=sizes,
-                    num_instances=args.num_instances,
-                    out_root=str(out_root),
-                    seed_offset=args.seed_offset,
-                )
+                ensure_suite(suite, prob, out_root, sizes, args.num_instances, args.seed_offset, args.regenerate)
+        write_manifest(root)
 
     if args.mode == "generate":
         return

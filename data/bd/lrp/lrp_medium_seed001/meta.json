@@ -1,0 +1,9 @@
+{
+  "seed": 1,
+  "size": "medium",
+  "m": 5,
+  "n": 9,
+  "routes": 1000,
+  "ground_truth_objective": 37.53986349578027,
+  "folder": "lrp_medium_seed001"
+}

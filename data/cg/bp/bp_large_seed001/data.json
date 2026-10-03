@@ -1,0 +1,112 @@
+{
+  "instance_size": "large",
+  "bin_capacity": 168,
+  "bin_unit": "volume_units",
+  "items": [
+    {
+      "id": 0,
+      "name": "Shipment_0",
+      "size": 24
+    },
+    {
+      "id": 1,
+      "name": "Shipment_1",
+      "size": 48
+    },
+    {
+      "id": 2,
+      "name": "Shipment_2",
+      "size": 31
+    },
+    {
+      "id": 3,
+      "name": "Shipment_3",
+      "size": 79
+    },
+    {
+      "id": 4,
+      "name": "Shipment_4",
+      "size": 73
+    },
+    {
+      "id": 5,
+      "name": "Shipment_5",
+      "size": 76
+    },
+    {
+      "id": 6,
+      "name": "Shipment_6",
+      "size": 99
+    },
+    {
+      "id": 7,
+      "name": "Shipment_7",
+      "size": 64
+    },
+    {
+      "id": 8,
+      "name": "Shipment_8",
+      "size": 42
+    },
+    {
+      "id": 9,
+      "name": "Shipment_9",
+      "size": 28
+    },
+    {
+      "id": 10,
+      "name": "Shipment_10",
+      "size": 78
+    },
+    {
+      "id": 11,
+      "name": "Shipment_11",
+      "size": 19
+    },
+    {
+      "id": 12,
+      "name": "Shipment_12",
+      "size": 65
+    },
+    {
+      "id": 13,
+      "name": "Shipment_13",
+      "size": 71
+    },
+    {
+      "id": 14,
+      "name": "Shipment_14",
+      "size": 93
+    },
+    {
+      "id": 15,
+      "name": "Shipment_15",
+      "size": 16
+    },
+    {
+      "id": 16,
+      "name": "Shipment_16",
+      "size": 73
+    },
+    {
+      "id": 17,
+      "name": "Shipment_17",
+      "size": 50
+    },
+    {
+      "id": 18,
+      "name": "Shipment_18",
+      "size": 45
+    },
+    {
+      "id": 19,
+      "name": "Shipment_19",
+      "size": 91
+    },
+    {
+      "id": 20,
+      "name": "Shipment_20",
+      "size": 29
+    }
+  ]
+}

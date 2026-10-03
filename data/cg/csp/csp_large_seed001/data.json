@@ -1,0 +1,37 @@
+{
+  "instance_size": "large",
+  "stock_size": 252,
+  "stock_unit": "cm",
+  "item_types": [
+    {
+      "id": 0,
+      "name": "PaperProduct_0",
+      "size": 133,
+      "demand": 28
+    },
+    {
+      "id": 1,
+      "name": "PaperProduct_1",
+      "size": 127,
+      "demand": 76
+    },
+    {
+      "id": 2,
+      "name": "PaperProduct_2",
+      "size": 122,
+      "demand": 70
+    },
+    {
+      "id": 3,
+      "name": "PaperProduct_3",
+      "size": 33,
+      "demand": 73
+    },
+    {
+      "id": 4,
+      "name": "PaperProduct_4",
+      "size": 57,
+      "demand": 61
+    }
+  ]
+}

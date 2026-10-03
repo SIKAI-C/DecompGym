@@ -1,0 +1,81 @@
+{
+  "instance_size": "small",
+  "machines": [
+    {
+      "id": 0,
+      "name": "Plant_0",
+      "capacity": 20
+    },
+    {
+      "id": 1,
+      "name": "Plant_1",
+      "capacity": 20
+    }
+  ],
+  "jobs": [
+    {
+      "id": 0,
+      "name": "Order_0",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 8,
+          "cost": 7.38
+        },
+        {
+          "machine_id": 1,
+          "resource": 8,
+          "cost": 9.6
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Order_1",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 6,
+          "cost": 9.49
+        },
+        {
+          "machine_id": 1,
+          "resource": 2,
+          "cost": 11.53
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Order_2",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 5,
+          "cost": 10.25
+        },
+        {
+          "machine_id": 1,
+          "resource": 8,
+          "cost": 10.65
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Order_3",
+      "assignments": [
+        {
+          "machine_id": 0,
+          "resource": 4,
+          "cost": 18.34
+        },
+        {
+          "machine_id": 1,
+          "resource": 5,
+          "cost": 17.97
+        }
+      ]
+    }
+  ]
+}

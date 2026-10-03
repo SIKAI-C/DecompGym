@@ -1,0 +1,36 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a 1D cutting stock problem:
+  - Stock length W = 191 cm.
+  - Item types i=0..m-1, each with width size[i] and demand demand[i].
+  - Objective: minimize number of stock pieces used.
+
+Context: a manufacturing operation cutting stock material into ordered widths.
+
+Input file data.json contains:
+  - "stock_size" (or "roll_width"), "stock_unit"
+  - "item_types": list of { "id": int, "name": str, "size": int, "demand": int }
+
+Examples from this instance:
+  - PaperProduct_0 (id=0, size=29, demand=52)
+  - PaperProduct_1 (id=1, size=65, demand=45)
+  - PaperProduct_2 (id=2, size=40, demand=40)
+  - PaperProduct_3 (id=3, size=113, demand=17)
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the cutting stock problem,
+3) writes output.json with at least:
+    {
+      "status": "optimal | feasible | infeasible | error",
+      "method": "column_generation",
+      "objective_value": <#stock pieces used>,
+      "solution": {
+        "patterns": [
+          { "pattern_id": <int>, "usage": <int>, "cuts": [{"item_id": <int>, "count": <int>}, ...] },
+          ...
+        ]
+      }
+    }
+Each pattern's total width must not exceed stock_size. Across all patterns (accounting for usage) every item demand must be met.

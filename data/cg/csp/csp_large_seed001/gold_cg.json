@@ -1,0 +1,199 @@
+{
+  "best_objective": 113.0,
+  "global_lb": 112.5,
+  "global_ub": 113.0,
+  "iters": 5,
+  "total_time": 0.014554249995853752,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.001104041002690792,
+      "iter_time": 0.001103583024814725,
+      "master_obj": 164.67857142857142,
+      "reduced_cost": -0.5357142857142856,
+      "n_patterns": 5
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0018815409857779741,
+      "iter_time": 0.0007735830149613321,
+      "master_obj": 139.0,
+      "reduced_cost": -0.5,
+      "n_patterns": 6
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.0027032909565605223,
+      "iter_time": 0.0008187499479390681,
+      "master_obj": 125.375,
+      "reduced_cost": -0.5,
+      "n_patterns": 7
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0032830829732120037,
+      "iter_time": 0.0005769999697804451,
+      "master_obj": 112.71428571428571,
+      "reduced_cost": -0.4285714285714286,
+      "n_patterns": 8
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.01455037499545142,
+      "iter_time": 0.011265625013038516,
+      "master_obj": 112.5,
+      "reduced_cost": 0.0,
+      "n_patterns": 9
+    }
+  ],
+  "final_master_objective": 113.0,
+  "final_vars": {
+    "2": 8.0,
+    "5": 23.0,
+    "6": 54.0,
+    "7": 19.0,
+    "8": 9.0
+  },
+  "master_metadata": {
+    "patterns": [
+      [
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        7,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        4
+      ],
+      [
+        0,
+        1,
+        0,
+        2,
+        1
+      ],
+      [
+        0,
+        1,
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        1,
+        0,
+        0,
+        3,
+        0
+      ]
+    ],
+    "solution_patterns": [
+      {
+        "pattern_id": 2,
+        "usage": 8,
+        "cuts": [
+          {
+            "item_id": 2,
+            "count": 2
+          }
+        ]
+      },
+      {
+        "pattern_id": 5,
+        "usage": 23,
+        "cuts": [
+          {
+            "item_id": 1,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 2
+          },
+          {
+            "item_id": 4,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 6,
+        "usage": 54,
+        "cuts": [
+          {
+            "item_id": 1,
+            "count": 1
+          },
+          {
+            "item_id": 2,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 7,
+        "usage": 19,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 4,
+            "count": 2
+          }
+        ]
+      },
+      {
+        "pattern_id": 8,
+        "usage": 9,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 3
+          }
+        ]
+      }
+    ]
+  },
+  "sub_metadata": {
+    "dual_value": 1.0
+  }
+}

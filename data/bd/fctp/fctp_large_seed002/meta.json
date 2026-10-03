@@ -1,0 +1,8 @@
+{
+  "seed": 2,
+  "size": "large",
+  "m": 5,
+  "n": 6,
+  "ground_truth_objective": 463.9521126589098,
+  "folder": "fctp_large_seed002"
+}

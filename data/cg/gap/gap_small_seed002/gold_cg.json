@@ -1,0 +1,161 @@
+{
+  "best_objective": 45.09,
+  "global_lb": 45.09,
+  "global_ub": 45.09,
+  "iters": 2,
+  "total_time": 0.003840249963104725,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.001378374989144504,
+      "iter_time": 0.0013780000153928995,
+      "master_obj": 47.5,
+      "reduced_cost": -2.4399999999999977,
+      "n_patterns": 11
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0038367079687304795,
+      "iter_time": 0.0024502919986844063,
+      "master_obj": 45.09,
+      "reduced_cost": 0.0,
+      "n_patterns": 12
+    }
+  ],
+  "final_master_objective": 45.09,
+  "final_vars": {
+    "9": 1.0,
+    "11": 1.0
+  },
+  "master_metadata": {
+    "patterns": [
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          1,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          1,
+          0,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          1,
+          0
+        ]
+      },
+      {
+        "machine": 1,
+        "jobs": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          1,
+          0,
+          1,
+          1
+        ]
+      },
+      {
+        "machine": 0,
+        "jobs": [
+          1,
+          1,
+          1,
+          0
+        ]
+      }
+    ],
+    "assignments": [
+      {
+        "job_id": 3,
+        "machine_id": 1
+      },
+      {
+        "job_id": 0,
+        "machine_id": 0
+      },
+      {
+        "job_id": 1,
+        "machine_id": 0
+      },
+      {
+        "job_id": 2,
+        "machine_id": 0
+      }
+    ]
+  },
+  "sub_metadata": {}
+}

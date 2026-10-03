@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "medium",
+  "m": 15,
+  "n": 22,
+  "k": 4,
+  "ground_truth_objective": 45.60698433567347,
+  "folder": "km_medium_seed002"
+}

@@ -1,0 +1,8 @@
+{
+  "seed": 0,
+  "size": "medium",
+  "n_jobs": 8,
+  "n_machines": 3,
+  "ground_truth_objective": 96.83000000000001,
+  "folder": "gap_medium_seed000"
+}

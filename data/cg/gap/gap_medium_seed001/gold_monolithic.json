@@ -1,0 +1,78 @@
+{
+  "best_objective": 68.94,
+  "global_lb": 68.94,
+  "global_ub": 68.94,
+  "iters": 1,
+  "total_time": 0.00034579099155962467,
+  "iter_records": [],
+  "final_master_objective": 68.94,
+  "final_vars": {
+    "x_0_0": 0.0,
+    "x_0_1": 1.0,
+    "x_1_0": 0.0,
+    "x_1_1": 1.0,
+    "x_2_0": 1.0,
+    "x_2_1": 0.0,
+    "x_3_0": 0.0,
+    "x_3_1": 1.0,
+    "x_4_0": 1.0,
+    "x_4_1": 0.0,
+    "x_5_0": 1.0,
+    "x_5_1": 0.0
+  },
+  "master_metadata": {
+    "assignments": [
+      {
+        "job_id": 0,
+        "machine_id": 1
+      },
+      {
+        "job_id": 1,
+        "machine_id": 1
+      },
+      {
+        "job_id": 2,
+        "machine_id": 0
+      },
+      {
+        "job_id": 3,
+        "machine_id": 1
+      },
+      {
+        "job_id": 4,
+        "machine_id": 0
+      },
+      {
+        "job_id": 5,
+        "machine_id": 0
+      }
+    ],
+    "x_assignment": [
+      [
+        0.0,
+        1.0
+      ],
+      [
+        0.0,
+        1.0
+      ],
+      [
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0
+      ],
+      [
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0
+      ]
+    ]
+  },
+  "sub_metadata": {}
+}

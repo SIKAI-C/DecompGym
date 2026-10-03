@@ -1,0 +1,8 @@
+- Dataset: 81 instances, nine per problem (three seeds at each of small, medium, and large).
+- Benders families: UFL, FCTP, k-median, location routing over supplied routes, and two-stage stochastic production.
+- Column-generation families: bin packing, cutting stock, generalized assignment, and shift scheduling.
+- Each instance provides data.json, prompt.txt, meta.json, gold_monolithic.json, and gold_bd.json or gold_cg.json.
+- The monolithic objective is the comparison reference. Decomposition references are separate feasible solutions with iteration and bound traces; restricted integer masters can have a positive gap.
+- The default bin-packing references have five positive integer gaps; these are measured outcomes, not missing files.
+- manifest.json lists instance identities, data hashes, objectives, and decomposition gaps.
+- Run python -m src.01_gen to reuse this dataset and generate missing instances; use --regenerate explicitly to rebuild existing instances.

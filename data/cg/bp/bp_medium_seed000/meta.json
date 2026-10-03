@@ -1,0 +1,8 @@
+{
+  "seed": 0,
+  "size": "medium",
+  "n_items": 25,
+  "bin_capacity": 129,
+  "ground_truth_objective": 10.0,
+  "folder": "bp_medium_seed000"
+}

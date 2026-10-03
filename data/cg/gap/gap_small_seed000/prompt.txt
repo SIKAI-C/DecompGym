@@ -1,0 +1,34 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a generalized assignment problem:
+  - Jobs i must each be assigned to exactly one machine j.
+  - Assigning job i to machine j consumes resource a[i,j] and costs c[i,j].
+  - Each machine j has capacity b[j].
+  - Objective: minimize total assignment cost.
+
+Context: an operation assigning jobs to limited resources under capacity.
+
+Input data.json contains:
+  - "machines": list of {id, name, capacity}
+  - "jobs": list of {id, name, assignments: [{machine_id, resource, cost}, ...]}
+
+Sample assignments:
+  - job 0: to 0 uses 6 cost 8.35, to 1 uses 8 cost 9.79
+  - job 1: to 0 uses 4 cost 18.42, to 1 uses 3 cost 17.72
+  - job 2: to 0 uses 8 cost 8.63, to 1 uses 8 cost 9.47
+  - ...
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the GAP,
+3) writes output.json with at least:
+{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "column_generation",
+  "objective_value": <float>,
+  "solution": {
+     "assignments": [{"job_id": i, "machine_id": j}, ...]
+  }
+}
+All jobs must be assigned exactly once and no machine capacity may be exceeded.

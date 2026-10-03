@@ -1,0 +1,25 @@
+{
+  "instance_size": "medium",
+  "stock_size": 161,
+  "stock_unit": "cm",
+  "item_types": [
+    {
+      "id": 0,
+      "name": "PaperProduct_0",
+      "size": 26,
+      "demand": 57
+    },
+    {
+      "id": 1,
+      "name": "PaperProduct_1",
+      "size": 62,
+      "demand": 52
+    },
+    {
+      "id": 2,
+      "name": "PaperProduct_2",
+      "size": 37,
+      "demand": 29
+    }
+  ]
+}

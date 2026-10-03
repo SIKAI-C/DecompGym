@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -85,6 +87,7 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
         self.global_lb: float = -math.inf
         self.global_ub: float = math.inf
         self.iter_records: list[IterationRecord] = []
+        self._incumbent: dict[str, Any] | None = None
 
         # Total timing
         self._run_start_time: float | None = None
@@ -141,6 +144,7 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
         self.global_lb = -math.inf
         self.global_ub = math.inf
         self.iter_records.clear()
+        self._incumbent = None
 
     def compute_iteration_bounds(
         self,
@@ -275,9 +279,10 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
             "total_time": total_time,
             "iter_records": self.iter_records,  # list[IterationRecord]
             "final_master_objective": master_solution.objective,
-            "final_vars": master_solution.vars,
-            "master_metadata": master_solution.metadata or {},
-            "sub_metadata": sub_result.metadata or {},
+            "final_vars": self._incumbent["vars"] if self._incumbent else master_solution.vars,
+            "master_metadata": self._incumbent["master_metadata"] if self._incumbent else (master_solution.metadata or {}),
+            "sub_metadata": self._incumbent["sub_metadata"] if self._incumbent else (sub_result.metadata or {}),
+            "incumbent_iteration": self._incumbent["iteration"] if self._incumbent else None,
         }
 
     # --- plotting helper -------------------------------------------------------
@@ -327,8 +332,11 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
             output_dir_path.mkdir(parents=True, exist_ok=True)
             output_path = str(output_dir_path / "benders_progress.pdf")
             fig.savefig(output_path, bbox_inches="tight", format="pdf")
+            plt.close(fig)
+            return output_path
 
         plt.show()
+        plt.close(fig)
         return output_path
 
     # --- main driver -----------------------------------------------------------
@@ -350,7 +358,18 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
             last_sub_result = self.solve_subproblems(inst, last_master_sol)
 
             # Update bounds and record iteration info
+            previous_bound = self.global_ub if self.is_minimization else self.global_lb
             global_lb, global_ub = self.compute_iteration_bounds(inst, last_master_sol, last_sub_result)
+            incumbent_bound = global_ub if self.is_minimization else global_lb
+            improved = incumbent_bound < previous_bound if self.is_minimization else incumbent_bound > previous_bound
+            if math.isfinite(incumbent_bound) and improved:
+                # Copy the paired plan, not the live master model, at the moment it establishes the incumbent.
+                self._incumbent = {
+                    "vars": deepcopy(last_master_sol.vars),
+                    "master_metadata": deepcopy(last_master_sol.metadata or {}),
+                    "sub_metadata": deepcopy(last_sub_result.metadata or {}),
+                    "iteration": iteration,
+                }
 
             iter_end = time.perf_counter()
             elapsed = iter_end - self._run_start_time

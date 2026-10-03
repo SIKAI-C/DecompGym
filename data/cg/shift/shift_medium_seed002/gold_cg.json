@@ -1,0 +1,75 @@
+{
+  "best_objective": 10.0,
+  "global_lb": 10.0,
+  "global_ub": 10.0,
+  "iters": 5,
+  "total_time": 0.0013994999462738633,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.00028033298440277576,
+      "iter_time": 0.00028012500843033195,
+      "master_obj": 22.0,
+      "reduced_cost": -2.0,
+      "n_patterns": 7
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0005535829695872962,
+      "iter_time": 0.0002720829797908664,
+      "master_obj": 17.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 8
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.0008387499838136137,
+      "iter_time": 0.00028408400248736143,
+      "master_obj": 13.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 9
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0011214999831281602,
+      "iter_time": 0.00028191698947921395,
+      "master_obj": 12.0,
+      "reduced_cost": -1.0,
+      "n_patterns": 10
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.001398832944687456,
+      "iter_time": 0.0002765829558484256,
+      "master_obj": 10.0,
+      "reduced_cost": 0.0,
+      "n_patterns": 11
+    }
+  ],
+  "final_master_objective": 10.0,
+  "final_vars": {
+    "7": 2.0,
+    "9": 5.0,
+    "10": 3.0
+  },
+  "master_metadata": {
+    "shifts": [
+      {
+        "start": 0,
+        "end": 4,
+        "usage": 2
+      },
+      {
+        "start": 2,
+        "end": 6,
+        "usage": 5
+      },
+      {
+        "start": 3,
+        "end": 7,
+        "usage": 3
+      }
+    ]
+  },
+  "sub_metadata": {}
+}

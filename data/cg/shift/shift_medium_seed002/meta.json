@@ -1,0 +1,7 @@
+{
+  "seed": 2,
+  "size": "medium",
+  "T": 8,
+  "ground_truth_objective": 10.0,
+  "folder": "shift_medium_seed002"
+}

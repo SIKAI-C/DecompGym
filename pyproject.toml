@@ -1,3 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decompbench"
+version = "0.1.0"
+description = "Educational examples and evaluation infrastructure for Benders decomposition and column generation"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.12"
+dependencies = ["gurobipy>=11,<12", "numpy>=1.26,<3", "scipy>=1.11,<2", "matplotlib>=3.8,<4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.12"]
+
+[tool.setuptools.packages.find]
+include = ["src", "src.*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

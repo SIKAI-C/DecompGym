@@ -1,0 +1,41 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a 1D bin-packing problem with identical bins:
+  - Each bin has capacity C = 152 volume_units.
+  - Items cannot be split. Each item must be placed into exactly one bin.
+  - Objective: minimize the number of bins used.
+
+Context: a logistics provider packing items into identical bins for shipment.
+
+The input file data.json provides:
+  - "bin_capacity": integer
+  - "bin_unit": unit label
+  - "items": list of objects { "id": int, "name": str, "size": int }
+
+Examples from this instance:
+  - Shipment_0 (id=0, size=23)
+  - Shipment_1 (id=1, size=47)
+  - Shipment_2 (id=2, size=30)
+  - Shipment_3 (id=3, size=78)
+  - ...
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the bin-packing problem.
+3) writes output.json with at least:
+    {
+      "status": "optimal | feasible | infeasible | error",
+      "method": "column_generation",
+      "objective_value": <#bins used as float>,
+      "solution": {
+        "bins": [
+          {
+            "usage": <int>,              # number of identical bins of this pattern
+            "contents": [{"item_id": <int>, "count": <int>}, ...]
+          },
+          ...
+        ]
+      }
+    }
+  Each item id from data.json must appear exactly once across the bins (count=1 for single items).

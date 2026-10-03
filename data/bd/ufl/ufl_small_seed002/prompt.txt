@@ -1,0 +1,52 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given an Uncapacitated Facility Location (UFL) problem. Opening a facility incurs a fixed
+cost, and serving a customer from a facility incurs a distance-based shipping cost. The goal is to
+decide which facilities to open and how to assign each customer so total open-plus-shipping cost is minimized.
+
+- There are 10 (m) facilities and 19 (n) customers.
+- Customer locations (Xc), one per line (customer j: x, y):
+  customer 0: (0.837890625, 0.26171875)
+  customer 1: (0.109375, 0.2978515625)
+  customer 2: (0.4140625, 0.814453125)
+  customer 3: (0.451171875, 0.091796875)
+  customer 4: (0.3349609375, 0.6005859375)
+  ... you can find all the data in the data.json
+- Facility locations (Xf), one per line (facility i: x, y):
+  facility 0: (-0.05, 0.15)
+  facility 1: (0.3, 0.3)
+  facility 2: (0.6, 0.5)
+  facility 3: (0.7, 0.95)
+  facility 4: (0.95, 0.8)
+  ... you can find all the data in the data.json
+- Fixed opening costs (f), one per line:
+  facility 0: fixed cost = 15.0
+  facility 1: fixed cost = 11.0
+  facility 2: fixed cost = 20.0
+  facility 3: fixed cost = 12.0
+  facility 4: fixed cost = 14.0
+  ... you can find all the data in the data.json
+- Shipping cost matrix (D): each line is for one facility i, listing cost to each customer j (i -> j):
+  i=0->cust 0: 8.948915247472474, i=0->cust 1: 2.173947450116755, i=0->cust 2: 8.10464039441921, i=0->cust 3: 5.045402382870778, i=0->cust 4: 5.926403719572544, i=0->cust 5: 10.393613916034967, i=0->cust 6: 10.438378759613506, i=0->cust 7: 9.357262680301545, i=0->cust 8: 6.2118049831495545, i=0->cust 9: 5.660089190963178, i=0->cust 10: 5.446587696475692, i=0->cust 11: 3.097661791648574, i=0->cust 12: 8.475322579965477, i=0->cust 13: 8.95175059156389, i=0->cust 14: 10.320343733689016, i=0->cust 15: 5.538991564469974, i=0->cust 16: 12.806467264249076, i=0->cust 17: 10.619545826943666, i=0->cust 18: 4.931232579034896
+  i=1->cust 0: 5.392511275504699, i=1->cust 1: 1.906371065891722, i=1->cust 2: 5.269461753618822, i=1->cust 3: 2.5729647694980446, i=1->cust 4: 3.0261224855189326, i=1->cust 5: 6.687928088025147, i=1->cust 6: 7.022340546723036, i=1->cust 7: 6.305361497817873, i=1->cust 8: 2.598564367815745, i=1->cust 9: 3.7064513384986193, i=1->cust 10: 2.6256110070610976, i=1->cust 11: 1.5586830821047146, i=1->cust 12: 4.68197998548399, i=1->cust 13: 5.293998184601545, i=1->cust 14: 6.569023740746728, i=1->cust 15: 3.4330593209657083, i=1->cust 16: 9.21868317143415, i=1->cust 17: 6.855323237860972, i=1->cust 18: 1.2154056929828643
+  i=2->cust 0: 3.3670447511794843, i=2->cust 1: 5.306381831424227, i=2->cust 2: 3.653129093373455, i=2->cust 3: 4.344877467211029, i=2->cust 4: 2.8348410091861025, i=2->cust 5: 3.127165387470849, i=2->cust 6: 5.022292604393973, i=2->cust 7: 5.264838185373229, i=2->cust 8: 2.293545132253046, i=2->cust 9: 4.287004376561587, i=2->cust 10: 3.0089847806860686, i=2->cust 11: 4.8853856501242, i=2->cust 12: 1.6354946757701954, i=2->cust 13: 1.8726680241207871, i=2->cust 14: 3.5382566903058548, i=2->cust 15: 4.031220665167007, i=2->cust 16: 5.7567672712454865, i=2->cust 17: 3.249901990146263, i=2->cust 18: 2.453605459020491
+  i=3->cust 0: 7.019579072597253, i=3->cust 1: 8.798496889575464, i=3->cust 2: 3.1643831820516866, i=3->cust 3: 8.93548006293328, i=3->cust 4: 5.053154502126693, i=3->cust 5: 2.488619267906544, i=3->cust 6: 8.16915795869748, i=3->cust 7: 9.133972773014165, i=3->cust 8: 6.902261125796505, i=3->cust 9: 5.783993291806119, i=3->cust 10: 5.528626245316316, i=3->cust 11: 9.136433375526767, i=3->cust 12: 5.197001751921261, i=3->cust 13: 2.808860628184398, i=3->cust 14: 5.814324533554533, i=3->cust 15: 5.7502341844719265, i=3->cust 16: 2.362164799560608, i=3->cust 17: 3.1504196856223206, i=3->cust 18: 6.436488396131477
+  i=4->cust 0: 5.498319889424889, i=4->cust 1: 9.791850917516522, i=4->cust 2: 5.3613235001118476, i=4->cust 3: 8.662454412871568, i=4->cust 4: 6.465593682900533, i=4->cust 5: 1.5410601823406191, i=4->cust 6: 6.1401904391598805, i=4->cust 7: 7.485126242633725, i=4->cust 8: 6.553162825970498, i=4->cust 9: 7.62317397969233, i=4->cust 10: 6.867132227895453, i=4->cust 11: 9.485175562446878, i=4->cust 12: 4.187621157587284, i=4->cust 13: 3.0086221769382164, i=4->cust 14: 3.7717756635958803, i=4->cust 15: 7.48949510489656, i=4->cust 16: 1.6839483113454525, i=4->cust 17: 1.422938357960963, i=4->cust 18: 7.013008564342065
+  ... you can find all the data in the data.json
+
+All data are stored in a JSON file named data.json in the current directory.
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads data.json from the current directory.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes a JSON file output.json with at least:
+   {
+     "status": "optimal | feasible | infeasible | error",
+     "method": "benders_decomposition",
+     "objective_value": <float>,
+     "y": [0/1 list of length m indicating open facilities],
+     "x": [[0/1 matrix of shape (m, n) indicating assignments]]
+   }

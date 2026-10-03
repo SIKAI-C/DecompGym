@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "large",
+  "n_products": 7,
+  "n_periods": 8,
+  "n_scenarios": 6,
+  "ground_truth_objective": 5593.869166631597,
+  "folder": "tsso_large_seed002"
+}

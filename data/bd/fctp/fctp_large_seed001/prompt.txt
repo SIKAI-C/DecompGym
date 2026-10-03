@@ -1,0 +1,46 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a fixed-charge transportation problem:
+  First choose which factory-to-customer lanes to activate; each chosen lane costs a fixed fee and then allows up to a capacity of flow.
+  After lanes are open, decide shipment quantities so every customer's demand is met without exceeding any factory's supply.
+  The total cost combines fixed activation and per-unit shipping. This mirrors "decide infrastructure first, operate flow second."
+  Parameters:
+  - There are m = 4 supply nodes and n = 7 demand nodes.
+  - Each (i, j) arc has a fixed activation cost, a unit shipping cost, and a capacity.
+  - Decision variables: y[i,j] in {0,1} indicates whether arc (i,j) is opened; x[i,j] >= 0 is quantity shipped.
+
+The data for this instance is in data.json with fields:
+  - "supply": list length m
+  - "demand": list length n
+  - "unit_cost", "fixed_cost", "capacity": each an m x n matrix
+
+Sample rows (full data is in the JSON file):
+Supply vector:
+  supply = [24.0, 25.0, 30.0, 34.0]
+Demand vector:
+  demand = [8.0, 10.0, 20.0, 22.0, 11.0] ... (see data.json)
+Fixed costs:
+  fixed_cost[0] = [13.0, 12.0, 17.0, 20.0, 23.0, 13.0, 5.0]
+  fixed_cost[1] = [19.0, 15.0, 22.0, 14.0, 12.0, 6.0, 14.0]
+  fixed_cost[2] = [17.0, 20.0, 22.0, 9.0, 16.0, 21.0, 10.0]
+  fixed_cost[3] = [11.0, 21.0, 16.0, 15.0, 18.0, 15.0, 24.0]
+Unit costs:
+  unit_cost[0] = [8.449323344383975, 4.682792227322452, 5.946343189057536, 1.2480320191876153, 7.7816179780732595, 5.843289818973504, 3.9675854484918296]
+  unit_cost[1] = [8.09585833085564, 3.728753463624805, 5.081481005325863, 2.2063752752244827, 4.628016878024163, 2.8310971660853466, 3.3608200639766457]
+  unit_cost[2] = [7.753282053670473, 3.523678821874359, 5.366718769884716, 9.826634798211147, 9.65491474297408, 7.523109466961802, 5.8710416999269075]
+  unit_cost[3] = [3.4920208364083374, 2.445868078976142, 9.729328718945194, 5.644617269930908, 2.042790512236933, 6.611407799837504, 7.9901480290806814]
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition", # or "monolithic"
+      "objective_value": <float>,
+      "y": [[...]],  # m x n
+      "x": [[...]]   # m x n representing the last subproblem solution
+    }

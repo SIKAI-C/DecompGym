@@ -1,0 +1,299 @@
+{
+  "best_objective": 87.0,
+  "global_lb": 86.125,
+  "global_ub": 87.0,
+  "iters": 9,
+  "total_time": 0.005946332996245474,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.0010385419591329992,
+      "iter_time": 0.001038124959450215,
+      "master_obj": 123.41666666666666,
+      "reduced_cost": -0.5,
+      "n_patterns": 6
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0016728329937905073,
+      "iter_time": 0.0006299160304479301,
+      "master_obj": 107.41666666666666,
+      "reduced_cost": -0.45833333333333326,
+      "n_patterns": 7
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.002455374982673675,
+      "iter_time": 0.000780707981903106,
+      "master_obj": 103.29166666666666,
+      "reduced_cost": -0.45833333333333326,
+      "n_patterns": 8
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0031229580054059625,
+      "iter_time": 0.0006646250258199871,
+      "master_obj": 90.625,
+      "reduced_cost": -0.375,
+      "n_patterns": 9
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.003730666998308152,
+      "iter_time": 0.0006055840058252215,
+      "master_obj": 88.25,
+      "reduced_cost": -0.25,
+      "n_patterns": 10
+    },
+    {
+      "iteration": 6,
+      "elapsed_time": 0.004347874957602471,
+      "iter_time": 0.000615666969679296,
+      "master_obj": 86.83333333333333,
+      "reduced_cost": -0.08333333333333348,
+      "n_patterns": 11
+    },
+    {
+      "iteration": 7,
+      "elapsed_time": 0.004896082973573357,
+      "iter_time": 0.000546958006452769,
+      "master_obj": 86.75,
+      "reduced_cost": -0.25,
+      "n_patterns": 12
+    },
+    {
+      "iteration": 8,
+      "elapsed_time": 0.005449041957035661,
+      "iter_time": 0.0005518340039998293,
+      "master_obj": 86.33333333333334,
+      "reduced_cost": -0.08333333333333326,
+      "n_patterns": 13
+    },
+    {
+      "iteration": 9,
+      "elapsed_time": 0.005945374956354499,
+      "iter_time": 0.0004947079578414559,
+      "master_obj": 86.125,
+      "reduced_cost": 0.0,
+      "n_patterns": 14
+    }
+  ],
+  "final_master_objective": 87.0,
+  "final_vars": {
+    "2": 2.0,
+    "3": 4.0,
+    "7": 35.0,
+    "8": 32.0,
+    "11": 6.0,
+    "13": 8.0
+  },
+  "master_metadata": {
+    "patterns": [
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        8,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        4,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        0,
+        0,
+        3,
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        1,
+        0
+      ]
+    ],
+    "solution_patterns": [
+      {
+        "pattern_id": 2,
+        "usage": 2,
+        "cuts": [
+          {
+            "item_id": 2,
+            "count": 8
+          }
+        ]
+      },
+      {
+        "pattern_id": 3,
+        "usage": 4,
+        "cuts": [
+          {
+            "item_id": 3,
+            "count": 4
+          }
+        ]
+      },
+      {
+        "pattern_id": 7,
+        "usage": 35,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 1,
+            "count": 1
+          },
+          {
+            "item_id": 2,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 8,
+        "usage": 32,
+        "cuts": [
+          {
+            "item_id": 4,
+            "count": 1
+          },
+          {
+            "item_id": 5,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 11,
+        "usage": 6,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 2,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 13,
+        "usage": 8,
+        "cuts": [
+          {
+            "item_id": 2,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          },
+          {
+            "item_id": 4,
+            "count": 1
+          }
+        ]
+      }
+    ]
+  },
+  "sub_metadata": {
+    "dual_value": 1.0
+  }
+}

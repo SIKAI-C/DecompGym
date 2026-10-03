@@ -1,0 +1,279 @@
+{
+  "best_objective": 4.0,
+  "global_lb": 2.9444444444444446,
+  "global_ub": 4.0,
+  "iters": 8,
+  "total_time": 0.0059886660310439765,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.0006868329946883023,
+      "iter_time": 0.0006865419563837349,
+      "master_obj": 4.083333333333333,
+      "reduced_cost": -0.5,
+      "n_patterns": 7
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0014006660203449428,
+      "iter_time": 0.0007122500101104379,
+      "master_obj": 3.583333333333333,
+      "reduced_cost": -0.5,
+      "n_patterns": 8
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.0021373750059865415,
+      "iter_time": 0.0007349589723162353,
+      "master_obj": 3.083333333333333,
+      "reduced_cost": -0.4166666666666665,
+      "n_patterns": 9
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0028655410278588533,
+      "iter_time": 0.0007265830063261092,
+      "master_obj": 3.083333333333333,
+      "reduced_cost": -0.16666666666666674,
+      "n_patterns": 10
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.0036415000213310122,
+      "iter_time": 0.0007746670162305236,
+      "master_obj": 3.027777777777778,
+      "reduced_cost": -0.16666666666666652,
+      "n_patterns": 11
+    },
+    {
+      "iteration": 6,
+      "elapsed_time": 0.004340458021033555,
+      "iter_time": 0.0006975830183364451,
+      "master_obj": 2.9722222222222223,
+      "reduced_cost": -0.11111111111111116,
+      "n_patterns": 12
+    },
+    {
+      "iteration": 7,
+      "elapsed_time": 0.005150041019078344,
+      "iter_time": 0.0008085410227067769,
+      "master_obj": 2.9583333333333335,
+      "reduced_cost": -0.04166666666666652,
+      "n_patterns": 13
+    },
+    {
+      "iteration": 8,
+      "elapsed_time": 0.005988000018987805,
+      "iter_time": 0.000836834020446986,
+      "master_obj": 2.9444444444444446,
+      "reduced_cost": 0.0,
+      "n_patterns": 14
+    }
+  ],
+  "final_master_objective": 4.0,
+  "final_vars": {
+    "7": 1.0,
+    "8": 1.0,
+    "9": 1.0,
+    "13": 1.0
+  },
+  "master_metadata": {
+    "patterns": [
+      [
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        2,
+        1,
+        0,
+        0,
+        0
+      ]
+    ],
+    "solution_patterns": [
+      {
+        "pattern_id": 7,
+        "usage": 1,
+        "contents": [
+          {
+            "item_id": 4,
+            "count": 1
+          },
+          {
+            "item_id": 6,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 8,
+        "usage": 1,
+        "contents": [
+          {
+            "item_id": 5,
+            "count": 1
+          },
+          {
+            "item_id": 6,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 9,
+        "usage": 1,
+        "contents": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 1,
+            "count": 1
+          },
+          {
+            "item_id": 6,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 13,
+        "usage": 1,
+        "contents": [
+          {
+            "item_id": 0,
+            "count": 1
+          },
+          {
+            "item_id": 2,
+            "count": 2
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          }
+        ]
+      }
+    ]
+  },
+  "sub_metadata": {
+    "dual_value": 1.0
+  }
+}

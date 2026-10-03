@@ -1,0 +1,37 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a shift scheduling / set-covering problem:
+  - Time horizon split into T slots, demand[t] workers needed in each slot.
+  - A feasible shift is any contiguous block of slots with length between L_min and L_max.
+  - Cost per shift = 1. Objective: minimize number of shifts while covering all demand.
+
+Context: an operation scheduling staff shifts to cover time-varying demand.
+
+Input data.json contains:
+  - "time_slots": list of {id, label}
+  - "demand": list of length T
+  - "shift_min_length", "shift_max_length"
+
+Sample demand (slot label : demand):
+  - 08:00-09:00: 2
+  - 09:00-10:00: 2
+  - 10:00-11:00: 7
+  - 11:00-12:00: 5
+  - 12:00-13:00: 7
+  - 13:00-14:00: 7
+  - ...
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the shift-cover problem,
+3) writes output.json with at least:
+{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "column_generation",
+  "objective_value": <#shifts>,
+  "solution": {
+     "shifts": [{"start": <int>, "end": <int>, "usage": <int>}, ...]  # end is inclusive index
+  }
+}
+Each shift covers its contiguous slots fully; across all shifts (counting usage) every slot demand must be met.

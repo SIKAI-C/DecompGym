@@ -1,0 +1,8 @@
+{
+  "seed": 0,
+  "size": "large",
+  "n_item_types": 7,
+  "stock_size": 277,
+  "ground_truth_objective": 169.0,
+  "folder": "csp_large_seed000"
+}

@@ -1,0 +1,44 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a Location Routing Problem (LRP) instance with pre-enumerated vehicle routes:
+  First choose which depots to open (paying fixed costs).
+  Then operate vehicle routes that start/end at an open depot and collectively visit each customer exactly once.
+  Each route has a known travel cost and each depot may limit how many routes can depart.
+  The objective is to minimize opening costs plus travel while ensuring every customer is served.
+  - m = 7 depots and n = 13 customers.
+  - Each route r visits a subset of customers and starts/ends at the depot route_depot[r].
+  - Opening depot j incurs cost depot_cost[j] and allows up to max_vehicles[j] active routes.
+  - Selecting route r incurs route_cost[r].
+
+The instance is stored in data.json with fields:
+  - "routes": list of customer sequences for each route (length R)
+  - "route_depot": list length R mapping each route to its depot
+  - "route_cost": list length R
+  - "max_vehicles": list length m
+  - "depot_cost": list length m
+  - "incidence": n x R matrix (1 if customer i is on route r)
+
+Samples:
+Depot costs:   depot_cost = [27.0, 25.0, 17.0, 19.0, 28.0, 25.0] ... (see data.json)
+Max vehicles:   max_vehicles = [2.0, 2.0, 2.0, 2.0, 2.0, 2.0] ... (see data.json)
+Example routes:
+  Route 0 (depot 0): [2]
+  Route 1 (depot 0): [0]
+  Route 2 (depot 0): [6]
+  Route 3 (depot 0): [8]
+  ...
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition",
+      "objective_value": <float>,
+      "y": [length m],
+      "lambda": [0/1 list of length R]  # feasible integer routing plan; LP relaxations may be used during cut generation
+    }

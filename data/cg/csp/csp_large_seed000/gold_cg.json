@@ -1,0 +1,244 @@
+{
+  "best_objective": 169.0,
+  "global_lb": 168.5,
+  "global_ub": 169.0,
+  "iters": 6,
+  "total_time": 0.004254958010278642,
+  "iter_records": [
+    {
+      "iteration": 1,
+      "elapsed_time": 0.0009555420256219804,
+      "iter_time": 0.0009550420218147337,
+      "master_obj": 211.78571428571428,
+      "reduced_cost": -0.5,
+      "n_patterns": 7
+    },
+    {
+      "iteration": 2,
+      "elapsed_time": 0.0018175829900428653,
+      "iter_time": 0.0008577079861424863,
+      "master_obj": 196.78571428571428,
+      "reduced_cost": -0.5,
+      "n_patterns": 8
+    },
+    {
+      "iteration": 3,
+      "elapsed_time": 0.002431166998576373,
+      "iter_time": 0.000610999995842576,
+      "master_obj": 191.78571428571428,
+      "reduced_cost": -0.5,
+      "n_patterns": 9
+    },
+    {
+      "iteration": 4,
+      "elapsed_time": 0.0030315000331029296,
+      "iter_time": 0.0005989170167595148,
+      "master_obj": 176.78571428571428,
+      "reduced_cost": -0.4285714285714286,
+      "n_patterns": 10
+    },
+    {
+      "iteration": 5,
+      "elapsed_time": 0.0036503750015981495,
+      "iter_time": 0.0006177920149639249,
+      "master_obj": 176.78571428571428,
+      "reduced_cost": -0.4285714285714286,
+      "n_patterns": 11
+    },
+    {
+      "iteration": 6,
+      "elapsed_time": 0.00425429199822247,
+      "iter_time": 0.0006027499912306666,
+      "master_obj": 168.5,
+      "reduced_cost": 0.0,
+      "n_patterns": 12
+    }
+  ],
+  "final_master_objective": 169.0,
+  "final_vars": {
+    "0": 37.0,
+    "5": 25.0,
+    "8": 40.0,
+    "9": 30.0,
+    "11": 37.0
+  },
+  "master_metadata": {
+    "patterns": [
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1
+      ],
+      [
+        0,
+        3,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        3,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    ],
+    "solution_patterns": [
+      {
+        "pattern_id": 0,
+        "usage": 37,
+        "cuts": [
+          {
+            "item_id": 0,
+            "count": 2
+          }
+        ]
+      },
+      {
+        "pattern_id": 5,
+        "usage": 25,
+        "cuts": [
+          {
+            "item_id": 5,
+            "count": 2
+          }
+        ]
+      },
+      {
+        "pattern_id": 8,
+        "usage": 40,
+        "cuts": [
+          {
+            "item_id": 2,
+            "count": 1
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 9,
+        "usage": 30,
+        "cuts": [
+          {
+            "item_id": 4,
+            "count": 1
+          },
+          {
+            "item_id": 6,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "pattern_id": 11,
+        "usage": 37,
+        "cuts": [
+          {
+            "item_id": 1,
+            "count": 3
+          },
+          {
+            "item_id": 3,
+            "count": 1
+          }
+        ]
+      }
+    ]
+  },
+  "sub_metadata": {
+    "dual_value": 1.0
+  }
+}

@@ -1,0 +1,46 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a fixed-charge transportation problem:
+  First choose which factory-to-customer lanes to activate; each chosen lane costs a fixed fee and then allows up to a capacity of flow.
+  After lanes are open, decide shipment quantities so every customer's demand is met without exceeding any factory's supply.
+  The total cost combines fixed activation and per-unit shipping. This mirrors "decide infrastructure first, operate flow second."
+  Parameters:
+  - There are m = 4 supply nodes and n = 4 demand nodes.
+  - Each (i, j) arc has a fixed activation cost, a unit shipping cost, and a capacity.
+  - Decision variables: y[i,j] in {0,1} indicates whether arc (i,j) is opened; x[i,j] >= 0 is quantity shipped.
+
+The data for this instance is in data.json with fields:
+  - "supply": list length m
+  - "demand": list length n
+  - "unit_cost", "fixed_cost", "capacity": each an m x n matrix
+
+Sample rows (full data is in the JSON file):
+Supply vector:
+  supply = [32.0, 20.0, 17.0, 21.0]
+Demand vector:
+  demand = [16.0, 23.0, 17.0, 34.0]
+Fixed costs:
+  fixed_cost[0] = [11.0, 11.0, 16.0, 15.0]
+  fixed_cost[1] = [18.0, 22.0, 22.0, 20.0]
+  fixed_cost[2] = [24.0, 11.0, 23.0, 23.0]
+  fixed_cost[3] = [9.0, 14.0, 16.0, 18.0]
+Unit costs:
+  unit_cost[0] = [6.400904733690886, 7.557044741306152, 2.691109660299431, 1.4963196459976138]
+  unit_cost[1] = [3.474724311154343, 6.916897133880333, 6.060390965023852, 2.350560369748025]
+  unit_cost[2] = [4.893677117243085, 7.023675687170682, 4.80506205943115, 6.698659593467047]
+  unit_cost[3] = [9.70692357244309, 7.147583400786628, 4.524623497720236, 2.6852731274808828]
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition", # or "monolithic"
+      "objective_value": <float>,
+      "y": [[...]],  # m x n
+      "x": [[...]]   # m x n representing the last subproblem solution
+    }

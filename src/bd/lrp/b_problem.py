@@ -45,7 +45,7 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
       "method": "benders_decomposition",
       "objective_value": <float>,
       "y": [length m],
-      "lambda": [length R]  # final fractional/rounded routing plan
+      "lambda": [0/1 list of length R]  # feasible integer routing plan; LP relaxations may be used during cut generation
     }}
 """
 

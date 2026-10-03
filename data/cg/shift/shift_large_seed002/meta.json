@@ -1,0 +1,7 @@
+{
+  "seed": 2,
+  "size": "large",
+  "T": 9,
+  "ground_truth_objective": 12.0,
+  "folder": "shift_large_seed002"
+}

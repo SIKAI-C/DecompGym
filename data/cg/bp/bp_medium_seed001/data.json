@@ -1,0 +1,77 @@
+{
+  "instance_size": "medium",
+  "bin_capacity": 152,
+  "bin_unit": "volume_units",
+  "items": [
+    {
+      "id": 0,
+      "name": "Shipment_0",
+      "size": 23
+    },
+    {
+      "id": 1,
+      "name": "Shipment_1",
+      "size": 47
+    },
+    {
+      "id": 2,
+      "name": "Shipment_2",
+      "size": 30
+    },
+    {
+      "id": 3,
+      "name": "Shipment_3",
+      "size": 78
+    },
+    {
+      "id": 4,
+      "name": "Shipment_4",
+      "size": 72
+    },
+    {
+      "id": 5,
+      "name": "Shipment_5",
+      "size": 75
+    },
+    {
+      "id": 6,
+      "name": "Shipment_6",
+      "size": 63
+    },
+    {
+      "id": 7,
+      "name": "Shipment_7",
+      "size": 41
+    },
+    {
+      "id": 8,
+      "name": "Shipment_8",
+      "size": 27
+    },
+    {
+      "id": 9,
+      "name": "Shipment_9",
+      "size": 77
+    },
+    {
+      "id": 10,
+      "name": "Shipment_10",
+      "size": 18
+    },
+    {
+      "id": 11,
+      "name": "Shipment_11",
+      "size": 64
+    },
+    {
+      "id": 12,
+      "name": "Shipment_12",
+      "size": 70
+    },
+    {
+      "id": 13,
+      "name": "Shipment_13",
+      "size": 15
+    }
+  ]
+}

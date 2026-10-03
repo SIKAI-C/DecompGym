@@ -1,0 +1,47 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a k-median facility location problem:
+  - Pick exactly k = 4 service sites to open from m = 15 candidates serving n = 22 customers.
+  - Once sites are chosen, each customer is assigned—potentially fractionally—to the open sites, paying an assignment cost that reflects distance or service quality (D[i][j]).
+  - The core trade-off is which k sites to open so the total assignment cost to serve everyone is minimal.
+
+The data for this instance lives in data.json with fields:
+  - "Xc": n x 2 customer coordinates
+  - "Xf": m x 2 facility coordinates
+  - "D": m x n assignment costs
+  - "m", "n", "k"
+
+Samples:
+Customer coords (first few):
+  Xc[0] = [0.837890625, 0.26171875]
+  Xc[1] = [0.109375, 0.2978515625]
+  Xc[2] = [0.4140625, 0.814453125]
+  Xc[3] = [0.451171875, 0.091796875]
+  ...
+Facility coords:
+  Xf[0] = [0.7, 0.95]
+  Xf[1] = [0.95, 0.8]
+  Xf[2] = [1.05, 0.3]
+  Xf[3] = [0.95, 1.0]
+  ...
+Cost rows:
+  D[0] = [7.019579072597253, 8.798496889575464, 3.1643831820516866, 8.93548006293328, 5.053154502126693, 2.488619267906544, 8.16915795869748, 9.133972773014165, 6.902261125796505, 5.783993291806119, 5.528626245316316, 9.136433375526767, 5.197001751921261, 2.808860628184398, 5.814324533554533, 5.7502341844719265, 2.362164799560608, 3.1504196856223206, 6.436488396131477, 10.098192117369653, 7.070063499154733, 4.553335941326982]
+  D[1] = [5.498319889424889, 9.791850917516522, 5.3613235001118476, 8.662454412871568, 6.465593682900533, 1.5410601823406191, 6.1401904391598805, 7.485126242633725, 6.553162825970498, 7.62317397969233, 6.867132227895453, 9.485175562446878, 4.187621157587284, 3.0086221769382164, 3.7717756635958803, 7.48949510489656, 1.6839483113454525, 1.422938357960963, 7.013008564342065, 10.98253441443762, 7.662016771521717, 4.6958734618364755]
+  D[2] = [2.1553617112784837, 9.406274535695264, 8.179722010731878, 6.3399027165310775, 7.756498995833319, 4.894578402231974, 1.260419525059173, 2.97971095379469, 4.920718877733378, 9.209343096804366, 7.892668989980537, 8.044541578016704, 3.2889847916146797, 5.241161717936631, 1.6140625472682715, 8.948570384495477, 6.7751079818172055, 4.245096856439985, 6.763489419192963, 10.17286370272927, 7.1844733458396295, 5.150134349663132]
+  D[3] = [7.467447462583538, 10.952912027897838, 5.671478173532148, 10.361768259089668, 7.333516494313166, 3.038789477011479, 8.136457375857775, 9.478376172539475, 8.244233167716791, 8.235515710910773, 7.78829281905864, 10.954085673867969, 6.01925937798602, 4.272579127829519, 5.771674727190899, 8.169514944369068, 0.35319175426841865, 3.2681804678684188, 8.337759088840068, 12.212908116591503, 8.993240573179396, 6.133640034235794]
+  ...
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition",
+      "objective_value": <float>,
+      "y": [0/1 list length m],
+      "x": [[assignment matrix m x n]]
+    }

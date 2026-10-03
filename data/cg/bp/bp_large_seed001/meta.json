@@ -1,0 +1,8 @@
+{
+  "seed": 1,
+  "size": "large",
+  "n_items": 21,
+  "bin_capacity": 168,
+  "ground_truth_objective": 8.0,
+  "folder": "bp_large_seed001"
+}

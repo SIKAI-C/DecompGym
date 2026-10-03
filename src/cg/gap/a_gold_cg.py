@@ -81,6 +81,22 @@ class GAPColumnGeneration(BaseColumnGeneration[GAPInstance, dict[str, Any]]):
                     vec = [0] * n_jobs
                     vec[i] = 1
                     patterns.append({"machine": j, "jobs": vec})
+        # Seed a feasible partition: singleton patterns alone cannot assign more jobs than machines.
+        # This compact model finds feasibility only; all optimization remains in master/pricing.
+        seed = gp.Model("gap_feasible_seed")
+        seed.Params.OutputFlag = 0
+        x = seed.addVars(n_jobs, n_machines, vtype=GRB.BINARY)
+        for i in range(n_jobs):
+            seed.addConstr(gp.quicksum(x[i, j] for j in range(n_machines)) == 1)
+        for j in range(n_machines):
+            seed.addConstr(gp.quicksum(a[i][j] * x[i, j] for i in range(n_jobs)) <= b[j])
+        seed.optimize()
+        if seed.SolCount == 0:
+            raise RuntimeError("GAP has no feasible initial assignment")
+        for j in range(n_machines):
+            pattern = {"machine": j, "jobs": [round(x[i, j].X) for i in range(n_jobs)]}
+            if pattern not in patterns:
+                patterns.append(pattern)
         return patterns
 
     def load_instance(self, instance_name: str) -> GAPInstance:

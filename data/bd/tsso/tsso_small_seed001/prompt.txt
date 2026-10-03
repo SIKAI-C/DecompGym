@@ -1,0 +1,70 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a two-stage stochastic production planning problem with capacity expansion decisions.
+First, decide which production lines (regular capacity) to pay for across products and periods.
+Later, when demand scenarios unfold, react by producing with regular or overtime capacity,
+holding inventory, or backlogging unmet demand. The aim is to pick upfront capacities that keep the expected
+total cost (activation + operations) low across scenarios.
+The instance describes:
+  - n_products = 2
+  - n_periods = 4
+  - n_scenarios = 3 with probabilities 0.3186051472718815, 0.5916565680901946, 0.08973828463792391
+  - First-stage binary variables y[i,t] decide whether capacity is installed.
+  - Second-stage (recourse) variables for each scenario s: regular/OT production, inventory, backlog.
+
+The JSON file data.json contains:
+  - "F": fixed expansion cost matrix (n_products x n_periods)
+  - "K": capacity multipliers
+  - "c_reg", "c_ot": regular and overtime unit costs
+  - "h", "b": inventory holding and backlog penalty costs
+  - "demand": tensor (n_products x n_periods x n_scenarios)
+  - "prob": scenario probabilities
+  - "I0", "B0": initial inventory/backlog per product
+
+Key slices (first few rows) to orient yourself:
+Fixed cost F:
+  F[0] = [79.0, 86.0, 44.0, 48.0]
+  F[1] = [82.0, 55.0, 46.0, 79.0]
+Capacity coefficient K:
+  K[0] = [36.0, 43.0, 53.0, 49.0]
+  K[1] = [28.0, 26.0, 63.0, 58.0]
+Regular cost c_reg:
+  c_reg[0] = [2.0762866264385567, 1.6594634329981843, 2.5768574068568086, 1.60638965858329]
+  c_reg[1] = [1.906995778961303, 1.2680833944943295, 1.8062259728942585, 1.4069104813522992]
+Overtime cost c_ot:
+  c_ot[0] = [3.191062634968776, 3.3599010401542477, 3.713347916440057, 2.988618827901252]
+  c_ot[1] = [3.8838804187227893, 3.2220720268908734, 3.475973901822499, 2.85638270800922]
+Holding cost h:
+  h[0] = [0.3661347224272225, 0.2963912052650761, 0.7819552479296796, 0.5096411513287273]
+  h[1] = [0.2695193674824622, 0.5740938533225003, 0.6660098686053789, 0.5678019806318243]
+Backlog cost b:
+  b[0] = [4.293244261977256, 2.0989821916605074, 3.321473158150054, 3.148339707213509]
+  b[1] = [2.155873947874689, 3.6033204228484372, 4.131582096201642, 3.48235254526071]
+Demand samples:
+  demand[0,0,:] = [47.0, 23.0, 27.0]
+  demand[0,1,:] = [48.0, 37.0, 34.0]
+  demand[1,0,:] = [35.0, 48.0, 15.0]
+  demand[1,1,:] = [42.0, 45.0, 46.0]
+  ...
+Initial inventory I0:
+I0: [0.0, 0.0]
+Initial backlog B0:
+B0: [0.0, 0.0]
+
+Task:
+Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements a Benders decomposition where the master problem decides y and a theta variable,
+    and the subproblem solves the subproblem given a fixed y.
+3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
+4) Writes output.json with at least:
+    {
+    "status": "optimal | feasible | infeasible | error",
+    "method": "benders_decomposition",
+    "objective_value": <float>,
+    "y": [[...]],          # shape (n_products, n_periods)
+    "x_reg": [[[...]]],    # shape (n_products, n_periods, n_scenarios)
+    "x_ot": [[[...]]],     # shape (n_products, n_periods, n_scenarios)
+    "inv": [[[...]]],      # shape (n_products, n_periods, n_scenarios)
+    "back": [[[...]]]      # shape (n_products, n_periods, n_scenarios)
+    }
