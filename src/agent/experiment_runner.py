@@ -1,35 +1,33 @@
-"""
-Experiment 2 runner logic: attempts, instances, problems, and suites.
-"""
-
+"""Codex generation, execution, verification, and optional reflection."""
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 from typing import Any
 
-from aider.coders import Coder
-from aider.io import InputOutput
-from aider.models import Model
-
 from src.agent.algorithm_verifier import AlgorithmVerifier
+from src.agent.codex_client import CodexClient
 from src.agent.exec_logger import ExecLogger
 from src.agent.files_manager import ArtifactManager, InstanceManager
 from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
+from src.agent.resource_monitor import CleanupError, stop_owned_tree
 from src.utils.json_utils import safe_load_json
 
 
-SUITE_PROBLEMS = {
-    "bd": ["tsso", "fctp", "km", "lrp", "ufl"],
-    "cg": ["bp", "csp", "gap", "shift"],
-}
-ALL_PROBLEMS = sorted({p for probs in SUITE_PROBLEMS.values() for p in probs})
+SUITE_PROBLEMS = {"bd": ["tsso", "fctp", "km", "lrp", "ufl"], "cg": ["bp", "csp", "gap", "shift"]}
+ALL_PROBLEMS = sorted({problem for problems in SUITE_PROBLEMS.values() for problem in problems})
+
+
+class ModelAccessError(RuntimeError):
+    """Access or quota failure must not be counted as model-solving performance."""
 
 
 @dataclass
@@ -48,501 +46,189 @@ class AttemptResult:
     first_success_attempt: int | None = None
     stdout: str | None = None
     stderr: str | None = None
+    feasibility_ok: bool = False
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "attempt": self.attempt,
-            "status": self.status,
-            "exec_ok": self.exec_ok,
-            "verify_ok": self.verify_ok,
-            "objective": self.objective,
-            "gold_objective": self.gold_objective,
-            "gap_to_gold": self.gap_to_gold,
-            "issues": self.issues,
-            "llm_verdict": self.llm_verdict,
-            "llm_notes": self.llm_notes,
-            "reused_from_previous": self.reused_from_previous,
-            "first_success_attempt": self.first_success_attempt,
-            "stdout": self.stdout,
-            "stderr": self.stderr,
-        }
+        return asdict(self)
 
 
 class ExperimentRunner:
-    """Orchestrate experiments across attempts, instances, and problems."""
-    def __init__(
-        self,
-        *,
-        model_name: str,
-        note: str | None,
-        suite: str,
-        problems: Sequence[str] | None,
-        instance: str | None,
-        benchmark_root: str,
-        max_attempts: int,
-        solver_timeout: int,
-        tol: float,
-        gap_threshold: float,
-        auto_yes: bool,
-        stream: bool,
-        reflection: bool,
-        lazy: bool,
-        run_all: bool,
-    ) -> None:
-        """Initialize runner with CLI-provided configuration."""
-        self.model_name = model_name
-        self.note = note
-        self.suite = suite
-        self.problems = list(problems) if problems is not None else None
-        self.instance = instance
-        self.benchmark_root = benchmark_root
-        self.max_attempts = max_attempts
-        self.solver_timeout = solver_timeout
-        self.tol = tol
-        self.gap_threshold = gap_threshold
-        self.auto_yes = auto_yes
-        self.stream = stream
-        self.reflection = reflection
-        self.lazy = lazy
-        self.run_all = run_all
+    def __init__(self, *, model: str | None = None, note: str | None = None, suite: str = "bd",
+                 problem: Sequence[str] | None = None, instance: str | None = None, benchmark_root: str = "data",
+                 max_attempts: int = 10, solver_timeout: int = 60, agent_timeout: int = 900, solver_threads: int = 1,
+                 solver_cooldown_seconds: float = 0,
+                 tol: float = 1e-6, gap_threshold: float = 0.01, reflection: bool = False,
+                 codex_executable: str = "codex", client: CodexClient | None = None) -> None:
+        if suite not in SUITE_PROBLEMS:
+            raise ValueError("Choose suite bd or cg.")
+        if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
+            raise ValueError("Attempt/time/tolerance budgets must be positive; gap threshold must be nonnegative.")
+        self.model, self.note, self.suite = model, note, suite
+        self.problems = list(problem) if problem else list(SUITE_PROBLEMS[suite])
+        if any(p not in SUITE_PROBLEMS[suite] for p in self.problems):
+            raise ValueError(f"Problems must belong to {suite}: {SUITE_PROBLEMS[suite]}")
+        self.instance, self.benchmark_root = instance, Path(benchmark_root)
+        self.max_attempts, self.solver_timeout = max_attempts, solver_timeout
+        self.solver_threads = solver_threads
+        self.solver_cooldown_seconds = solver_cooldown_seconds
+        self.abort_event = threading.Event()
+        self.tol, self.gap_threshold, self.reflection = tol, gap_threshold, reflection
+        self.client = client or CodexClient(model, executable=codex_executable, timeout=agent_timeout)
 
-    def run(self) -> None:
-        """Execute a run based on instance/suite/problem configuration."""
-        benchmark_root = Path(self.benchmark_root) / self.suite
-        if self.instance:
-            self._run_single_instance()
-            return
-
-        problems = self._select_problems(benchmark_root)
-
-        summaries = ExperimentRunner.run_all_problems(
-            suite=self.suite,
-            model_name=self.model_name,
-            note=self.note,
-            benchmark_root=benchmark_root,
-            problems=problems,
-            max_attempts=self.max_attempts,
-            solver_timeout=self.solver_timeout,
-            tol=self.tol,
-            gap_threshold=self.gap_threshold,
-            auto_yes=self.auto_yes,
-            stream=self.stream,
-            reflection=self.reflection,
-            lazy=self.lazy,
-        )
+    def run(self) -> list[dict[str, Any]]:
+        summaries = []
+        for problem in self.problems:
+            if self.instance:
+                source = Path(self.instance).resolve()
+                inferred = InstanceManager.infer_problem_from_path(source, ALL_PROBLEMS)
+                if inferred != problem:
+                    continue
+                if InstanceManager.infer_suite_from_path(source, SUITE_PROBLEMS) != self.suite:
+                    raise ValueError("Instance suite does not match --suite.")
+                instances = [source]
+            else:
+                instances = InstanceManager.find_instances(self.benchmark_root / self.suite / problem)
+            if not instances:
+                raise RuntimeError(f"No instances for {problem}. Run python -m src.01_gen first.")
+            root = ArtifactManager.ensure_output_root(self.suite, problem, self.model or "codex-default", note=self.note)
+            results = [self.run_instance(source, root, problem) for source in instances]
+            summary = {"suite": self.suite, "problem": problem, "backend": "codex-cli", "model": self.model,
+                       "output_root": str(root), "num_instances": len(results), "instances": results}
+            ArtifactManager.write_text(root, "problem_summary.json", json.dumps(summary, indent=2))
+            summaries.append(summary)
+        if not summaries:
+            raise ValueError("No selected problem matches --instance.")
         print(json.dumps(summaries, indent=2))
-
-    def _run_single_instance(self) -> None:
-        """Run a single instance selected via --instance."""
-        inst_path = Path(self.instance).resolve()
-        suite = InstanceManager.infer_suite_from_path(inst_path, SUITE_PROBLEMS)
-        problem = (
-            self.problems[0]
-            if self.problems
-            else InstanceManager.infer_problem_from_path(inst_path, ALL_PROBLEMS)
-        )
-        out_root = ArtifactManager.ensure_output_root(suite, problem, self.model_name, note=self.note)
-        summary = ExperimentRunner.run_instance(
-            instance_src=inst_path,
-            out_root=out_root,
-            model_name=self.model_name,
-            max_attempts=self.max_attempts,
-            solver_timeout=self.solver_timeout,
-            tol=self.tol,
-            gap_threshold=self.gap_threshold,
-            auto_yes=self.auto_yes,
-            stream=self.stream,
-            suite=suite,
-            reflection=self.reflection,
-            lazy=self.lazy,
-        )
-        print(json.dumps(summary, indent=2))
-
-    def _select_problems(self, benchmark_root: Path) -> list[str]:
-        """Select problems based on run_all flag and availability."""
-        if self.run_all or self.problems is None:
-            return [p for p in SUITE_PROBLEMS[self.suite] if (benchmark_root / p).exists()]
-        return self.problems
+        return summaries
 
     @staticmethod
-    def run_solver(attempt_dir: Path, timeout: int) -> tuple[bool, str, str, dict[str, Any] | None]:
-        """Execute solver.py in the attempt directory and parse output.json."""
-        attempt_dir = attempt_dir.resolve()
-        solver_path = attempt_dir / "solver.py"
-        # Guard against missing/empty solver.py
-        if (not solver_path.exists()) or solver_path.stat().st_size == 0:
+    def run_solver(attempt_dir: Path, timeout: int, threads: int = 1) -> tuple[bool, str, str, dict[str, Any] | None]:
+        if not (attempt_dir / "solver.py").exists() or not (attempt_dir / "solver.py").stat().st_size:
             return False, "", "solver.py missing or empty", None
-
-        # Copy current env for subprocess
+        (attempt_dir / "output.json").unlink(missing_ok=True)
+        # Gurobi reads this before creating its default environment; ThreadLimit bounds parallel solves.
+        (attempt_dir / "gurobi.env").write_text(f"ThreadLimit {threads}\nThreads {threads}\n")
         env = os.environ.copy()
+        for key in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+            env[key] = str(threads)
         try:
-            proc = subprocess.run(
-                [sys.executable, "solver.py"],
-                cwd=attempt_dir,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout,
-                env=env,
-            )
-        except subprocess.TimeoutExpired:
-            return False, "", "timeout", None
-        except Exception as exc:
-            return False, "", str(exc), None
-
-        stdout = proc.stdout[-4000:]
-        stderr = proc.stderr[-4000:]
-        if stderr:
-            return False, stdout, stderr, None
-        if proc.returncode != 0:
-            # Return stderr so caller can see the actual error message
-            return False, stdout, stderr or f"returncode={proc.returncode}", None
-
-        output_path = attempt_dir / "output.json"
-        if not output_path.exists():
-            return False, stdout, "output.json missing", None
-        output = safe_load_json(output_path)
-        if output is None:
-            return False, stdout, "failed to parse output.json", None
+            process = subprocess.Popen([sys.executable, "solver.py"], cwd=attempt_dir.resolve(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                stop_owned_tree(process, grace=0.1)
+                try:
+                    stdout, stderr = process.communicate(timeout=2)
+                except subprocess.TimeoutExpired as error:
+                    raise CleanupError("Solver pipes remained open after owned process cleanup") from error
+                return False, stdout[-12000:], stderr[-12000:] + f"\n[framework] solver execution timed out after {timeout} seconds", None
+        except OSError as error:
+            return False, "", str(error), None
+        stdout, stderr = stdout[-12000:], stderr[-12000:]
+        if process.returncode:
+            return False, stdout, stderr or f"returncode={process.returncode}", None
+        output = safe_load_json(attempt_dir / "output.json")
+        if not isinstance(output, dict):
+            return False, stdout, stderr + "\noutput.json missing, invalid, or not an object", None
         return True, stdout, stderr, output
 
-    @staticmethod
-    def run_attempt(
-        attempt_idx: int,
-        attempt_dir: Path,
-        model: Model,
-        auto_yes: bool,
-        stream: bool,
-        solver_timeout: int,
-        tol: float,
-        gap_threshold: float,
-        gold_obj: float | None,
-        suite: str,
-        reflection: bool,
-        lazy: bool,
-    ) -> AttemptResult:
-        """Run a single attempt and return the attempt summary."""
-        # print(f"Running attempt {attempt_idx} in {attempt_dir}")
-        # print(f"Previous debug: {prev_debug}")
-        # print(f"Gold objective: {gold_obj}")
-
+    def run_attempt(self, idx: int, attempt_dir: Path, problem: str, gold: float | None) -> AttemptResult:
+        started = time.perf_counter()
         instance_root = attempt_dir.parent.parent
-        data_path = instance_root / "data.json"
-        prompt_path = instance_root / "prompt.txt"
-        base_prompt = prompt_path.read_text()
-        base_prompt = PromptBuilder.ensure_location_prompt(base_prompt)
-        base_prompt = PromptBuilder.ensure_lazy_prompt(base_prompt, suite, lazy)
-        ArtifactManager.write_text(instance_root, "prompt.txt", base_prompt)
-        prev_debug = (
-            ArtifactManager.collect_previous_debug(attempt_dir.parent, attempt_idx)
-            if reflection and attempt_idx > 1
-            else ""
-        )
-        prompt_for_agent = base_prompt if not prev_debug else PromptBuilder.build_prev_debug_prompt(base_prompt, prev_debug)
-        ArtifactManager.write_text(attempt_dir, "agent_prompt.md", prompt_for_agent)
-
-        # First, let the agent edit solver.py using prior reflections (if any).
-        ArtifactManager.ensure_dir(attempt_dir, exist_ok=True)
-        solver_path = ArtifactManager.write_text(attempt_dir, "solver.py", "")
-        fnames = [str(solver_path)]
-        attempts_root = attempt_dir.parent
-        prev_ro = (
-            ArtifactManager.collect_previous_attempt_files(attempts_root, attempt_idx)
-            if reflection
-            else []
-        )
-        ro_files = [str(data_path.resolve()), str(prompt_path.resolve()), *prev_ro]
-        coder = Coder.create(
-            main_model=model,
-            fnames=fnames,
-            read_only_fnames=ro_files,
-            io=InputOutput(yes=auto_yes),
-            stream=stream,
-            use_git=False,
-            edit_format="diff",
-        )
-        coder.run(prompt_for_agent)
-
-        exec_ok, stdout, stderr, output = ExperimentRunner.run_solver(attempt_dir, solver_timeout)
-        exec_lines = ExecLogger.build_exec_lines(stdout, stderr)
-
-        issues: list[str] = []
-        objective, objective_issues, output_msg = OutputVerifier.extract_objective(output)
-        issues.extend(objective_issues)
-        verify_ok = False
-
-        if exec_ok and output is not None:
-            problem = InstanceManager.infer_problem_from_path(attempt_dir, ALL_PROBLEMS)
-            verify_res = OutputVerifier.verify_output(suite, problem, data_path, attempt_dir / "output.json", tol)
-            verify_ok = bool(verify_res.get("ok"))
-            if not verify_ok:
-                issues.extend(verify_res.get("issues", []))
+        prompt = PromptBuilder.ensure_location_prompt((instance_root / "prompt.txt").read_text())
+        context = [instance_root / "data.json"]
+        if self.reflection and idx > 1:
+            context += [Path(path) for path in ArtifactManager.collect_previous_attempt_files(attempt_dir.parent, idx)]
+        prompt += "\n\nImplement a standalone solver.py using gurobipy and standard Python libraries. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
+        prompt += f"\nThe harness limits the entire solver.py execution to {self.solver_timeout} seconds and numerical solvers to {self.solver_threads} thread(s). Design your algorithm and termination handling within this budget."
+        (attempt_dir / "solver.py").write_text("")
+        generation = self.client.edit_file(attempt_dir / "solver.py", prompt, context=context, log_dir=attempt_dir, step="agent")
+        if self.abort_event.is_set():
+            raise RuntimeError("Sweep aborted before solver execution")
+        metrics = {"generation": asdict(generation)}
+        if not generation.ok:
+            access_error = " ".join([generation.error or "", *generation.warnings]).lower()
+            if any(marker in access_error for marker in ["usage limit", "usage_limit", "rate limit", "rate_limit", "quota", "not supported", "unauthorized", "authentication", "invalid api key"]):
+                self.abort_event.set()
+                raise ModelAccessError(f"Codex access/quota failure; preserve traces and resume after access is restored: {generation.error}")
+            result = AttemptResult(idx, "agent_failed", False, False, None, gold, None, [generation.error or "Codex generation failed"], metrics=metrics)
         else:
-            issues.append(stderr or "execution failed")
-
-        ExecLogger.append_output_message(exec_lines, output_msg)
-        ExecLogger.append_verification_issues(exec_lines, issues if exec_ok and output is not None else [])
-
-        llm_verdict, llm_notes = AlgorithmVerifier.run_llm_verifier(
-            attempt_dir=attempt_dir,
-            model=model,
-            auto_yes=auto_yes,
-            stream=stream,
-            suite=suite,
-            lazy=lazy,
-        )
-        if llm_verdict is None or llm_verdict != "pass":
-            verify_ok = False
-            issues.append(f"llm_verifier_failed: {llm_verdict or 'unknown'}")
-        ExecLogger.append_llm_verifier(exec_lines, llm_notes)
-        exec_log = ExecLogger.write_exec_log(attempt_dir, exec_lines)
-
-        status, gap = OutputVerifier.assess_status(
-            exec_ok=exec_ok,
-            output=output,
-            verify_ok=verify_ok,
-            objective=objective,
-            gold_obj=gold_obj,
-            gap_threshold=gap_threshold,
-        )
-        
-        if reflection:
-            debug_md = attempt_dir / "debug.md"
-            if status != "ok":
-                ArtifactManager.write_text(attempt_dir, "debug.md", "")  # placeholder; aider will fill reflection
-                # Ask aider to update debug.md based on exec.log and current solver (read-only)
-                gap_info = f"Gap to gold: {gap}" if gap is not None else None
-                reflection_prompt = PromptBuilder.build_reflection_prompt(base_prompt, gap_info=gap_info)
-                ArtifactManager.write_text(attempt_dir, "reflection_prompt.md", reflection_prompt)
-                reflection_coder = Coder.create(
-                    main_model=model,
-                    fnames=[str(debug_md)],
-                    read_only_fnames=[
-                        str(solver_path.resolve()),
-                        str(prompt_path.resolve()),
-                        str(exec_log.resolve()),
-                        str((attempt_dir / "alg_verifier.md").resolve()),
-                        str((attempt_dir / "output.json").resolve()),
-                    ],
-                    io=InputOutput(yes=auto_yes),
-                    stream=stream,
-                    use_git=False,
-                    edit_format="diff",
-                )
-                reflection_coder.run(reflection_prompt)
+            execution_started = time.perf_counter()
+            exec_ok, stdout, stderr, output = self.run_solver(attempt_dir, self.solver_timeout, self.solver_threads)
+            metrics["execution_seconds"] = time.perf_counter() - execution_started
+            metrics["execution_timed_out"] = not exec_ok and "[framework] solver execution timed out" in stderr
+            if self.solver_cooldown_seconds and metrics["execution_seconds"] >= 5:
+                cooldown_started = time.perf_counter()
+                time.sleep(self.solver_cooldown_seconds)
+                metrics["cooldown_seconds"] = time.perf_counter() - cooldown_started
+            objective, issues, output_message = OutputVerifier.extract_objective(output)
+            verification = {"ok": False, "issues": []}
+            if exec_ok:
+                verification = OutputVerifier.verify_output(self.suite, problem, instance_root / "data.json", attempt_dir / "output.json", self.tol)
+                issues.extend(verification.get("issues", []))
+                if verification.get("objective_value") is not None:
+                    objective = float(verification["objective_value"])
             else:
-                ArtifactManager.write_text(attempt_dir, "debug.md", "Passed verification.")
-
-        summary_path = attempt_dir / "summary.json"
-        ArtifactManager.write_text(
-            attempt_dir,
-            "summary.json",
-            json.dumps(
-                AttemptResult(
-                    attempt=attempt_idx,
-                    status=status,
-                    exec_ok=exec_ok,
-                    verify_ok=verify_ok,
-                    objective=objective,
-                    gold_objective=gold_obj,
-                    gap_to_gold=gap,
-                    issues=issues,
-                    llm_verdict=llm_verdict,
-                    llm_notes=llm_notes,
-                    stdout=stdout,
-                    stderr=stderr,
-                ).to_dict(),
-                indent=2,
-            )
-        )
-
-        return AttemptResult(
-            attempt=attempt_idx,
-            status=status,
-            exec_ok=exec_ok,
-            verify_ok=verify_ok,
-            objective=objective,
-            gold_objective=gold_obj,
-            gap_to_gold=gap,
-            issues=issues,
-            llm_verdict=llm_verdict,
-            llm_notes=llm_notes,
-            stdout=stdout,
-            stderr=stderr,
-        )
+                issues.append(stderr or "solver execution failed")
+            verdict, notes = AlgorithmVerifier.run_llm_verifier(attempt_dir, self.client, self.suite)
+            if verdict != "pass":
+                issues.append(f"algorithm_verifier_failed: {verdict or 'unknown'}")
+            verify_ok = bool(verification["ok"]) and verdict == "pass"
+            status, gap = OutputVerifier.assess_status(exec_ok=exec_ok, output=output, verify_ok=verify_ok, objective=objective, gold_obj=gold, gap_threshold=self.gap_threshold, execution_timed_out=metrics["execution_timed_out"])
+            result = AttemptResult(idx, status, exec_ok, verify_ok, objective, gold, gap, issues, verdict, notes,
+                                   stdout=stdout, stderr=stderr, feasibility_ok=bool(verification["ok"]), metrics=metrics)
+            lines = ExecLogger.build_exec_lines(stdout, stderr)
+            ExecLogger.append_output_message(lines, output_message)
+            ExecLogger.append_verification_issues(lines, issues)
+            ExecLogger.append_llm_verifier(lines, notes)
+            ExecLogger.write_exec_log(attempt_dir, lines)
+            verifier_metrics = safe_load_json(attempt_dir / "llm_verifier_metrics.json")
+            if verifier_metrics:
+                metrics["algorithm_verification"] = verifier_metrics
+        if self.reflection and result.status != "ok":
+            reflection_prompt = PromptBuilder.build_reflection_prompt(prompt, gap_info=str(result.gap_to_gold))
+            reflection_prompt += "\nKeep the reflection concise and actionable. Edit only debug.md."
+            paths = [instance_root / "data.json"] + [attempt_dir / name for name in ["solver.py", "exec.log", "alg_verifier.md", "output.json"]]
+            reflected = self.client.edit_file(attempt_dir / "debug.md", reflection_prompt, context=paths, log_dir=attempt_dir, step="reflection")
+            metrics["reflection"] = asdict(reflected)
+        metrics["total_seconds"] = time.perf_counter() - started
+        ArtifactManager.write_text(attempt_dir, "summary.json", json.dumps(result.to_dict(), indent=2))
+        return result
 
     @staticmethod
-    def can_early_stop(res: AttemptResult, gap_threshold: float) -> bool:
-        """Check whether attempts can early-stop based on latest result."""
-        if not (res.exec_ok and res.verify_ok):
-            return False
-        if res.gap_to_gold is None:
-            return True
-        return res.gap_to_gold <= gap_threshold
+    def can_early_stop(result: AttemptResult, gap_threshold: float) -> bool:
+        return result.status == "ok" and result.exec_ok and result.verify_ok and result.gap_to_gold is not None and result.gap_to_gold <= gap_threshold
 
-    @staticmethod
-    def run_instance(
-        instance_src: Path,
-        out_root: Path,
-        model_name: str,
-        max_attempts: int,
-        solver_timeout: int,
-        tol: float,
-        gap_threshold: float,
-        auto_yes: bool,
-        stream: bool,
-        suite: str,
-        reflection: bool,
-        lazy: bool,
-    ) -> dict[str, Any]:
-        """Run all attempts for a single instance and return its summary."""
-        dest_inst, attempts_root = ArtifactManager.copy_instance(instance_src, out_root, max_attempts, suite=suite)
-        model = Model(model_name)
-        gold_obj = OutputVerifier.load_gold_objective(dest_inst, suite=suite)
-
-        results: list[AttemptResult] = []
-        last_good: AttemptResult | None = None
-        first_success_idx: int | None = None
-        for idx in range(1, max_attempts + 1):
-            a_dir = attempts_root / f"attempt_{idx:02d}"
-            if last_good and ExperimentRunner.can_early_stop(last_good, gap_threshold):
-                res = AttemptResult(
-                    attempt=idx,
-                    status="skipped_previous_solved",
-                    exec_ok=True,
-                    verify_ok=True,
-                    objective=last_good.objective,
-                    gold_objective=last_good.gold_objective,
-                    gap_to_gold=last_good.gap_to_gold,
-                    issues=["skipped: previous attempt already solved"],
-                    reused_from_previous=True,
-                    first_success_attempt=first_success_idx,
-                    stdout=None,
-                    stderr=None,
-                )
+    def run_instance(self, source: Path, root: Path, problem: str | None = None) -> dict[str, Any]:
+        if self.abort_event.is_set():
+            raise RuntimeError("Sweep aborted before starting another instance")
+        problem = problem or InstanceManager.infer_problem_from_path(source, ALL_PROBLEMS)
+        destination, attempts_root = ArtifactManager.copy_instance(source, root, self.max_attempts, suite=self.suite)
+        gold = OutputVerifier.load_gold_objective(source, self.suite)
+        results = []
+        successful = None
+        first_success = None
+        for idx in range(1, self.max_attempts + 1):
+            if self.abort_event.is_set():
+                raise RuntimeError("Sweep aborted before next attempt")
+            if successful is not None:
+                result = AttemptResult(idx, "skipped_previous_solved", True, True, successful.objective, gold,
+                                       successful.gap_to_gold, [], reused_from_previous=True,
+                                       first_success_attempt=first_success, feasibility_ok=True)
             else:
-                ArtifactManager.ensure_dir(a_dir, exist_ok=True)
-                res = ExperimentRunner.run_attempt(
-                    attempt_idx=idx,
-                    attempt_dir=a_dir,
-                    model=model,
-                    auto_yes=auto_yes,
-                    stream=stream,
-                    solver_timeout=solver_timeout,
-                    tol=tol,
-                    gap_threshold=gap_threshold,
-                    gold_obj=gold_obj,
-                    suite=suite,
-                    reflection=reflection,
-                    lazy=lazy,
-                )
-                if res.exec_ok and res.verify_ok:
-                    if first_success_idx is None:
-                        first_success_idx = idx
-                    last_good = res
-            results.append(res)
-            if ExperimentRunner.can_early_stop(res, gap_threshold):
-                # allow remaining attempts to skip but keep loop to populate reused entries
-                continue
-
-        inst_summary = {
-            "instance": instance_src.name,
-            "source": str(instance_src),
-            "output_dir": str(dest_inst),
-            "gold_objective": gold_obj,
-            "attempts": [r.to_dict() for r in results],
-        }
-        ArtifactManager.write_text(dest_inst, "instance_summary.json", json.dumps(inst_summary, indent=2))
-        return inst_summary
-
-    @staticmethod
-    def run_problem(
-        suite: str,
-        problem: str,
-        model_name: str,
-        note: str | None,
-        benchmark_root: Path,
-        max_attempts: int,
-        solver_timeout: int,
-        tol: float,
-        gap_threshold: float,
-        auto_yes: bool,
-        stream: bool,
-        reflection: bool,
-        lazy: bool,
-    ) -> dict[str, Any]:
-        """Run all instances for one problem and return the problem summary."""
-        inst_root = benchmark_root / problem
-        instances = InstanceManager.find_instances(inst_root)
-        if not instances:
-            raise RuntimeError(f"No instances found under {inst_root}")
-        out_root = ArtifactManager.ensure_output_root(suite, problem, model_name, note=note)
-
-        summaries: list[dict[str, Any]] = []
-        for inst in instances:
-            summaries.append(
-                ExperimentRunner.run_instance(
-                    inst,
-                    out_root,
-                    model_name=model_name,
-                    max_attempts=max_attempts,
-                    solver_timeout=solver_timeout,
-                    tol=tol,
-                    gap_threshold=gap_threshold,
-                    auto_yes=auto_yes,
-                    stream=stream,
-                    suite=suite,
-                    reflection=reflection,
-                    lazy=lazy,
-                )
-            )
-
-        problem_summary = {
-            "problem": problem,
-            "model": model_name,
-            "output_root": str(out_root),
-            "num_instances": len(summaries),
-            "instances": summaries,
-        }
-        ArtifactManager.write_text(out_root, "problem_summary.json", json.dumps(problem_summary, indent=2))
-        return problem_summary
-
-    @staticmethod
-    def run_all_problems(
-        suite: str,
-        model_name: str,
-        note: str | None,
-        benchmark_root: Path,
-        problems: Sequence[str],
-        max_attempts: int,
-        solver_timeout: int,
-        tol: float,
-        gap_threshold: float,
-        auto_yes: bool,
-        stream: bool,
-        reflection: bool,
-        lazy: bool,
-    ) -> list[dict[str, Any]]:
-        """Run all requested problems and return their summaries."""
-        all_summaries: list[dict[str, Any]] = []
-        for prob in problems:
-            if not (benchmark_root / prob).exists():
-                continue
-            all_summaries.append(
-                ExperimentRunner.run_problem(
-                    suite,
-                    prob,
-                    model_name=model_name,
-                    note=note,
-                    benchmark_root=benchmark_root,
-                    max_attempts=max_attempts,
-                    solver_timeout=solver_timeout,
-                    tol=tol,
-                    gap_threshold=gap_threshold,
-                    auto_yes=auto_yes,
-                    stream=stream,
-                    reflection=reflection,
-                    lazy=lazy,
-                )
-            )
-        return all_summaries
+                directory = attempts_root / f"attempt_{idx:02d}"
+                directory.mkdir(parents=True, exist_ok=True)
+                result = self.run_attempt(idx, directory, problem, gold)
+                if self.can_early_stop(result, self.gap_threshold):
+                    successful, first_success = result, idx
+            results.append(result.to_dict())
+            summary = {"instance": source.name, "suite": self.suite, "problem": problem, "source": str(source),
+                       "output_dir": str(destination), "backend": "codex-cli", "model": self.model,
+                       "gold_objective": gold, "reflection": self.reflection,
+                       "solver_threads": self.solver_threads, "solver_timeout": self.solver_timeout,
+                       "solver_cooldown_seconds": self.solver_cooldown_seconds,
+                       "max_attempts": self.max_attempts, "gap_threshold": self.gap_threshold, "attempts": results}
+            ArtifactManager.write_text(destination, "instance_summary.json", json.dumps(summary, indent=2))
+            print(f"{source.name}: attempt {idx}/{self.max_attempts} {result.status}", flush=True)
+        return summary

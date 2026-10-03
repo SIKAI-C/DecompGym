@@ -75,7 +75,7 @@ def cumulative_metrics(attempts: list[dict[str, Any]], quality_tol: float, gold_
         att = attempts[i]
         exec_ok = bool(att.get("exec_ok"))
         verify_ok = bool(att.get("verify_ok"))
-        gap = att.get("gap_to_gold") or att.get("gap") or att.get("best_gap")
+        gap = next((att[key] for key in ("gap_to_gold", "gap", "best_gap") if att.get(key) is not None), None)
         try:
             gap_val = float(gap) if gap is not None else None
         except Exception:
@@ -88,9 +88,9 @@ def cumulative_metrics(attempts: list[dict[str, Any]], quality_tol: float, gold_
                 if obj is not None and gold_obj is not None:
                     gap_val = abs(float(obj) - float(gold_obj)) / max(1.0, abs(float(gold_obj)))
                 else:
-                    gap_val = 0.0
+                    gap_val = None
             except Exception:
-                gap_val = 0.0
+                gap_val = None
 
         if exec_ok:
             e_seen = True
@@ -465,7 +465,7 @@ def main() -> None:
         nargs="?",
         default=None,
         type=str,
-        help="Path to a run folder or a single instance folder. If omitted, scan z_artifacts/output.",
+        help="Path to a run folder or a single instance folder. If omitted, scan outputs/experiments.",
     )
     parser.add_argument("--quality-tol", type=float, default=1e-4, help="Gap threshold for solveQ.")
     args = parser.parse_args()
@@ -475,7 +475,7 @@ def main() -> None:
         if not analyze_run(run_dir, args.quality_tol, force=True):
             raise RuntimeError(f"No instance_summary.json found or analysis failed under {run_dir}")
     else:
-        output_root = Path("z_artifacts") / "output"
+        output_root = Path("outputs") / "experiments"
         if not output_root.exists():
             raise RuntimeError(f"Output root not found at {output_root}")
         run_dirs = find_run_dirs(output_root)

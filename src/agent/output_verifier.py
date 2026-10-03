@@ -6,9 +6,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import importlib.util
+import json
+import math
 from typing import Any
 
 from src.utils.json_utils import safe_load_json
+from src.agent.solution_checks import check_bd_solution
 
 class OutputVerifier:
     """Verify solution outputs and compute status metrics."""
@@ -40,7 +43,25 @@ class OutputVerifier:
             return {"ok": False, "issues": [import_err]}
         if not hasattr(verifier, "verify_solution"):
             return {"ok": False, "issues": ["verify_solution not found"]}
-        return verifier.verify_solution(str(data_path), str(output_path), tol=tol)
+        try:
+            result = verifier.verify_solution(str(data_path), str(output_path), tol=tol)
+            if not result.get("ok"):
+                return result
+            data = json.loads(data_path.read_text())
+            output = json.loads(output_path.read_text())
+            if suite == "bd":
+                result = check_bd_solution(problem, data, output, tol)
+            objective = result.get("objective_value")
+            claimed, issues, _ = OutputVerifier.extract_objective(output)
+            if claimed is None or objective is None or not math.isfinite(float(objective)):
+                issues.append("a finite objective is required")
+            elif abs(claimed - float(objective)) > tol * max(1.0, abs(float(objective))):
+                issues.append(f"objective mismatch: claimed {claimed}, recomputed {objective}")
+            result["issues"] = result.get("issues", []) + issues
+            result["ok"] = bool(result.get("ok")) and not result["issues"]
+            return result
+        except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
+            return {"ok": False, "issues": [f"invalid solution: {exc}"]}
 
     @staticmethod
     def load_gold_objective(inst_dir: Path, suite: str) -> float | None:
@@ -49,7 +70,7 @@ class OutputVerifier:
         if meta_path.exists():
             meta = safe_load_json(meta_path)
             if meta is not None:
-                val = meta.get("ground_truth_objective") or meta.get("gold_objective")
+                val = meta.get("ground_truth_objective", meta.get("gold_objective"))
                 if val is not None:
                     try:
                         return float(val)
@@ -78,10 +99,12 @@ class OutputVerifier:
         issues: list[str] = []
         if output is None:
             return None, issues, None
-        objective = output.get("objective_value") or output.get("best_objective")
+        objective = output.get("objective_value", output.get("best_objective"))
         if objective is not None:
             try:
                 objective = float(objective)
+                if not math.isfinite(objective):
+                    raise ValueError("nonfinite objective")
             except Exception:
                 issues.append("objective not numeric")
                 objective = None
@@ -97,20 +120,25 @@ class OutputVerifier:
         objective: float | None,
         gold_obj: float | None,
         gap_threshold: float | None,
+        execution_timed_out: bool = False,
     ) -> tuple[str, float | None]:
         """Compute status and gap from execution/verifier results."""
         gap = None
         if objective is not None and gold_obj is not None:
             gap = abs(objective - gold_obj) / max(1.0, abs(gold_obj))
 
-        gap_ok = (gap is None) or (gap_threshold is None) or (gap <= gap_threshold)
+        gap_ok = gap is not None and ((gap_threshold is None) or (gap <= gap_threshold))
 
-        if objective is None:
-            status = "objective_not_available"
+        if execution_timed_out:
+            status = "timeout"
         elif not exec_ok or output is None:
             status = "exec_failed"
+        elif objective is None:
+            status = "objective_not_available"
         elif not verify_ok:
             status = "verify_failed"  # infeasible or failed verifier
+        elif gold_obj is None:
+            status = "reference_unavailable"
         elif not gap_ok:
             status = "feasible_not_optimal"  # feasible but not within gap threshold
         else:

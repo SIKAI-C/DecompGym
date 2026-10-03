@@ -40,9 +40,9 @@ class ArtifactManager:
         timestamp = get_current_time()
         if note:
             note_safe = note.replace(" ", "_")
-            out_dir = Path("z_artifacts") / "output" / "exp2" / suite / problem / model_safe / note_safe / timestamp
+            out_dir = Path("outputs") / "experiments" / "single" / suite / problem / model_safe / note_safe / timestamp
         else:
-            out_dir = Path("z_artifacts") / "output" / "exp2" / suite / problem / model_safe / timestamp
+            out_dir = Path("outputs") / "experiments" / "single" / suite / problem / model_safe / timestamp
         out_dir.mkdir(parents=True, exist_ok=False)
         return out_dir
 
@@ -54,7 +54,7 @@ class ArtifactManager:
         attempts_root = dest / "attempts"
         attempts_root.mkdir(parents=True, exist_ok=True)
 
-        base_files = ["data.json", "prompt.txt", "gold_monolithic.json", "meta.json"]
+        base_files = ["data.json", "prompt.txt"]
         for fname in base_files:
             src_path = src / fname
             dst_path = dest / fname
@@ -78,7 +78,7 @@ class ArtifactManager:
         ro: list[str] = []
         for idx in range(1, current_idx):
             a_dir = attempts_root / f"attempt_{idx:02d}"
-            for name in ("solver.py", "debug.md", "summary.json"):
+            for name in ("solver.py", "debug.md"):
                 p = a_dir / name
                 if p.exists():
                     ro.append(str(p.resolve()))

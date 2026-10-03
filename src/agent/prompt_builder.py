@@ -10,7 +10,7 @@ class PromptBuilder:
     @staticmethod
     def build_reflection_prompt(base_prompt: str, gap_info: str | None = None) -> str:
         """
-        Construct the follow-up prompt for aider after a failed attempt.
+        Construct the follow-up prompt for Codex after a failed attempt.
         The agent should read solver.py and exec.log (read-only), diagnose the failure,
         and write guidance for the next attempt into debug.md. Do not edit solver.py in this step.
         """
@@ -24,10 +24,9 @@ class PromptBuilder:
             "You also have alg_verifier.md with an LLM-based algorithm check; use it to improve the reflection.",
             f"The current objective gap to the optimal solution is: {gap_text}",
             "Your tasks:",
-            "1) Read exec.log and solver.py to understand why the current attempt failed to execute or failed to find the optimal solution.\
-                you need to reasoning the current solver.py and exec.log.",
+            "1) Read solver.py, exec.log, and the verifier feedback to diagnose execution, feasibility, algorithm, or objective-gap failures.",
             "2) Write a concise reflection to debug.md: what likely went wrong and what the next attempt should change",
-            "3) Provide concrete tips for the following attempts, based on the reflection and write into the debug.md file.",
+            "3) List the concrete changes the next attempt should make in debug.md.",
         ]
         return "\n".join(debug_context)
 
@@ -39,7 +38,7 @@ class PromptBuilder:
         context = [
             base_prompt,
             "",
-            "You have prior failed attempts with reflections (and you can read their solver.py, debug.md, summary.json):",
+            "You have prior failed attempts with reflections (and you can read their solver.py and debug.md):",
             prior_notes or "(no prior reflections)",
             "",
             "Incorporate the lessons above to avoid repeating mistakes. Use the prior files as read-only context.",
@@ -59,15 +58,3 @@ class PromptBuilder:
         if location_note in base_prompt:
             return base_prompt
         return base_prompt.rstrip() + "\n\n" + location_note
-
-    @staticmethod
-    def ensure_lazy_prompt(base_prompt: str, suite: str, enable_lazy: bool) -> str:
-        """
-        Optionally add lazy-constraint guidance to the prompt (BD only).
-        """
-        if not enable_lazy or suite != "bd":
-            return base_prompt
-        lazy_note = "In the implementation of the benders decomposition, please use the the gurobi's lazy constraints.\n\n"
-        if lazy_note in base_prompt:
-            return base_prompt
-        return base_prompt.rstrip() + "\n\n" + lazy_note

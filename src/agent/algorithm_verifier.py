@@ -1,65 +1,19 @@
-"""
-Algorithm verifier for the agent. Responsible for verifying the algorithm of the agent.
-"""
-
-from __future__ import annotations
-
-from aider.coders import Coder
-from aider.io import InputOutput
-from aider.models import Model
-
+"""Review decomposition implementation through a fresh Codex session."""
 from pathlib import Path
-from src.agent.files_manager import ArtifactManager
+
+from src.agent.codex_client import CodexClient
+
 
 class AlgorithmVerifier:
-    """LLM-based verifier for checking algorithmic correctness."""
-    def run_llm_verifier(
-        attempt_dir: Path,
-        model: Model,
-        auto_yes: bool,
-        stream: bool,
-        suite: str,
-        lazy: bool,
-    ) -> tuple[str | None, str]:
-        """Run LLM-based algorithm verification and return verdict and notes."""
-        instance_root = attempt_dir.parent.parent
-        verifier_md = ArtifactManager.write_text(attempt_dir, "alg_verifier.md", "")
-        solver_path = attempt_dir / "solver.py"
-        data_path = instance_root / "data.json"
-        prompt_path = instance_root / "prompt.txt"
-        if suite == "bd" and lazy:
-            prompt = (
-                "You are the LLM verifier. Inspect solver.py and judge whether it actually implements "
-                "Benders Decomposition using Gurobi lazy constraints rather than solving a monolithic MIP or a non-lazy approach.\n"
-                "Return a short decision in alg_verifier.md.\n\n"
-                "Format:\n"
-                "VERDICT: PASS or FAIL\n"
-                "NOTES: <1-3 bullet points>\n"
-            )
-        else:
-            prompt = (
-                "You are the LLM verifier. Inspect solver.py and judge whether it actually implements "
-                f"{'Benders Decomposition' if suite == 'bd' else 'Column Generation'} rather than solving a trivial monolithic MIP.\n"
-                "Return a short decision in alg_verifier.md.\n\n"
-                "Format:\n"
-                "VERDICT: PASS or FAIL\n"
-                "NOTES: <1-3 bullet points>\n"
-            )
-        ArtifactManager.write_text(attempt_dir, "llm_verifier_prompt.md", prompt)
-        coder = Coder.create(
-            main_model=model,
-            fnames=[str(verifier_md)],
-            read_only_fnames=[str(solver_path.resolve()), str(data_path.resolve()), str(prompt_path.resolve())],
-            io=InputOutput(yes=auto_yes),
-            stream=stream,
-            use_git=False,
-            edit_format="diff",
-        )
-        coder.run(prompt)
-        text = verifier_md.read_text().strip()
-        verdict = None
-        for line in text.splitlines():
-            if line.strip().upper().startswith("VERDICT:"):
-                verdict = line.split(":", 1)[1].strip().lower()
-                break
-        return verdict, text
+    @staticmethod
+    def run_llm_verifier(attempt_dir: Path, client: CodexClient, suite: str) -> tuple[str | None, str]:
+        method = "Benders decomposition" if suite == "bd" else "column generation"
+        prompt = f"Inspect the supplied solver.py and determine whether it implements {method}. Check the master/subproblem split, dual or reduced-cost information, and iterative cut/column updates. A monolithic optimization model alone does not pass. Do not execute or modify solver.py. Write alg_verifier.md with exactly a first line VERDICT: PASS or VERDICT: FAIL, followed by NOTES: and concise evidence. Feasibility is checked separately."
+        target = attempt_dir / "alg_verifier.md"
+        target.write_text("")
+        result = client.edit_file(target, prompt, context=[attempt_dir / "solver.py"], log_dir=attempt_dir, step="llm_verifier")
+        if not result.ok:
+            return None, result.error or "Codex verifier failed"
+        notes = target.read_text().strip()
+        first = notes.splitlines()[0].strip().upper() if notes else ""
+        return {"VERDICT: PASS": "pass", "VERDICT: FAIL": "fail"}.get(first), notes
