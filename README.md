@@ -8,16 +8,10 @@ The second is to share an example of how to benchmark coding agents on optimizat
 
 You can use the repo to study the algorithms, try the examples yourself, or build your own agent benchmark:
 
-- **Benders decomposition:** See how a model is split into a master problem and subproblems, and how subproblem duals lead to cuts that improve the master. [Formulations](#benders-decomposition) · [Implementations](src/bd/).
-- **Column generation:** Start with a small set of columns, solve pricing problems, and add columns that improve the restricted master. [Formulations](#column-generation) · [Implementations](src/cg/) · [Iteration controller](src/utils/base_cg_class.py).
-- **Data generation and Python API:** Generate reusable instances and call the reference solvers directly from Python. [Quick start](#quick-start) · [Python API](#python-api) · [API implementation](src/api.py).
-- **Checking solutions:** Compare decomposition results with a monolithic model that solves the same problem all at once, and use independent checks to verify feasibility and recompute the objective. [Solution checks](#checking-solutions) · [Output verifier](src/agent/output_verifier.py).
-- **Understanding guarantees:** Learn what an optimal LP solution, a feasible integer solution, and a proof of integer optimality each tell you. [Bounds and optimality](#understanding-guarantees).
-- **Sequential and concurrent runs:** Learn how instance workers and solver threads control execution, and how attempts stay sequential within each instance. [Worker and thread settings](#sequential-and-concurrent-runs) · [Experiment scheduler](src/04_run_experiments.py).
+- **Benders decomposition:** We provide instance generators, monolithic mixed-integer programming (MIP) models, and Benders solvers for all five problem types. Learn how the original MIP works, how the master and subproblems interact, and how cuts guide the solution. Every problem includes its formulation and runnable implementation. [Formulations](#benders-decomposition) · [Generators and solver implementations](src/bd/).
+- **Column generation:** We provide instance generators, monolithic MIP models, and column-generation solvers for all four problem types. Learn how the original MIP relates to the restricted master, how pricing discovers useful columns, and how those columns improve the master. Every problem includes its formulation and runnable implementation. [Formulations](#column-generation) · [Generators and solver implementations](src/cg/).
 - **Benchmarking agents:** Follow the workflow from problem descriptions and generated code to execution, verification, and solution quality, then compare runs with and without reflection. [Agent experiments](#agent-experiments) · [EVQ evaluation](#evaluation) · [Agent harness](src/agent/).
 - **GPT-5.6 Luna results:** Explore how many attempts the model needed across problem types, decomposition methods, and instance sizes, and inspect real trajectories. [Current results](#results) · [Example trajectories](#example-trajectories) · [Published result tables](results/luna_60s/).
-
-The Python API lets you explore the reference solvers directly; the agent harness lets you run coding experiments on the same problems.
 
 ## Repository layout
 
