@@ -6,13 +6,18 @@ The second is to share an example of how to benchmark coding agents on optimizat
 
 ## What you can learn
 
-You can use the repo to study the algorithms, try the examples yourself, or build your own agent benchmark:
+Use this guide to jump to the explanations, runnable implementations, and published results.
 
-- **Benders decomposition:** See how a model is split into a master problem and subproblems, and how subproblem duals lead to cuts that improve the master.
-- **Column generation:** Start with a small set of columns, solve pricing problems, and add columns that improve the restricted master.
-- **Checking solutions:** Compare decomposition results with a monolithic model that solves the same problem all at once, and use independent checks to verify feasibility and recompute the objective.
-- **Understanding guarantees:** Learn what an optimal LP solution, a feasible integer solution, and a proof of integer optimality each tell you.
-- **Benchmarking agents:** Follow the workflow from problem descriptions and generated code to execution, verification, and solution quality, then compare runs with and without reflection.
+| Topic | Read in this README | Code and examples |
+| --- | --- | --- |
+| **Benders decomposition** | [Formulations](#benders-decomposition) | [Problem implementations](src/bd/) · [Iteration controller](src/utils/base_bd_class.py) |
+| **Column generation** | [Formulations](#column-generation) | [Problem implementations](src/cg/) · [Iteration controller](src/utils/base_cg_class.py) |
+| **Data generation and Python API** | [Quick start](#quick-start) · [Python API](#python-api) | [API implementation](src/api.py) · [Dataset](data/) |
+| **Checking solutions** | [Solution checks](#checking-solutions) · [EVQ evaluation](#evaluation) | [Output verifier](src/agent/output_verifier.py) |
+| **Understanding guarantees** | [Bounds and optimality](#understanding-guarantees) | [Benders bounds](src/utils/base_bd_class.py) · [CG stopping logic](src/utils/base_cg_class.py) |
+| **Sequential and concurrent runs** | [Worker and thread settings](#sequential-and-concurrent-runs) | [Experiment scheduler](src/04_run_experiments.py) |
+| **Benchmarking agents** | [Agent experiments](#agent-experiments) · [Workflow](#data--agent--evaluation) | [Agent harness](src/agent/) |
+| **GPT-5.6 Luna results** | [Current results](#results) · [Example trajectories](#example-trajectories) | [Published result tables](results/luna_60s/) |
 
 The Python API lets you explore the reference solvers directly; the agent harness lets you run coding experiments on the same problems.
 
@@ -85,6 +90,10 @@ print(verify("bd", "ufl", path, benders["output"]))
 
 The return value is a JSON-compatible dictionary with the objective, bounds, iteration records, problem-specific solution metadata, and a normalized `output` accepted by `verify(...)`. Subclass `BaseBenders` or `BaseColumnGeneration` when adding a new formulation.
 
+### Checking solutions
+
+Call `verify(...)` to check constraints and decision domains, recompute the objective, and check that it matches the reported value. The experiment harness also reviews the requested decomposition method and compares the verified objective with the monolithic reference; see [EVQ evaluation](#evaluation).
+
 ### Agent experiments
 
 Install the [Codex CLI](https://developers.openai.com/codex/cli), then authenticate with `codex login`. The harness uses your existing local authentication.
@@ -106,6 +115,8 @@ python -m src.05_report
 ```
 
 The two settings are **without reflection** and **with reflection**. Both start with the same problem description and instance. Without reflection, each retry receives that task and data again. With reflection, failed attempts produce concise repair notes, and the next fresh Codex call receives the prior solver code and notes as explicit context.
+
+#### Sequential and concurrent runs
 
 `--workers 2` runs up to two instance experiments concurrently. Attempts within one instance remain sequential. Use `--workers 1` for sequential experiments; use `--solver-threads` to control each solver. The default is one solver thread.
 
@@ -295,6 +306,8 @@ In Benders, $`\bar y`$ means the opening or activation decisions are fixed at th
 
 The Benders formulations are adapted from our archived manuscript; all nine descriptions follow the implemented examples. Costs are nonnegative in the supplied instances. For minimization LPs, a dual multiplier on a $`\le`$ constraint is nonpositive, a multiplier on a $`\ge`$ constraint is nonnegative, and a multiplier on an equality is unrestricted. A star marks a solved dual value, and a hat marks an infeasibility certificate.
 
+### Understanding guarantees
+
 **Read the stopping condition together with the bound.** Benders optimality statements below assume optimal master and subproblem solves. Column generation certifies the full pattern LP only after an optimal restricted master and complete, exact pricing establish that no improving column exists, within numerical tolerance. An iteration limit or a stalled update is a computational stopping point. In particular, the CG result field <code>global_lb</code> contains the last restricted-master LP objective; that value is a full-problem lower bound only after the pricing certificate has been established.
 
 **See the decisions before reading the equations.** These existing FCTP plots show supply nodes on the left and demand nodes on the right. The instance shows available transportation connections; the solution shows the selected transportation network and flows. Blue dots at arc midpoints mark opened arcs, and thicker lines indicate greater shipment relative to arc capacity. The binary arc-opening decisions belong to the master, while shipment quantities belong to the subproblem.
@@ -304,6 +317,8 @@ The Benders formulations are adapted from our archived manuscript; all nine desc
 | ![FCTP instance with square supply nodes and circular demand nodes](assets/formulations/fctp_instance.png) | ![FCTP Benders solution with selected transportation arcs and shipment flows](assets/formulations/fctp_solution.png) |
 
 The pictures come from the existing large, seed-000 plots. The progress charts below are drawn from the saved reference iteration records; they illustrate optimization iterations, separate from coding-agent attempts. See [figure sources](assets/formulations/README.md).
+
+### Benders decomposition
 
 <details>
 <summary><strong>Benders · Uncapacitated facility location (UFL)</strong> — choose facilities, then assign customers</summary>
@@ -742,6 +757,8 @@ The small, seed-000 reference converges after eight iterations at approximately 
 [Monolithic implementation](src/bd/tsso/a_gold_monolithic.py) · [Benders implementation](src/bd/tsso/a_gold_bd.py)
 
 </details>
+
+### Column generation
 
 <details>
 <summary><strong>Column generation · Bin packing (BP)</strong> — choose packing patterns, then find a better pattern</summary>
