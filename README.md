@@ -6,18 +6,16 @@ The second is to share an example of how to benchmark coding agents on optimizat
 
 ## What you can learn
 
-Use this guide to jump to the explanations, runnable implementations, and published results.
+You can use the repo to study the algorithms, try the examples yourself, or build your own agent benchmark:
 
-| Topic | Read in this README | Code and examples |
-| --- | --- | --- |
-| **Benders decomposition** | [Formulations](#benders-decomposition) | [Problem implementations](src/bd/) · [Iteration controller](src/utils/base_bd_class.py) |
-| **Column generation** | [Formulations](#column-generation) | [Problem implementations](src/cg/) · [Iteration controller](src/utils/base_cg_class.py) |
-| **Data generation and Python API** | [Quick start](#quick-start) · [Python API](#python-api) | [API implementation](src/api.py) · [Dataset](data/) |
-| **Checking solutions** | [Solution checks](#checking-solutions) · [EVQ evaluation](#evaluation) | [Output verifier](src/agent/output_verifier.py) |
-| **Understanding guarantees** | [Bounds and optimality](#understanding-guarantees) | [Benders bounds](src/utils/base_bd_class.py) · [CG stopping logic](src/utils/base_cg_class.py) |
-| **Sequential and concurrent runs** | [Worker and thread settings](#sequential-and-concurrent-runs) | [Experiment scheduler](src/04_run_experiments.py) |
-| **Benchmarking agents** | [Agent experiments](#agent-experiments) · [Workflow](#data--agent--evaluation) | [Agent harness](src/agent/) |
-| **GPT-5.6 Luna results** | [Current results](#results) · [Example trajectories](#example-trajectories) | [Published result tables](results/luna_60s/) |
+- **Benders decomposition:** See how a model is split into a master problem and subproblems, and how subproblem duals lead to cuts that improve the master. [Formulations](#benders-decomposition) · [Implementations](src/bd/).
+- **Column generation:** Start with a small set of columns, solve pricing problems, and add columns that improve the restricted master. [Formulations](#column-generation) · [Implementations](src/cg/) · [Iteration controller](src/utils/base_cg_class.py).
+- **Data generation and Python API:** Generate reusable instances and call the reference solvers directly from Python. [Quick start](#quick-start) · [Python API](#python-api) · [API implementation](src/api.py).
+- **Checking solutions:** Compare decomposition results with a monolithic model that solves the same problem all at once, and use independent checks to verify feasibility and recompute the objective. [Solution checks](#checking-solutions) · [Output verifier](src/agent/output_verifier.py).
+- **Understanding guarantees:** Learn what an optimal LP solution, a feasible integer solution, and a proof of integer optimality each tell you. [Bounds and optimality](#understanding-guarantees).
+- **Sequential and concurrent runs:** Learn how instance workers and solver threads control execution, and how attempts stay sequential within each instance. [Worker and thread settings](#sequential-and-concurrent-runs) · [Experiment scheduler](src/04_run_experiments.py).
+- **Benchmarking agents:** Follow the workflow from problem descriptions and generated code to execution, verification, and solution quality, then compare runs with and without reflection. [Agent experiments](#agent-experiments) · [EVQ evaluation](#evaluation) · [Agent harness](src/agent/).
+- **GPT-5.6 Luna results:** Explore how many attempts the model needed across problem types, decomposition methods, and instance sizes, and inspect real trajectories. [Current results](#results) · [Example trajectories](#example-trajectories) · [Published result tables](results/luna_60s/).
 
 The Python API lets you explore the reference solvers directly; the agent harness lets you run coding experiments on the same problems.
 
