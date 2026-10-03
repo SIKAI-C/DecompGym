@@ -294,22 +294,6 @@ Each example uses the same reading order: **problem in words → symbols → ori
 | **Benders decomposition** | Structural decisions, such as which facilities or arcs to open, and an estimate of the remaining cost. | A **subproblem** fixes those structural decisions and finds the best remaining decisions, or discovers infeasibility. | A **cut**: a new constraint that improves the cost estimate or excludes an infeasible choice. |
 | **Column generation** | How much to use each currently available pattern, route, or shift. | A **pricing problem** uses the master's dual values to find a new useful pattern. | A **column**: a new decision variable, with its cost and coefficients in the master constraints. |
 
-In Benders, $`\bar y`$ means the opening or activation decisions are fixed at the current master solution. The master variable $`\theta`$ estimates the subproblem's cost; it is not an independently supplied cost parameter. In column generation, $`P`$ is the full set of feasible patterns and $`P'\subseteq P`$ is the smaller set generated so far. A negative **reduced cost** means a new column can improve the current minimization LP.
-
-The Benders formulations are adapted from our archived manuscript; all nine descriptions follow the implemented examples. Costs are nonnegative in the supplied instances. For minimization LPs, a dual multiplier on a $`\le`$ constraint is nonpositive, a multiplier on a $`\ge`$ constraint is nonnegative, and a multiplier on an equality is unrestricted. A star marks a solved dual value, and a hat marks an infeasibility certificate.
-
-### Understanding guarantees
-
-**Read the stopping condition together with the bound.** Benders optimality statements below assume optimal master and subproblem solves. Column generation certifies the full pattern LP only after an optimal restricted master and complete, exact pricing establish that no improving column exists, within numerical tolerance. An iteration limit or a stalled update is a computational stopping point. In particular, the CG result field <code>global_lb</code> contains the last restricted-master LP objective; that value is a full-problem lower bound only after the pricing certificate has been established.
-
-**See the decisions before reading the equations.** These existing FCTP plots show supply nodes on the left and demand nodes on the right. The instance shows available transportation connections; the solution shows the selected transportation network and flows. Blue dots at arc midpoints mark opened arcs, and thicker lines indicate greater shipment relative to arc capacity. The binary arc-opening decisions belong to the master, while shipment quantities belong to the subproblem.
-
-| FCTP problem instance | FCTP Benders solution |
-| --- | --- |
-| ![FCTP instance with square supply nodes and circular demand nodes](assets/formulations/fctp_instance.png) | ![FCTP Benders solution with selected transportation arcs and shipment flows](assets/formulations/fctp_solution.png) |
-
-The pictures come from the existing large, seed-000 plots. The progress charts below are drawn from the saved reference iteration records; they illustrate optimization iterations, separate from coding-agent attempts. See [figure sources](assets/formulations/README.md).
-
 ### Benders decomposition
 
 <details>
