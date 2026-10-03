@@ -214,11 +214,18 @@ For reference-solver bound traces, $\Delta_t=(UB_t-LB_t)/\max\{1,|UB_t|\}$ and t
 
 ### Results
 
+![Overall cumulative E/V/Q for GPT-5.6 Luna](assets/results/luna_60s/overall_attempt_curves.png)
+
 - **Model:** `gpt-5.6-luna`, selected explicitly through Codex CLI. The published evaluation contains only this recorded model.
 - **Coverage:** 81 instances per setting, 162 runs total. Each problem type has **N = 9**; Benders has **N = 45**, column generation **N = 36**, and each size **N = 27** per setting.
 - **Budget:** ten attempt slots, 60 seconds per generated solver, one solver thread, and a 1% verified objective-gap threshold. Successful cases stop early.
+- Both settings reach E/V/Q all at 100% by **round 5**. Without reflection reaches full E/V/Q at rounds **1 / 5 / 5**; with reflection at **2 / 4 / 5**.
+- Without reflection used 110 coding attempts. With reflection used 105 coding attempts plus 24 reflection calls.
+- Attempt one has no previous reflection in either setting. Its group differences reflect sampling; this single cohort does not establish a causal advantage for reflection.
+- Read the [full result tables and protocol](results/luna_60s/README.md), [per-instance first passing rounds](results/luna_60s/instances.csv), or [exact grouped E/V/Q counts](results/luna_60s/attempt_breakdowns.csv).
 
-#### Per problem type
+<details>
+<summary>Performance by problem type: table and quality curves</summary>
 
 The percentage columns show cumulative E / V / Q after attempt 1. The first-100% columns show the round when every instance in that group first passed each metric.
 
@@ -234,24 +241,19 @@ The percentage columns show cumulative E / V / Q after attempt 1. The first-100%
 | CG · GAP | 9 | 100.0 / 77.8 / 77.8 | 100.0 / 88.9 / 88.9 | 1 / 5 / 5 | 1 / 2 / 2 |
 | CG · SHIFT | 9 | 100.0 / 100.0 / 100.0 | 100.0 / 100.0 / 100.0 | 1 / 1 / 1 | 1 / 1 / 1 |
 
-<details>
-<summary>Quality curves for all nine problem types</summary>
-
 ![Cumulative quality success by problem type](assets/results/luna_60s/problem_attempt_curves.png)
 
 This figure plots Q; the accompanying [CSV](results/luna_60s/attempt_breakdowns.csv) contains E, V, and Q for every round.
 
 </details>
 
-#### Benders decomposition and column generation
+<details>
+<summary>Benders decomposition and column generation: table and E/V/Q curves</summary>
 
 | Group | N per setting | Without: E / V / Q @1 (%) | With: E / V / Q @1 (%) | Without: E / V / Q first 100% | With: E / V / Q first 100% |
 | --- | ---: | --- | --- | --- | --- |
 | Benders decomposition | 45 | 100.0 / 73.3 / 71.1 | 95.6 / 71.1 / 71.1 | 1 / 4 / 4 | 2 / 4 / 5 |
 | Column generation | 36 | 100.0 / 83.3 / 83.3 | 100.0 / 94.4 / 91.7 | 1 / 5 / 5 | 1 / 2 / 2 |
-
-<details>
-<summary>Separate E/V/Q curves for Benders and column generation</summary>
 
 ![Cumulative E/V/Q by decomposition method](assets/results/luna_60s/suite_attempt_curves.png)
 
@@ -271,15 +273,6 @@ Sizes are relative to each problem generator; each contains 27 instances per set
 ![Cumulative E/V/Q by instance size](assets/results/luna_60s/size_attempt_curves.png)
 
 </details>
-
-#### Overall performance
-
-![Overall cumulative E/V/Q for GPT-5.6 Luna](assets/results/luna_60s/overall_attempt_curves.png)
-
-- Both settings reach E/V/Q all at 100% by **round 5**. Without reflection reaches full E/V/Q at rounds **1 / 5 / 5**; with reflection at **2 / 4 / 5**.
-- Without reflection used 110 coding attempts. With reflection used 105 coding attempts plus 24 reflection calls.
-- Attempt one has no previous reflection in either setting. Its group differences reflect sampling; this single cohort does not establish a causal advantage for reflection.
-- Read the [full result tables and protocol](results/luna_60s/README.md), [per-instance first passing rounds](results/luna_60s/instances.csv), or [exact grouped E/V/Q counts](results/luna_60s/attempt_breakdowns.csv).
 
 #### Example trajectories
 
