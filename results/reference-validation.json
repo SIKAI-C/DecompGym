@@ -1,0 +1,27 @@
+{
+  "num_instances": 81,
+  "reference_solutions_checked": 162,
+  "feasible_and_objective_consistent": 162,
+  "decomposition_reference_gaps": [
+    {
+      "instance": "bp_large_seed000",
+      "gap": 0.09090909090909091
+    },
+    {
+      "instance": "bp_large_seed002",
+      "gap": 0.14285714285714285
+    },
+    {
+      "instance": "bp_small_seed000",
+      "gap": 0.16666666666666666
+    },
+    {
+      "instance": "bp_small_seed001",
+      "gap": 0.25
+    },
+    {
+      "instance": "bp_small_seed002",
+      "gap": 0.3333333333333333
+    }
+  ]
+}

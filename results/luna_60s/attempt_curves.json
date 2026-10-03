@@ -1,0 +1,3773 @@
+{
+  "generated_at_utc": "2026-10-03T20:05:21.193538+00:00",
+  "configuration": {
+    "backend": "codex-cli",
+    "model": "gpt-5.6-luna",
+    "max_attempts": 10,
+    "agent_timeout": 900,
+    "solver_timeout": 60,
+    "gap_threshold": 0.01,
+    "python": "3.12.11 (main, Jun  3 2025, 15:41:47) [Clang 17.0.0 (clang-1700.0.13.3)]",
+    "platform": "macOS-26.4.1-arm64-arm-64bit",
+    "workers": 2,
+    "solver_threads": 1,
+    "solver_cooldown_seconds": 10.0,
+    "scope": {
+      "modes": [
+        "plain",
+        "reflection"
+      ],
+      "suite": "all",
+      "instances_per_problem": null
+    }
+  },
+  "coverage": {
+    "expected_data_instances": 81,
+    "expected_instance_runs": 162,
+    "completed_instance_runs": 162,
+    "partial_instance_runs": [],
+    "missing_instance_runs": [],
+    "complete": true
+  },
+  "definition": "Fraction of audited completed instances passing at least once by attempt k; later reused slots retain earlier successes.",
+  "attempt_curves": [
+    {
+      "mode": "plain",
+      "num_instances": 81,
+      "points": [
+        {
+          "budget": 1,
+          "counts": {
+            "execution": 81,
+            "verification": 63,
+            "quality": 62
+          },
+          "execution": 1.0,
+          "verification": 0.7777777777777778,
+          "quality": 0.7654320987654321
+        },
+        {
+          "budget": 2,
+          "counts": {
+            "execution": 81,
+            "verification": 76,
+            "quality": 74
+          },
+          "execution": 1.0,
+          "verification": 0.9382716049382716,
+          "quality": 0.9135802469135802
+        },
+        {
+          "budget": 3,
+          "counts": {
+            "execution": 81,
+            "verification": 79,
+            "quality": 79
+          },
+          "execution": 1.0,
+          "verification": 0.9753086419753086,
+          "quality": 0.9753086419753086
+        },
+        {
+          "budget": 4,
+          "counts": {
+            "execution": 81,
+            "verification": 80,
+            "quality": 80
+          },
+          "execution": 1.0,
+          "verification": 0.9876543209876543,
+          "quality": 0.9876543209876543
+        },
+        {
+          "budget": 5,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 6,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 7,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 8,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 9,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 10,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        }
+      ],
+      "first_full_round": {
+        "execution": 1,
+        "verification": 5,
+        "quality": 5
+      },
+      "first_all_full_round": 5
+    },
+    {
+      "mode": "reflection",
+      "num_instances": 81,
+      "points": [
+        {
+          "budget": 1,
+          "counts": {
+            "execution": 79,
+            "verification": 66,
+            "quality": 65
+          },
+          "execution": 0.9753086419753086,
+          "verification": 0.8148148148148148,
+          "quality": 0.8024691358024691
+        },
+        {
+          "budget": 2,
+          "counts": {
+            "execution": 81,
+            "verification": 76,
+            "quality": 76
+          },
+          "execution": 1.0,
+          "verification": 0.9382716049382716,
+          "quality": 0.9382716049382716
+        },
+        {
+          "budget": 3,
+          "counts": {
+            "execution": 81,
+            "verification": 79,
+            "quality": 79
+          },
+          "execution": 1.0,
+          "verification": 0.9753086419753086,
+          "quality": 0.9753086419753086
+        },
+        {
+          "budget": 4,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 80
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 0.9876543209876543
+        },
+        {
+          "budget": 5,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 6,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 7,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 8,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 9,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        },
+        {
+          "budget": 10,
+          "counts": {
+            "execution": 81,
+            "verification": 81,
+            "quality": 81
+          },
+          "execution": 1.0,
+          "verification": 1.0,
+          "quality": 1.0
+        }
+      ],
+      "first_full_round": {
+        "execution": 2,
+        "verification": 4,
+        "quality": 5
+      },
+      "first_all_full_round": 5
+    }
+  ],
+  "attempt_breakdowns": {
+    "suite": [
+      {
+        "group": "bd",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 45,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 45,
+                  "verification": 33,
+                  "quality": 32
+                },
+                "execution": 1.0,
+                "verification": 0.7333333333333333,
+                "quality": 0.7111111111111111
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 45,
+                  "verification": 41,
+                  "quality": 39
+                },
+                "execution": 1.0,
+                "verification": 0.9111111111111111,
+                "quality": 0.8666666666666667
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 45,
+                  "verification": 44,
+                  "quality": 44
+                },
+                "execution": 1.0,
+                "verification": 0.9777777777777777,
+                "quality": 0.9777777777777777
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 4,
+              "quality": 4
+            },
+            "first_all_full_round": 4
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 45,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 43,
+                  "verification": 32,
+                  "quality": 32
+                },
+                "execution": 0.9555555555555556,
+                "verification": 0.7111111111111111,
+                "quality": 0.7111111111111111
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 45,
+                  "verification": 40,
+                  "quality": 40
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 45,
+                  "verification": 43,
+                  "quality": 43
+                },
+                "execution": 1.0,
+                "verification": 0.9555555555555556,
+                "quality": 0.9555555555555556
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 44
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 0.9777777777777777
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 45,
+                  "verification": 45,
+                  "quality": 45
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 2,
+              "verification": 4,
+              "quality": 5
+            },
+            "first_all_full_round": 5
+          }
+        ]
+      },
+      {
+        "group": "cg",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 36,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 36,
+                  "verification": 30,
+                  "quality": 30
+                },
+                "execution": 1.0,
+                "verification": 0.8333333333333334,
+                "quality": 0.8333333333333334
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 36,
+                  "verification": 35,
+                  "quality": 35
+                },
+                "execution": 1.0,
+                "verification": 0.9722222222222222,
+                "quality": 0.9722222222222222
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 36,
+                  "verification": 35,
+                  "quality": 35
+                },
+                "execution": 1.0,
+                "verification": 0.9722222222222222,
+                "quality": 0.9722222222222222
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 36,
+                  "verification": 35,
+                  "quality": 35
+                },
+                "execution": 1.0,
+                "verification": 0.9722222222222222,
+                "quality": 0.9722222222222222
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 5,
+              "quality": 5
+            },
+            "first_all_full_round": 5
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 36,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 36,
+                  "verification": 34,
+                  "quality": 33
+                },
+                "execution": 1.0,
+                "verification": 0.9444444444444444,
+                "quality": 0.9166666666666666
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 36,
+                  "verification": 36,
+                  "quality": 36
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          }
+        ]
+      }
+    ],
+    "problem": [
+      {
+        "group": "bd/fctp",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 6,
+                  "quality": 5
+                },
+                "execution": 1.0,
+                "verification": 0.6666666666666666,
+                "quality": 0.5555555555555556
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 3
+            },
+            "first_all_full_round": 3
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 7,
+                  "verification": 4,
+                  "quality": 4
+                },
+                "execution": 0.7777777777777778,
+                "verification": 0.4444444444444444,
+                "quality": 0.4444444444444444
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 7,
+                  "quality": 7
+                },
+                "execution": 1.0,
+                "verification": 0.7777777777777778,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 2,
+              "verification": 4,
+              "quality": 5
+            },
+            "first_all_full_round": 5
+          }
+        ]
+      },
+      {
+        "group": "bd/km",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 1,
+              "quality": 1
+            },
+            "first_all_full_round": 1
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 1,
+              "quality": 1
+            },
+            "first_all_full_round": 1
+          }
+        ]
+      },
+      {
+        "group": "bd/lrp",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 5,
+                  "quality": 5
+                },
+                "execution": 1.0,
+                "verification": 0.5555555555555556,
+                "quality": 0.5555555555555556
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 6,
+                  "quality": 6
+                },
+                "execution": 1.0,
+                "verification": 0.6666666666666666,
+                "quality": 0.6666666666666666
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 4,
+              "quality": 4
+            },
+            "first_all_full_round": 4
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 2,
+                  "quality": 2
+                },
+                "execution": 1.0,
+                "verification": 0.2222222222222222,
+                "quality": 0.2222222222222222
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 6,
+                  "quality": 6
+                },
+                "execution": 1.0,
+                "verification": 0.6666666666666666,
+                "quality": 0.6666666666666666
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 4,
+              "quality": 4
+            },
+            "first_all_full_round": 4
+          }
+        ]
+      },
+      {
+        "group": "bd/tsso",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 5,
+                  "quality": 5
+                },
+                "execution": 1.0,
+                "verification": 0.5555555555555556,
+                "quality": 0.5555555555555556
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 7
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 3,
+              "quality": 3
+            },
+            "first_all_full_round": 3
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 1,
+              "quality": 1
+            },
+            "first_all_full_round": 1
+          }
+        ]
+      },
+      {
+        "group": "bd/ufl",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          }
+        ]
+      },
+      {
+        "group": "cg/bp",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 7,
+                  "quality": 7
+                },
+                "execution": 1.0,
+                "verification": 0.7777777777777778,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 1,
+              "quality": 1
+            },
+            "first_all_full_round": 1
+          }
+        ]
+      },
+      {
+        "group": "cg/csp",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 7,
+                  "quality": 7
+                },
+                "execution": 1.0,
+                "verification": 0.7777777777777778,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 7
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          }
+        ]
+      },
+      {
+        "group": "cg/gap",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 7,
+                  "quality": 7
+                },
+                "execution": 1.0,
+                "verification": 0.7777777777777778,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 5,
+              "quality": 5
+            },
+            "first_all_full_round": 5
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 8,
+                  "quality": 8
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8888888888888888
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 2,
+              "quality": 2
+            },
+            "first_all_full_round": 2
+          }
+        ]
+      },
+      {
+        "group": "cg/shift",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 1,
+              "quality": 1
+            },
+            "first_all_full_round": 1
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 9,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 9,
+                  "verification": 9,
+                  "quality": 9
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 1,
+              "quality": 1
+            },
+            "first_all_full_round": 1
+          }
+        ]
+      }
+    ],
+    "size": [
+      {
+        "group": "small",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 27,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 27,
+                  "verification": 22,
+                  "quality": 22
+                },
+                "execution": 1.0,
+                "verification": 0.8148148148148148,
+                "quality": 0.8148148148148148
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 5,
+              "quality": 5
+            },
+            "first_all_full_round": 5
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 27,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 27,
+                  "verification": 24,
+                  "quality": 23
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8518518518518519
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 4,
+              "quality": 4
+            },
+            "first_all_full_round": 4
+          }
+        ]
+      },
+      {
+        "group": "medium",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 27,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 27,
+                  "verification": 18,
+                  "quality": 18
+                },
+                "execution": 1.0,
+                "verification": 0.6666666666666666,
+                "quality": 0.6666666666666666
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 27,
+                  "verification": 24,
+                  "quality": 23
+                },
+                "execution": 1.0,
+                "verification": 0.8888888888888888,
+                "quality": 0.8518518518518519
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 3,
+              "quality": 3
+            },
+            "first_all_full_round": 3
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 27,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 26,
+                  "verification": 21,
+                  "quality": 21
+                },
+                "execution": 0.9629629629629629,
+                "verification": 0.7777777777777778,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 27,
+                  "verification": 25,
+                  "quality": 25
+                },
+                "execution": 1.0,
+                "verification": 0.9259259259259259,
+                "quality": 0.9259259259259259
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 2,
+              "verification": 4,
+              "quality": 5
+            },
+            "first_all_full_round": 5
+          }
+        ]
+      },
+      {
+        "group": "large",
+        "curves": [
+          {
+            "mode": "plain",
+            "num_instances": 27,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 27,
+                  "verification": 23,
+                  "quality": 22
+                },
+                "execution": 1.0,
+                "verification": 0.8518518518518519,
+                "quality": 0.8148148148148148
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 25
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9259259259259259
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 27,
+                  "verification": 26,
+                  "quality": 26
+                },
+                "execution": 1.0,
+                "verification": 0.9629629629629629,
+                "quality": 0.9629629629629629
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 1,
+              "verification": 4,
+              "quality": 4
+            },
+            "first_all_full_round": 4
+          },
+          {
+            "mode": "reflection",
+            "num_instances": 27,
+            "points": [
+              {
+                "budget": 1,
+                "counts": {
+                  "execution": 26,
+                  "verification": 21,
+                  "quality": 21
+                },
+                "execution": 0.9629629629629629,
+                "verification": 0.7777777777777778,
+                "quality": 0.7777777777777778
+              },
+              {
+                "budget": 2,
+                "counts": {
+                  "execution": 27,
+                  "verification": 25,
+                  "quality": 25
+                },
+                "execution": 1.0,
+                "verification": 0.9259259259259259,
+                "quality": 0.9259259259259259
+              },
+              {
+                "budget": 3,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 4,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 5,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 6,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 7,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 8,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 9,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              },
+              {
+                "budget": 10,
+                "counts": {
+                  "execution": 27,
+                  "verification": 27,
+                  "quality": 27
+                },
+                "execution": 1.0,
+                "verification": 1.0,
+                "quality": 1.0
+              }
+            ],
+            "first_full_round": {
+              "execution": 2,
+              "verification": 3,
+              "quality": 3
+            },
+            "first_all_full_round": 3
+          }
+        ]
+      }
+    ]
+  }
+}

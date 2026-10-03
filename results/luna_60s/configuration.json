@@ -1,0 +1,41 @@
+{
+  "backend": "codex-cli",
+  "model": "gpt-5.6-luna",
+  "max_attempts": 10,
+  "agent_timeout": 900,
+  "solver_timeout": 60,
+  "gap_threshold": 0.01,
+  "python": "3.12.11 (main, Jun  3 2025, 15:41:47) [Clang 17.0.0 (clang-1700.0.13.3)]",
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "workers": 2,
+  "solver_threads": 1,
+  "solver_cooldown_seconds": 10.0,
+  "scope": {
+    "modes": [
+      "plain",
+      "reflection"
+    ],
+    "suite": "all",
+    "instances_per_problem": null
+  },
+  "experiment_date": "2026-10-02",
+  "scheduling_phases": [
+    {
+      "workers": 1,
+      "completed_runs": 48
+    },
+    {
+      "workers": 2,
+      "completed_runs": 114
+    }
+  ],
+  "data_manifest": "data/manifest.json",
+  "coverage": {
+    "expected_data_instances": 81,
+    "expected_instance_runs": 162,
+    "completed_instance_runs": 162,
+    "partial_instance_runs": [],
+    "missing_instance_runs": [],
+    "complete": true
+  }
+}

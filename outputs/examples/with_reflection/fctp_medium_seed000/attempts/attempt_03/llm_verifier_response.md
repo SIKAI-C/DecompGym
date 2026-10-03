@@ -1,0 +1,1 @@
+Created [alg_verifier.md](<alg_verifier.md>) with `VERDICT: PASS` and concise Benders decomposition evidence.

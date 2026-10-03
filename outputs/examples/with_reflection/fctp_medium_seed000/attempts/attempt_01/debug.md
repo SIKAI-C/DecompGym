@@ -1,0 +1,11 @@
+The run failed at the solution/output level: it returned `status: infeasible` with all y and x equal to zero, so every customer demand was unmet. The structural verifier passed because the code contains a master, subproblem, duals, and cut-generation logic, but that does not establish that the cuts or termination test are correct. The instance is feasible (total supply equals total demand, and all arcs have ample capacity), so the reported infeasibility is spurious.
+
+The likely failure is in the feasibility-cut path or its interaction with master termination: the shortage dual is being used as a feasibility oracle, but the implementation does not validate the generated cut against a known feasible opening pattern and immediately treats a master becoming infeasible as proof that the original problem is infeasible. The last incumbent is also not preserved as a guaranteed feasible output candidate, and the final payload can therefore contain the initial zero solution. The next attempt should make feasibility-cut signs and dual values explicit, check each cut numerically, and retain a feasible incumbent independently of the master status.
+
+Concrete changes for the next attempt:
+
+- Add a direct feasibility check for each candidate y by solving the transportation subproblem with x bounds `capacity[i][j] * y[i][j]`; only mark the instance infeasible if this check establishes that no opening pattern can work.
+- Re-derive the shortage dual and feasibility cut from the exact primal with shortage variables, and verify that the cut evaluates as violated at the current y and is nonviolated at a known feasible y before adding it.
+- Do not return `infeasible` merely because the master becomes infeasible after a cut; preserve the best feasible y/x and return `feasible` unless infeasibility has been independently certified.
+- Before writing output, require that y is binary, x respects capacities and supplies, and every demand equality is satisfied; if not, solve a fallback monolithic fixed-charge model or continue Benders instead of writing the zero initialization.
+- Strengthen termination: compare the master lower bound with a separately computed feasible incumbent objective, and store the incumbent’s y and x rather than the most recently tested master point.

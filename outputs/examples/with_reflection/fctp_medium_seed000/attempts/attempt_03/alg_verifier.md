@@ -1,0 +1,2 @@
+VERDICT: PASS
+NOTES: Implements Benders decomposition with a binary master over y and recourse variable theta, separate feasibility and transportation subproblem oracles, explicit dual models producing feasibility and optimality cuts, and an iterative loop that adds cuts to the master and re-optimizes. It also updates the incumbent solution from subproblem primal results and uses the master bound for termination; this is not a monolithic optimization model.

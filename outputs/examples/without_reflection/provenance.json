@@ -1,0 +1,84 @@
+{
+  "source_run": "luna_60s",
+  "model": "gpt-5.6-luna",
+  "original_case": "plain/bd/ufl/ufl_small_seed000",
+  "actual_coding_attempts": 1,
+  "sanitization": [
+    "Host paths made repository-relative.",
+    "Local Gurobi license notice replaced with a placeholder.",
+    "Raw CLI event streams and stderr logs omitted; prompts, edited code, outputs, review/reflection responses, invocation settings, timing and token summaries retained.",
+    "Trailing whitespace normalized for source control; artifact hashes distinguish original and published bytes."
+  ],
+  "files": [
+    {
+      "file": "attempts/attempt_01/agent_invocation.json",
+      "original_sha256": "766c559825027edee58a5a435a2f6d351d4dee3c685a8a4966e99f4d8f68eb76",
+      "published_sha256": "5d8b163f48be849cd9e250d4c06d4e2bd8fbebe2eb9b9060547bc2cd62c813e7"
+    },
+    {
+      "file": "attempts/attempt_01/agent_metrics.json",
+      "original_sha256": "a9c0620bc60dbfd68e0843f4d7ac2b2cf784a47cbd25f8c7855d49ff5c4ae005",
+      "published_sha256": "256e2c08759588ab187d5c8fb1116baae914efba925462ec6ac9d41b6f575185"
+    },
+    {
+      "file": "attempts/attempt_01/agent_prompt.md",
+      "original_sha256": "55549019bc3d4907cf6205785af6bc5fa88359f81f9c018ce06b38c19558a09f",
+      "published_sha256": "55549019bc3d4907cf6205785af6bc5fa88359f81f9c018ce06b38c19558a09f"
+    },
+    {
+      "file": "attempts/attempt_01/agent_response.md",
+      "original_sha256": "fcd26125b5460f19a01b33e53d3d1c68e5e72aa8a9ce7ff37fb4adf88f8c2b52",
+      "published_sha256": "ea34f5fcc1d678e97415d26b8d5e9fd8a034bdb1c4e99c3b98d3f2366094c6b7"
+    },
+    {
+      "file": "attempts/attempt_01/alg_verifier.md",
+      "original_sha256": "ef49bba2355eb510d2f3233bc5800a920ecde49af860c72265391cb3f075c0a3",
+      "published_sha256": "ef49bba2355eb510d2f3233bc5800a920ecde49af860c72265391cb3f075c0a3"
+    },
+    {
+      "file": "attempts/attempt_01/exec.log",
+      "original_sha256": "3a5a188f9c059264c5146f6a06e3f8c1c2174fb1ae5049952eced6730f3ebbff",
+      "published_sha256": "e8081c16b8fdf490bf58775d31e0a9a471e47d6fb3b62c6567f398eabfecae3e"
+    },
+    {
+      "file": "attempts/attempt_01/gurobi.env",
+      "original_sha256": "4f65ac14afcec9fa1d78969e619d845184e73615abd1bddab6dbccddf5519abd",
+      "published_sha256": "4f65ac14afcec9fa1d78969e619d845184e73615abd1bddab6dbccddf5519abd"
+    },
+    {
+      "file": "attempts/attempt_01/llm_verifier_invocation.json",
+      "original_sha256": "6892b5310a0dcba2b625821e93eddd45423519d22a81141e5d6a959bfb98c09c",
+      "published_sha256": "61870e67f4a72334dfadb0fb35cb084b70b7ab42351ad8823defe1aff125a214"
+    },
+    {
+      "file": "attempts/attempt_01/llm_verifier_metrics.json",
+      "original_sha256": "af2ed137c31ca7323801d696e7858d0848491e7e391d9cebbdfbdf20a12dcd8e",
+      "published_sha256": "74141744a650b8c29ceafd81ebff242a254d724ec7494ba3fc884671bdce9cb1"
+    },
+    {
+      "file": "attempts/attempt_01/llm_verifier_prompt.md",
+      "original_sha256": "87173acbf88b7576a9ec41a0abfb46a35567b32f056816bca3c1931c1ab2a680",
+      "published_sha256": "87173acbf88b7576a9ec41a0abfb46a35567b32f056816bca3c1931c1ab2a680"
+    },
+    {
+      "file": "attempts/attempt_01/llm_verifier_response.md",
+      "original_sha256": "7e80ac441a95e348696bdd6cd04f5661fa5d1233aba2aebdc75d3e588c217fc2",
+      "published_sha256": "3bab589e280f6ef8090ab2ef3ba5f18937b6fa4de194fa3f4dac627855f08a8e"
+    },
+    {
+      "file": "attempts/attempt_01/output.json",
+      "original_sha256": "bdf86426ceaa99703867f4ec78e88805bd7d26b16b9f24475dd411457a4e5260",
+      "published_sha256": "97ad6946ac3ab0f670b969697261c4e0a3f23ed47a0c930b9eef17fff0e1f0ea"
+    },
+    {
+      "file": "attempts/attempt_01/solver.py",
+      "original_sha256": "dd182c95746d8a28bf064f2780df309aee6091824c1c205445eea32e8ad97d95",
+      "published_sha256": "dd182c95746d8a28bf064f2780df309aee6091824c1c205445eea32e8ad97d95"
+    },
+    {
+      "file": "attempts/attempt_01/summary.json",
+      "original_sha256": "6891d679f8e94347c149a34e49b75b684b165d0a009fc110ce29918ecaa86d0f",
+      "published_sha256": "b40808745da21ba718e05b31ed9b741c3dad68d631bbdec4346b4114aaa4f60e"
+    }
+  ]
+}

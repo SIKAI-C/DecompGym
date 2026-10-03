@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "returncode": 0,
+  "elapsed_seconds": 95.37321208301,
+  "usage": {
+    "input_tokens": 80070,
+    "cached_input_tokens": 65280,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 4683,
+    "reasoning_output_tokens": 1581
+  },
+  "error": null,
+  "warnings": []
+}
