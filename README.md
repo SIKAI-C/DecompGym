@@ -312,7 +312,7 @@ The Benders formulations are adapted from our archived manuscript; all nine desc
 
 The pictures come from the existing large, seed-000 plots. The progress charts below are drawn from the saved reference iteration records; they illustrate optimization iterations, separate from coding-agent attempts. See [figure sources](assets/formulations/README.md).
 
-<details open>
+<details>
 <summary><strong>Benders · Uncapacitated facility location (UFL)</strong> — choose facilities, then assign customers</summary>
 
 #### 1. Problem in words
