@@ -96,8 +96,8 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
     ) -> PricingResult[TPattern]:
         """Complete pricing across all subproblems; return the best reduced cost.
 
-        Raise if pricing is incomplete: a non-improving reduced cost certifies
-        convergence only after every pricing subproblem has been checked.
+        Raise if pricing is incomplete. Convergence uses rc_tolerance and
+        requires every pricing subproblem to have been checked.
         """
 
     @abstractmethod
@@ -162,8 +162,7 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
         else:
             total_time = self._run_end_time - self._run_start_time
 
-        # A restricted LP value bounds the full problem only after complete pricing
-        # proves convergence, not when an iteration limit or stalled insertion stops CG.
+        # Report the LP bound only when complete pricing meets the convergence tolerance.
         lp_converged = (
             math.isfinite(pricing_result.reduced_cost)
             and pricing_result.reduced_cost >= -self.rc_tolerance

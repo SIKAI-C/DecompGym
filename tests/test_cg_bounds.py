@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from src.utils.base_cg_class import (
-    BaseColumnGeneration, IntegerMasterSolution, MasterLPSolution, PricingResult,
+    BaseColumnGeneration,
+    IntegerMasterSolution,
+    MasterLPSolution,
+    PricingResult,
 )
 
 
@@ -24,7 +27,9 @@ class ToyCoveringCG(BaseColumnGeneration):
         return MasterLPSolution(1.0 if "both_rows" in patterns else 20.0, None)
 
     def solve_pricing(self, inst, master, patterns):
-        return PricingResult(None, 0.0) if "both_rows" in patterns else PricingResult("both_rows", -19.0)
+        if "both_rows" in patterns:
+            return PricingResult(None, 0.0)
+        return PricingResult("both_rows", -19.0)
 
     def solve_integer_master(self, inst, patterns):
         if "both_rows" in patterns:
@@ -60,14 +65,27 @@ def test_stalled_pricing_does_not_certify_a_bound(pattern):
     assert not result["lp_converged"]
 
 
-def test_uncertified_maximization_keeps_only_the_incumbent_lower_bound():
-    class MaximizingCG(ToyCoveringCG):
-        is_minimization = False
+def test_real_bp_early_stop_preserves_solution_without_invalid_bound():
+    gp = pytest.importorskip("gurobipy")
+    from src.api import solve, verify
 
-    result = MaximizingCG(max_iters=1).run("unused")
-    assert result["global_lb"] == 20.0
-    assert result["global_ub"] is None
+    data_path = Path(__file__).resolve().parents[1] / "data/cg/bp/bp_small_seed000/data.json"
+    try:
+        result = solve("cg", "bp", data_path, max_iters=1)
+        baseline = solve("cg", "bp", data_path, method="monolithic")
+    except gp.GurobiError as exc:
+        if exc.errno == gp.GRB.Error.NO_LICENSE:
+            pytest.skip("Gurobi license unavailable")
+        raise
+
+    # The restricted LP is about 8.36, above the full integer optimum of 6.
+    assert baseline["best_objective"] == 6.0
+    assert result["iter_records"][-1]["master_obj"] > baseline["best_objective"]
+    assert result["global_lb"] is None
+    assert result["global_ub"] == result["best_objective"]
     assert not result["lp_converged"]
+    verified = verify("cg", "bp", data_path, result["output"])
+    assert verified["ok"], verified["issues"]
 
 
 def test_gap_pricing_time_limit_is_not_reported_as_convergence():
@@ -78,7 +96,10 @@ def test_gap_pricing_time_limit_is_not_reported_as_convergence():
     data_path = Path(__file__).resolve().parents[1] / "data/cg/gap/gap_small_seed000/data.json"
     inst = solver.load_instance(str(data_path))
     solver._init_matrices(inst)
-    master = MasterLPSolution(0.0, {"pi": [0.0] * len(inst.jobs), "sigma": [0.0] * len(inst.machines)})
+    master = MasterLPSolution(
+        0.0,
+        {"pi": [0.0] * len(inst.jobs), "sigma": [0.0] * len(inst.machines)},
+    )
     try:
         with pytest.raises(RuntimeError, match="GAP pricing problem not optimal"):
             solver.solve_pricing(inst, master, [])

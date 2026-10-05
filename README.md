@@ -82,7 +82,7 @@ print(verify("bd", "ufl", path, benders["output"]))
 
 The return value is a JSON-compatible dictionary with the objective, bounds, iteration records, problem-specific solution metadata, and a normalized `output` accepted by `verify(...)`. Subclass `BaseBenders` or `BaseColumnGeneration` when adding a new formulation.
 
-Column-generation results include `lp_converged`. Until complete pricing proves convergence, `global_lb` is `None` (`global_ub` for maximization); the feasible integer incumbent remains available when the column-generation loop stops early.
+Column-generation results include `lp_converged`, which indicates that pricing found no improving column within `rc_tolerance`. If the loop stops earlier, `global_lb` is `None`; `global_ub` and `best_objective` still report the feasible integer solution. Incomplete pricing solves raise an error.
 
 ### Checking solutions
 
