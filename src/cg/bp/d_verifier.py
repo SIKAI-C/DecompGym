@@ -219,6 +219,7 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         ok, msg, obj = _verify_with_types(bins, capacity, bp_data["sizes"], bp_data["demands"])
         return _result(ok, msg, obj if ok else None)
 
+    # For individual items, item_id refers to the input ID, not a sorted size index.
     ok, msg, obj = _verify_with_items(bins, capacity, bp_data["sizes_by_id"])
     return _result(ok, msg, obj if ok else None)
 
