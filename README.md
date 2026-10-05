@@ -82,6 +82,8 @@ print(verify("bd", "ufl", path, benders["output"]))
 
 The return value is a JSON-compatible dictionary with the objective, bounds, iteration records, problem-specific solution metadata, and a normalized `output` accepted by `verify(...)`. Subclass `BaseBenders` or `BaseColumnGeneration` when adding a new formulation.
 
+Column-generation results include `lp_converged`, which indicates that pricing found no improving column within `rc_tolerance`. If the loop stops earlier, `global_lb` is `None`; `global_ub` and `best_objective` still report the feasible integer solution. Incomplete pricing solves raise an error.
+
 ### Checking solutions
 
 Call `verify(...)` to check constraints and decision domains, recompute the objective, and check that it matches the reported value. The experiment harness also reviews the requested decomposition method and compares the verified objective with the monolithic reference; see [EVQ evaluation](#evaluation).
