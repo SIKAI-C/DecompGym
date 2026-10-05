@@ -179,8 +179,10 @@ class GAPColumnGeneration(BaseColumnGeneration[GAPInstance, dict[str, Any]]):
 
             model.setObjective(gp.quicksum((pi[i] - c[i][j]) * z[i] for i in jobs) + sigma[j], GRB.MAXIMIZE)
             model.optimize()
-            if model.Status != GRB.OPTIMAL:
+            if model.Status == GRB.INFEASIBLE:
                 continue
+            if model.Status != GRB.OPTIMAL:
+                raise RuntimeError(f"GAP pricing problem not optimal (machine={j}, status={model.Status})")
 
             jobs_vec = [round(z[i].X) for i in jobs]
             pattern_cost = sum(c[i][j] * jobs_vec[i] for i in jobs)
