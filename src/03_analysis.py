@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.reporting_policy import artifact_exclusion, require_reportable_artifact, require_reportable_model
+from src.agent.policy_completion import TERMINAL_KIND, is_terminal_failure, load_policy_summary
+
 import matplotlib
 
 
@@ -14,11 +17,11 @@ import matplotlib.pyplot as plt
 
 def list_instance_dirs(root: Path) -> list[Path]:
     """Find subfolders containing instance_summary.json."""
-    if (root / "instance_summary.json").exists():
+    if (root / "instance_summary.json").exists() and not artifact_exclusion(root):
         return [root]
     insts: list[Path] = []
     for child in sorted(root.iterdir()):
-        if child.is_dir() and (child / "instance_summary.json").exists():
+        if child.is_dir() and (child / "instance_summary.json").exists() and not artifact_exclusion(child):
             insts.append(child)
     return insts
 
@@ -27,6 +30,7 @@ def load_attempts(instance_dir: Path) -> tuple[list[dict[str, Any]], float | Non
     """
     Load attempts and gold objective directly from instance_summary.json.
     """
+    require_reportable_artifact(instance_dir)
     inst_sum = instance_dir / "instance_summary.json"
     if not inst_sum.exists():
         return [], None
@@ -35,8 +39,11 @@ def load_attempts(instance_dir: Path) -> tuple[list[dict[str, Any]], float | Non
     except Exception:
         return [], None
 
+    data = load_policy_summary(instance_dir, data)
     attempts = data.get("attempts") or []
     gold = data.get("gold_objective")
+    if gold is None and attempts:
+        gold = attempts[0].get("gold_objective")
     return attempts, gold
 
 
@@ -130,12 +137,22 @@ def analyze_instance(inst_dir: Path, quality_tol: float, write_outputs: bool) ->
     attempts, gold_obj = load_attempts(inst_dir)
     attempts = sorted(attempts, key=lambda x: int(x.get("attempt", 0)))
     metrics = cumulative_metrics(attempts, quality_tol, gold_obj)
+    summary = load_policy_summary(inst_dir)
+    terminal = is_terminal_failure(summary)
+    if terminal:
+        for key in ("solveE", "solveV", "solveQ", "quality"):
+            metrics[key] = pad_series(metrics[key], summary["max_attempts"])
     inst_name = inst_dir.name
     difficulty = infer_difficulty(inst_dir)
     instance_report = {
         "instance": inst_name,
         "path": str(inst_dir),
         "num_attempts": len(attempts),
+        "actual_attempts": sum(not attempt.get("reused_from_previous") for attempt in attempts),
+        "attempt_budget": summary.get("max_attempts", len(attempts)),
+        "completion_kind": summary.get("completion_kind"),
+        "terminal_reason": summary.get("terminal_reason"),
+        "unexecuted_attempt_slots": summary.get("unexecuted_attempt_slots", 0),
         "gold_objective": gold_obj,
         "difficulty": difficulty,
         "solveE_at_i": metrics["solveE"],
@@ -212,6 +229,9 @@ def plot_series(ax, series: list[float], label: str, marker: str = "o"):
 
 
 def plot_instance(inst: dict[str, Any], out_dir: Path) -> None:
+    require_reportable_model(inst.get("model"))
+    if inst.get("path"):
+        require_reportable_artifact(Path(inst["path"]))
     fig, ax = plt.subplots(figsize=(8, 5))
     plot_series(ax, inst["solveE_at_i"], "solveE@i")
     plot_series(ax, inst["solveV_at_i"], "solveV@i")
@@ -361,6 +381,8 @@ def find_run_dirs(output_root: Path) -> list[Path]:
     """Discover run folders by locating instance_summary.json files."""
     runs: set[Path] = set()
     for inst_sum in output_root.rglob("instance_summary.json"):
+        if artifact_exclusion(inst_sum.parent):
+            continue
         inst_dir = inst_sum.parent
         run_dir = inst_dir.parent
         runs.add(run_dir)
@@ -374,6 +396,7 @@ def analyze_run(root: Path, quality_tol: float, force: bool = True) -> bool:
     """
     if not root.exists():
         return False
+    require_reportable_artifact(root)
     if not force and is_analysis_complete(root):
         return False
 

@@ -14,6 +14,8 @@ from typing import Any
 
 from src.agent.experiment_runner import SUITE_PROBLEMS
 from src.agent.output_verifier import OutputVerifier
+from src.reporting_policy import MODEL_EXCLUSIONS, require_reportable_artifact, require_reportable_model, require_reportable_report
+from src.agent.policy_completion import TERMINAL_KIND, is_terminal_failure, TerminalCompletionError, load_policy_summary
 from src.utils.json_utils import safe_load_json
 
 
@@ -71,6 +73,11 @@ def attempt_scores(attempts: list[dict], gold: float, threshold: float, budget: 
 def audit_instance(case: tuple[str, str, str, str], path: Path, summary: dict, canonical: Path, config: dict) -> list[str]:
     mode, suite, problem, name = case
     errors = []
+    try:
+        summary = load_policy_summary(path.parent, summary)
+    except TerminalCompletionError as error:
+        return [str(error)]
+    terminal = is_terminal_failure(summary)
     flags = MODE_FLAGS[mode]
     if any(summary.get(key) != value for key, value in [("instance", name), ("suite", suite), ("problem", problem),
                                                         ("reflection", flags)]):
@@ -78,13 +85,16 @@ def audit_instance(case: tuple[str, str, str, str], path: Path, summary: dict, c
     if summary.get("max_attempts") != config["max_attempts"] or summary.get("gap_threshold") != config["gap_threshold"]:
         errors.append("attempt budget or gap threshold differs")
     attempts = summary["attempts"]
-    if [attempt.get("attempt") for attempt in attempts] != list(range(1, config["max_attempts"] + 1)):
+    last_attempt = summary["terminal_attempt"] if terminal else config["max_attempts"]
+    if [attempt.get("attempt") for attempt in attempts] != list(range(1, last_attempt + 1)):
         errors.append("attempt sequence is incomplete or duplicated")
     data = path.parent / "data.json"
     if not data.exists() or hashlib.sha256(data.read_bytes()).digest() != hashlib.sha256((canonical / "data.json").read_bytes()).digest():
         errors.append("runtime input differs from the canonical instance")
     gold = OutputVerifier.load_gold_objective(canonical, suite)
     recorded_gold = summary.get("gold_objective")
+    if recorded_gold is None and terminal:
+        recorded_gold = attempts[0].get("gold_objective")
     if gold is None or recorded_gold is None or not math.isclose(float(recorded_gold), gold, rel_tol=1e-10, abs_tol=1e-8):
         errors.append("reference objective differs")
     successful = None
@@ -101,7 +111,9 @@ def audit_instance(case: tuple[str, str, str, str], path: Path, summary: dict, c
         if saved != attempt:
             errors.append(f"attempt {index}: attempt and instance summaries differ")
         invocation = safe_load_json(directory / "agent_invocation.json")
-        if not invocation or not invocation.get("ephemeral") or not invocation.get("ignore_user_config") or invocation.get("project_doc_max_bytes") != 0:
+        native_adjudication = terminal and summary.get("backend") == "agy-cli"
+        valid_invocation = (invocation and invocation.get("fresh_conversation") and invocation.get("resume") is False and invocation.get("sandbox")) if native_adjudication else (invocation and invocation.get("ephemeral") and invocation.get("ignore_user_config") and invocation.get("project_doc_max_bytes") == 0)
+        if not valid_invocation:
             errors.append(f"attempt {index}: missing fresh-session invocation evidence")
         if attempt.get("verify_ok"):
             if not attempt.get("exec_ok"):
@@ -168,7 +180,9 @@ def attempt_breakdowns(instances: list[dict], max_attempts: int) -> dict[str, li
 
 
 def build_report(root: Path, data_root: Path) -> dict:
+    require_reportable_artifact(root)
     config = json.loads((root / "run_config.json").read_text())
+    require_reportable_model(config.get("model"))
     budgets = sorted({budget for budget in [1, 5, 10, config["max_attempts"]] if budget <= config["max_attempts"]})
     expected = expected_cases(data_root, config)
     completed = {}
@@ -180,9 +194,17 @@ def build_report(root: Path, data_root: Path) -> dict:
             continue
         case = tuple(relative[:4])
         summary = safe_load_json(path)
+        if summary:
+            require_reportable_model(summary.get("model"))
         if case not in expected:
             continue
-        if not summary or len(summary.get("attempts", [])) != config["max_attempts"]:
+        try:
+            summary = load_policy_summary(path.parent, summary or {})
+        except TerminalCompletionError as error:
+            errors.append({"case": "/".join(case), "issues": [str(error)]})
+            continue
+        terminal = is_terminal_failure(summary)
+        if not summary or (len(summary.get("attempts", [])) != config["max_attempts"] and not terminal):
             partial.append("/".join(case))
             continue
         canonical = data_root / case[1] / case[2] / case[3]
@@ -190,7 +212,7 @@ def build_report(root: Path, data_root: Path) -> dict:
         if issues:
             errors.append({"case": "/".join(case), "issues": issues})
             continue
-        gold = float(summary["gold_objective"])
+        gold = float(summary.get("gold_objective", summary["attempts"][0].get("gold_objective")))
         attempts = summary["attempts"]
         real = [attempt for attempt in attempts if not attempt.get("reused_from_previous")]
         tokens = Counter()
@@ -204,6 +226,8 @@ def build_report(root: Path, data_root: Path) -> dict:
         completed[case] = {"mode": case[0], "suite": case[1], "problem": case[2], "instance": case[3],
                            "size": next((size for size in ["small", "medium", "large"] if f"_{size}_" in case[3]), "unknown"),
                            "gold_objective": gold, "actual_attempts": len(real), "reused_slots": len(attempts) - len(real),
+                           "completion_kind": summary.get("completion_kind"), "terminal_reason": summary.get("terminal_reason"),
+                           "unexecuted_attempt_slots": summary.get("unexecuted_attempt_slots", 0),
                            "attempt_statuses": dict(Counter(attempt["status"] for attempt in real)),
                            "token_usage": dict(tokens), "step_seconds": dict(durations),
                            "metrics": {str(budget): attempt_metrics[str(budget)] for budget in budgets}, "attempt_metrics": attempt_metrics}
@@ -215,7 +239,7 @@ def build_report(root: Path, data_root: Path) -> dict:
     rows = [{"mode": mode, "suite": suite, "problem": problem, **aggregate(instances)} for (mode, suite, problem), instances in sorted(problem_groups.items())]
     overall = [{"mode": mode, "suite": suite, **aggregate(instances)} for (mode, suite), instances in sorted(suite_groups.items())]
     missing = expected - set(completed)
-    return {"schema_version": 1, "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    return {"schema_version": 1, "generated_at_utc": datetime.now(timezone.utc).isoformat(), "reporting_exclusions": list(MODEL_EXCLUSIONS.values()),
             "configuration": {key: config[key] for key in ["backend", "model", "max_attempts", "agent_timeout", "solver_timeout", "gap_threshold", "python", "platform"]} | {"workers": config.get("workers"), "solver_threads": config.get("solver_threads", 0), "solver_cooldown_seconds": config.get("solver_cooldown_seconds", 0), "scope": config.get("scope", {})},
             "coverage": {"expected_data_instances": len({case[1:] for case in expected}),
                          "expected_instance_runs": len(expected), "completed_instance_runs": len(completed),
@@ -245,6 +269,7 @@ def markdown_table(rows: list[dict], detailed: bool = False) -> str:
 
 def export_attempt_curves(report: dict, destination: Path) -> None:
     """Export every observed attempt budget and the first budget attaining 100%."""
+    require_reportable_report(report)
     destination.mkdir(parents=True, exist_ok=True)
     payload = {"generated_at_utc": report["generated_at_utc"], "configuration": report["configuration"], "coverage": report["coverage"],
                "definition": "Fraction of audited completed instances passing at least once by attempt k; later reused slots retain earlier successes.",
@@ -275,6 +300,7 @@ def export_attempt_curves(report: dict, destination: Path) -> None:
 
 
 def plot_attempt_curves(report: dict, destination: Path, *, grayscale: bool = False) -> None:
+    require_reportable_report(report)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -333,6 +359,7 @@ def plot_attempt_curves(report: dict, destination: Path, *, grayscale: bool = Fa
 
 
 def plot_attempt_breakdowns(report: dict, destination: Path) -> None:
+    require_reportable_report(report)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -425,6 +452,7 @@ def plot_attempt_breakdowns(report: dict, destination: Path) -> None:
 
 
 def plot_report(report: dict, destination: Path) -> None:
+    require_reportable_report(report)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -466,6 +494,7 @@ def plot_report(report: dict, destination: Path) -> None:
 
 
 def export_report(report: dict, destination: Path, charts: bool = True) -> None:
+    require_reportable_report(report)
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "evaluation.json").write_text(json.dumps(report, indent=2))
     export_attempt_curves(report, destination)

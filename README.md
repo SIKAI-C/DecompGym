@@ -182,6 +182,8 @@ Users initiate experiments through Python after the initial CLI installation and
 
 Each run lives under `outputs/experiments/<run>/`; the default name is `default_run`. That folder contains the configuration, copied inputs, generated code, outputs, logs, and attempt summaries. Its `report/` subfolder contains `report.md`, `evaluation.json`, `evaluation.csv`, and result charts. The `outputs/` folder is ignored by Git. Only two curated teaching trajectories under `outputs/examples/` are included in Git. Other experiment directories remain ignored; selected published result tables live under `results/` and their figures under `assets/results/`.
 
+Reporting eligibility is defined in [src/reporting_policy.py](src/reporting_policy.py). Since October 8, 2026, GPT-5.6 Sol is excluded from reported totals, tables, exports, and figures pending investigation of its Docker/native pass-rate discrepancy. Raw results remain available for a controlled comparison or rerun. GPT-5.6 Luna retains its separate historical-baseline status. The dashboard and current analysis/report commands enforce this policy.
+
 To keep a named experiment and report:
 
 ```bash
