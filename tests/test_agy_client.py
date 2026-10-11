@@ -32,7 +32,9 @@ print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'done
     before = (tmp_path / 'agent_prompt_before_workspace.md').read_text()
     sent = (tmp_path / 'agent_prompt.md').read_text()
     workspace = json.loads((tmp_path / 'agent_workspace.json').read_text())
-    assert sent == workspace['note'] + '\n\n' + before
+    assert sent.startswith('Only edit the existing solver.py in the current working directory.')
+    assert before.startswith('For this editing call, the workspace is ')
+    assert 'For this editing call' not in sent and workspace['workspace'] not in sent
     assert workspace['target'] == str(Path(workspace['workspace']) / 'solver.py')
     assert 'TASK_DATA' in before and 'BEGIN CONTEXT:' in before
 
@@ -61,8 +63,8 @@ def test_wrong_target_is_preserved_as_evidence_and_never_promoted(tmp_path):
 import json,sys
 from pathlib import Path
 prompt=json.loads(sys.stdin.readline())['message']['content']
-assert str(Path.cwd()) in prompt
-assert str(Path.cwd()/'debug.md') in prompt
+assert prompt.startswith('Only edit the existing debug.md in the current working directory.')
+assert str(Path.cwd()) not in prompt
 Path('attempt_01').mkdir()
 Path('attempt_01/debug.md').write_text('actual model reflection')
 print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'written'}}))

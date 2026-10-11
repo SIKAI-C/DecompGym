@@ -14,9 +14,10 @@ from datetime import datetime, timezone
 
 from src.agent.codex_client import CodexClient, CodexResult
 from src.agent.resource_monitor import stop_owned_tree
+from src.agent.prompt_policy import WORKSPACE_POLICY, record_workspace_prompt, record_wrong_target
 
 
-WORKSPACE_NOTE_VERSION = "explicit-workspace-target-v1"
+WORKSPACE_NOTE_VERSION = WORKSPACE_POLICY
 
 
 class AgyClient:
@@ -26,7 +27,7 @@ class AgyClient:
         self.model, self.timeout, self.role, self.executable = model, timeout, role, executable
 
     def protocol(self):
-        return {"backend": "agy-cli", "model": self.model, "timeout": self.timeout, "role": self.role, "effort": "catalog-slug", "isolation": "fresh workspace/conversation; native user settings retained; slash expansion disabled"}
+        return {"backend": "agy-cli", "model": self.model, "timeout": self.timeout, "role": self.role, "effort": "catalog-slug", "workspace_policy": WORKSPACE_POLICY, "isolation": "fresh workspace/conversation; native user settings retained; slash expansion disabled"}
 
     def edit_file(self, target: Path, prompt: str, *, context=None, log_dir=None, step="agent"):
         target = target.resolve()
@@ -42,19 +43,13 @@ class AgyClient:
             if path.exists():
                 sections.append(f"--- BEGIN CONTEXT: {path.parent.name}/{path.name} ---\n{path.read_text()}\n--- END CONTEXT ---")
         effective = "\n\n".join(sections)
-        (log_dir / f"{step}_prompt_before_workspace.md").write_text(effective)
         started = time.perf_counter()
         error, returncode, terminal, usage, artifact_hash = None, None, None, {}, None
         with tempfile.TemporaryDirectory(prefix="decompbench-agy-") as temporary:
             workspace = Path(temporary).resolve()
             staged = workspace / target.name
             staged.write_text(target.read_text() if target.exists() else "")
-            note = f"For this editing call, the workspace is `{workspace}`; edit only `{staged}`."
-            before_hash = hashlib.sha256(effective.encode()).hexdigest()
-            effective = note + "\n\n" + effective
-            (log_dir / f"{step}_prompt.md").write_text(effective)
-            workspace_record = {"version": WORKSPACE_NOTE_VERSION, "workspace": str(workspace), "target": str(staged), "note": note, "before_prompt_sha256": before_hash, "effective_prompt_sha256": hashlib.sha256(effective.encode()).hexdigest()}
-            (log_dir / f"{step}_workspace.json").write_text(json.dumps(workspace_record, indent=2) + "\n")
+            effective = record_workspace_prompt(workspace, target.name, effective, log_dir, step, old_absolute_note=True)
             command = [executable, "--input-format", "stream-json", "--output-format", "stream-json", "--model", self.model, "--new-project", "--mode", "accept-edits", "--sandbox", "--disable-slash-commands", "--print-timeout", f"{self.timeout}s", "--log-file", os.devnull]
             (log_dir / f"{step}_invocation.json").write_text(json.dumps(self.protocol() | {"target": target.name, "fresh_conversation": True, "resume": False, "ignore_user_config": False, "sandbox": True}, indent=2))
             with (log_dir / f"{step}_events.jsonl").open("w") as events, (log_dir / f"{step}_stderr.log").open("w") as stderr:
@@ -80,18 +75,7 @@ class AgyClient:
                     (log_dir / f"{step}_response.md").write_text(payload.get("response", ""))
             ok = returncode == 0 and terminal == "completed" and error is None and staged.is_file() and bool(staged.read_text().strip())
             if returncode == 0 and terminal == "completed" and error is None and not ok:
-                misplaced = []
-                for path in sorted(workspace.rglob(target.name)):
-                    if path == staged or path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(workspace) or not path.read_bytes().strip():
-                        continue
-                    relative = path.relative_to(workspace)
-                    archive = log_dir / "unexpected_outputs" / relative
-                    archive.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(path, archive)
-                    misplaced.append({"relative_path": str(relative), "archive": str(archive.relative_to(log_dir)), "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()})
-                if misplaced:
-                    delivery = {"kind": "wrong_target_file", "workspace_note_version": WORKSPACE_NOTE_VERSION, "target_name": target.name, "required_target_empty": True, "workspace_record_sha256": hashlib.sha256((log_dir / f"{step}_workspace.json").read_bytes()).hexdigest(), "misplaced_files": misplaced}
-                    (log_dir / f"{step}_delivery_failure.json").write_text(json.dumps(delivery, indent=2) + "\n")
+                record_wrong_target(workspace, target.name, log_dir, step)
             if ok:
                 shutil.copyfile(staged, target)
                 artifact_hash = hashlib.sha256(target.read_bytes()).hexdigest()

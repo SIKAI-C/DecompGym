@@ -4,17 +4,20 @@ Prompt builder for the agent. Responsible for building the prompt for the agent.
 
 from __future__ import annotations
 
+from src.agent.prompt_policy import OBJECTIVE_RETRY
+
 
 class PromptBuilder:
     """Build prompts for agent generation and reflection workflows."""
     @staticmethod
-    def build_reflection_prompt(base_prompt: str, gap_info: str | None = None) -> str:
+    def build_reflection_prompt(base_prompt: str, *, objective_quality_failed: bool = False) -> str:
         """
         Construct the follow-up prompt for Codex after a failed attempt.
         The agent should read solver.py and exec.log (read-only), diagnose the failure,
         and write guidance for the next attempt into debug.md. Do not edit solver.py in this step.
         """
-        gap_text = gap_info if gap_info is not None else "unknown"
+        if type(objective_quality_failed) is not bool:
+            raise TypeError("Objective feedback accepts only a boolean, never a numeric gap")
         debug_context = [
             "You are making an attempt to solve the following problem.",
             base_prompt,
@@ -22,9 +25,9 @@ class PromptBuilder:
             "You have generated the solver.py file based on the problem description and the data.json file.",
             "And the exec.log file shows the output of the solver.py file.",
             "You also have alg_verifier.md with an LLM-based algorithm check; use it to improve the reflection.",
-            f"The current objective gap to the optimal solution is: {gap_text}",
+            *([OBJECTIVE_RETRY] if objective_quality_failed else []),
             "Your tasks:",
-            "1) Read solver.py, exec.log, and the verifier feedback to diagnose execution, feasibility, algorithm, or objective-gap failures.",
+            "1) Read solver.py, exec.log, and the verifier feedback to diagnose execution, feasibility, algorithm, or objective-quality failures.",
             "2) Write a concise reflection to debug.md: what likely went wrong and what the next attempt should change",
             "3) List the concrete changes the next attempt should make in debug.md.",
         ]

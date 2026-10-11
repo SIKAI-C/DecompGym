@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -187,14 +188,21 @@ class ExperimentRunner:
             if verifier_metrics:
                 metrics["algorithm_verification"] = verifier_metrics
         if self.reflection and result.status != "ok":
-            reflection_prompt = PromptBuilder.build_reflection_prompt(prompt, gap_info=str(result.gap_to_gold))
-            reflection_prompt += "\nKeep the reflection concise and actionable. Edit only debug.md."
+            reflection_prompt = PromptBuilder.build_reflection_prompt(prompt, objective_quality_failed=self.objective_quality_failed(result))
+            reflection_prompt += "\nKeep the reflection concise and actionable."
             paths = [instance_root / "data.json"] + [attempt_dir / name for name in ["solver.py", "exec.log", "alg_verifier.md", "output.json"]]
             reflected = self.client.edit_file(attempt_dir / "debug.md", reflection_prompt, context=paths, log_dir=attempt_dir, step="reflection")
             metrics["reflection"] = asdict(reflected)
         metrics["total_seconds"] = time.perf_counter() - started
         ArtifactManager.write_text(attempt_dir, "summary.json", json.dumps(result.to_dict(), indent=2))
         return result
+
+    def objective_quality_failed(self, result: AttemptResult) -> bool:
+        """Expose one qualitative check outcome, without passing the reference to the prompt."""
+        values = (result.objective, result.gold_objective, result.gap_to_gold)
+        return bool(result.exec_ok and result.feasibility_ok and not result.metrics.get("execution_timed_out")
+                    and all(isinstance(value, (int, float)) and math.isfinite(value) for value in values)
+                    and result.gap_to_gold > self.gap_threshold)
 
     @staticmethod
     def can_early_stop(result: AttemptResult, gap_threshold: float) -> bool:

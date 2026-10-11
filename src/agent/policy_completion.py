@@ -246,6 +246,8 @@ def validate_delivery_call(call: Path, root: Path) -> dict:
     relative = call.resolve().relative_to(root.resolve())
     require(len(relative.parts) == 10 and relative.parts[0] == "runs" and relative.parts[2] == "reflection"
             and relative.parts[-2] == "calls", "Wrong-target evidence is not a reflection call")
+    if read(call / "reflection_workspace.json").get("version") == "existing-target-cwd-v2":
+        return _validate_fresh_delivery_call(call, root, relative.parts[1])
     metadata = read(call / "execution_phase.json")
     phases = [(path, read(path)) for path in (root / "execution_phases").glob("*/phase.json")]
     matching = [(path, phase) for path, phase in phases if phase.get("phase_id") == metadata.get("phase_id")]
@@ -288,6 +290,59 @@ def validate_delivery_call(call: Path, root: Path) -> dict:
     target = call.parent.parent / "debug.md"
     require(not target.exists() or not target.read_bytes().strip(), "Required reflection was subsequently delivered")
     return {"phase_file": str(phase_path.relative_to(root)), "phase_id": phase["phase_id"], "request_sha256": request["request_sha256"]}
+
+
+def _validate_fresh_delivery_call(call: Path, root: Path, model: str) -> dict:
+    """The new campaign authorizes the short wording without redefining legacy phases."""
+    from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, edit_instruction
+    manifest = read(root / "campaign.json")
+    require(manifest.get("protocol_id") == identity({k: v for k, v in manifest.items() if k != "protocol_id"}), "Delivery campaign changed")
+    require(manifest.get("prompt_policies") == {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}
+            and manifest.get("wrong_target_reflection_failure") == DELIVERY_AMENDMENT, "Fresh wrong-target failure is not authorized")
+    models = {item["model"]: item for item in manifest.get("model_queue", [])}
+    require(model in models, "Delivery model is outside the frozen queue")
+    hashes = manifest.get("controller_sha256", {})
+    require(all(name in hashes for name in ("src/agent/prompt_policy.py", "src/agent/policy_completion.py", "src/agent/paired_runner.py")), "Frozen delivery controller is incomplete")
+    for name, expected in hashes.items():
+        require(digest(_evidence_path(root / "controller", name)) == expected, "Frozen delivery controller changed")
+    request = read(call / "request.json")
+    require(request.get("step") == "reflection" and request.get("target") == "debug.md"
+            and request.get("protocol") == manifest["protocol_id"] and request.get("prompt_policies") == manifest["prompt_policies"], "Delivery request differs")
+    require(request.get("request_sha256") == identity({k: v for k, v in request.items() if k not in ("request_sha256", "invocation_id")}), "Delivery request fingerprint changed")
+    metrics = read(call / "reflection_metrics.json")
+    require(metrics.get("ok") is False and metrics.get("returncode") == 0 and metrics.get("terminal_state") == "completed", "Delivery failure is not a completed model omission")
+    invocation = read(call / "reflection_invocation.json")
+    require(invocation.get("backend") == models[model]["backend"], "Delivery backend differs")
+    workspace = read(call / "reflection_workspace.json")
+    require(workspace.get("version") == WORKSPACE_POLICY and Path(workspace["workspace"]).is_absolute()
+            and workspace.get("target") == str(Path(workspace["workspace"]) / "debug.md"), "Clarified target changed")
+    before = _evidence_path(call, "reflection_prompt_before_workspace.md")
+    sent = _evidence_path(call, "reflection_prompt.md")
+    old = before.read_text()
+    if workspace.get("before_policy") == WORKSPACE_AMENDMENT:
+        legacy_note = f"For this editing call, the workspace is `{workspace['workspace']}`; edit only `{workspace['target']}`.\n\n"
+        require(old.startswith(legacy_note), "Legacy comparison note differs")
+        old = old[len(legacy_note):]
+    else:
+        require(workspace.get("before_policy") == "edit-only-basename-v0", "Unknown comparison policy")
+    note = edit_instruction("debug.md")
+    require(old.startswith("Edit only debug.md.") and workspace.get("note") == note
+            and sent.read_text() == note + old[len("Edit only debug.md."):]
+            and digest(before) == workspace.get("before_prompt_sha256") and digest(sent) == workspace.get("effective_prompt_sha256"), "Actual prompt differs from the short instruction")
+    delivery = read(call / "reflection_delivery_failure.json")
+    require(delivery.get("kind") == "wrong_target_file" and delivery.get("workspace_note_version") == WORKSPACE_POLICY
+            and delivery.get("target_name") == "debug.md" and delivery.get("required_target_empty") is True
+            and delivery.get("workspace_record_sha256") == digest(call / "reflection_workspace.json"), "Wrong-target record differs")
+    require(bool(delivery.get("misplaced_files")), "No wrong-target artifact was preserved")
+    for artifact in delivery["misplaced_files"]:
+        name = Path(artifact["relative_path"])
+        require(not name.is_absolute() and ".." not in name.parts and name.name == "debug.md" and name.parent != Path("."), "Alternative target is not a nested debug.md")
+        archived = _evidence_path(call, artifact["archive"])
+        require(artifact["archive"] == str(Path("unexpected_outputs") / name)
+                and bool(archived.read_bytes().strip()) and digest(archived) == artifact["sha256"], "Wrong-target artifact changed")
+    target = call.parent.parent / "debug.md"
+    require(not target.exists() or not target.read_bytes().strip(), "Required reflection was subsequently delivered")
+    return {"campaign_file": "campaign.json", "protocol_id": manifest["protocol_id"], "request_sha256": request["request_sha256"]}
 
 
 def build_delivery_receipt(directory: Path, attempt: Path, root: Path, *, recorded_at: str) -> dict:

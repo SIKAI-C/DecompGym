@@ -18,6 +18,7 @@ from src.agent.experiment_runner import AttemptResult, ExperimentRunner
 from src.agent.files_manager import ArtifactManager
 from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
 from src.agent.runtime_state import runtime_lock
 
 
@@ -81,18 +82,19 @@ def solver_infrastructure_error(attempt_dir, stderr):
 class PairedRunner(ExperimentRunner):
     reflection_retry_delays = (5, 10)
 
-    def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-v1", on_stage=None, **kwargs):
+    def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, **kwargs):
         super().__init__(client=client, **kwargs)
         self.judge_client = judge_client
         self.reflection_client = reflection_client or client
         self.protocol_id = protocol_id
         self.on_stage = on_stage or (lambda **kwargs: None)
+        self.call_lock = call_lock
         self.mode = "plain"
 
     def edit(self, client, target, prompt, context, step):
         """Commit each physical call once; retain all failed-call evidence."""
         directory = target.parent
-        request = {"protocol": self.protocol_id, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
+        request = {"protocol": self.protocol_id, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
         fingerprint = identity(request)
         receipt_path = directory / f"{step}_receipt.json"
         cached = read(receipt_path)
@@ -125,8 +127,8 @@ class PairedRunner(ExperimentRunner):
         save(call / "request.json", request | {"request_sha256": fingerprint, "invocation_id": call.name})
         target.write_text("")
         self.on_stage(mode=self.mode, attempt=int(directory.name.rsplit("_", 1)[1]), phase=step)
-        lock = "native-agy-auth" if client.protocol().get("backend") == "agy-cli" else "codex-native-auth"
-        with runtime_lock(lock):
+        lock = {"agy-cli": "native-agy-auth", "claude-code-cli": "native-claude-auth"}.get(client.protocol().get("backend"), "codex-native-auth")
+        with self.call_lock(client) if self.call_lock else runtime_lock(lock):
             result = client.edit_file(target, prompt, context=context, log_dir=call, step=step)
         metrics = asdict(result)
         if result.ok and not metrics.get("artifact_sha256"):
@@ -305,8 +307,8 @@ class PairedRunner(ExperimentRunner):
     def ensure_reflection(self, attempt_dir, result):
         self.ensure_generation_failure_log(attempt_dir, result)
         instance = attempt_dir.parent.parent
-        prompt = PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), gap_info=str(result.gap_to_gold))
-        prompt += "\nKeep the reflection concise and actionable. Edit only debug.md."
+        prompt = PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=self.objective_quality_failed(result))
+        prompt += "\nKeep the reflection concise and actionable."
         context = [instance / "data.json"] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
         for retry in range(len(self.reflection_retry_delays) + 1):
             try:
@@ -327,7 +329,7 @@ class PairedRunner(ExperimentRunner):
     def prepare(self, source, root, mode):
         destination = root / mode / self.suite / self.problems[0] / source.name
         destination.mkdir(parents=True, exist_ok=True)
-        expected = {"protocol_id": self.protocol_id, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
+        expected = {"protocol_id": self.protocol_id, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")

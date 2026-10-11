@@ -33,6 +33,8 @@ import json, sys
 from pathlib import Path
 prompt = sys.stdin.read()
 assert 'REFERENCE_SECRET' not in prompt
+assert prompt.startswith('Only edit the existing solver.py in the current working directory.')
+assert Path('solver.py').is_file()
 assert '{"m": 2}' in prompt
 assert '--ephemeral' in sys.argv and '--ignore-user-config' in sys.argv
 assert 'project_doc_max_bytes=0' in sys.argv

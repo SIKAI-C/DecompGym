@@ -14,6 +14,8 @@ import tempfile
 import time
 from typing import Any
 
+from src.agent.prompt_policy import WORKSPACE_POLICY, record_workspace_prompt, record_wrong_target
+
 
 @dataclass
 class CodexResult:
@@ -37,7 +39,7 @@ class CodexClient:
         self.effort, self.role = effort, role
 
     def protocol(self) -> dict:
-        return {"backend": "codex-cli", "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout}
+        return {"backend": "codex-cli", "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout, "workspace_policy": WORKSPACE_POLICY}
 
     def edit_file(
         self,
@@ -68,7 +70,6 @@ class CodexClient:
                 label = f"{path.parent.name}/{path.name}"
                 sections.append(f"--- BEGIN CONTEXT: {label} ---\n{path.read_text()}\n--- END CONTEXT: {label} ---")
         effective_prompt = "\n\n".join(sections)
-        (log_dir / f"{step}_prompt.md").write_text(effective_prompt)
         started = time.perf_counter()
         usage: dict[str, int] = {}
         error = None
@@ -77,9 +78,10 @@ class CodexClient:
         returncode = None
         # A directory outside the repository avoids incidental project/source/gold context.
         with tempfile.TemporaryDirectory(prefix="decompbench-codex-") as temporary:
-            workspace = Path(temporary)
+            workspace = Path(temporary).resolve()
             staged = workspace / target.name
             staged.write_text(target.read_text() if target.exists() else "")
+            effective_prompt = record_workspace_prompt(workspace, target.name, effective_prompt, log_dir, step)
             command = [
                 executable, "--no-daemon", "exec", "--ephemeral", "--ignore-user-config",
                 "--ignore-rules", "--skip-git-repo-check", "--sandbox", "workspace-write", "--json",
@@ -151,6 +153,8 @@ class CodexClient:
             if (workspace / "response.md").exists():
                 shutil.copyfile(workspace / "response.md", log_dir / f"{step}_response.md")
             ok = returncode == 0 and error is None and terminal_state == "completed" and staged.exists() and bool(staged.read_text().strip())
+            if returncode == 0 and error is None and terminal_state == "completed" and not ok:
+                record_wrong_target(workspace, target.name, log_dir, step)
             if ok:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(staged, target)

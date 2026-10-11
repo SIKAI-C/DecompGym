@@ -81,7 +81,24 @@ print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'writ
         def edit_file(self, target, prompt, *, context=None, log_dir=None, step='agent'):
             self.calls += 1
             save(log_dir / 'execution_phase.json', {'phase_id': phase['phase_id'], 'role': 'reflection', 'model': MODEL})
-            return super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
+            result = super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
+            # Reconstruct the historical v1 adapter's evidence to keep its validator covered.
+            workspace_path = log_dir / f'{step}_workspace.json'
+            workspace = json.loads(workspace_path.read_text())
+            legacy_sent = (log_dir / f'{step}_prompt_before_workspace.md').read_text()
+            note, before = legacy_sent.split('\n\n', 1)
+            (log_dir / f'{step}_prompt_before_workspace.md').write_text(before)
+            (log_dir / f'{step}_prompt.md').write_text(legacy_sent)
+            workspace.update(version=completion.WORKSPACE_AMENDMENT, note=note,
+                             before_prompt_sha256=completion.digest(log_dir / f'{step}_prompt_before_workspace.md'),
+                             effective_prompt_sha256=completion.digest(log_dir / f'{step}_prompt.md'))
+            save(workspace_path, workspace)
+            delivery_path = log_dir / f'{step}_delivery_failure.json'
+            if delivery_path.exists():
+                delivery = json.loads(delivery_path.read_text())
+                delivery.update(workspace_note_version=completion.WORKSPACE_AMENDMENT, workspace_record_sha256=completion.digest(workspace_path))
+                save(delivery_path, delivery)
+            return result
 
     client = Annotated(MODEL, executable=str(executable), role='reflection')
     runner = PairedRunner(client=client, judge_client=client, reflection_client=client, protocol_id='base', model=MODEL, suite='bd', problem=['ufl'], max_attempts=10)

@@ -8,6 +8,7 @@ import pytest
 
 from src.agent.codex_client import CodexResult
 from src.agent.experiment_runner import ExperimentRunner, ModelAccessError
+from src.agent.prompt_policy import OBJECTIVE_RETRY
 
 
 def source_instance(tmp_path: Path) -> Path:
@@ -46,7 +47,9 @@ def test_failure_reflection_and_repair_are_connected(tmp_path, failure):
                 target.write_text("VERDICT: PASS\nNOTES: controlled reviewer fixture\n")
             elif step == "reflection":
                 logs = next(path for path in context if path.name == "exec.log").read_text()
-                assert "controlled execution failure" in logs if failure == "execution" else "0.5" in prompt
+                assert "controlled execution failure" in logs if failure == "execution" else OBJECTIVE_RETRY in prompt
+                assert "current objective gap" not in prompt and "0.5" not in prompt
+                assert (OBJECTIVE_RETRY in prompt) == (failure == "objective_gap")
                 target.write_text("CONTROLLED_REPAIR_NOTE: write the valid plan with objective 4.\n")
             return CodexResult(True, 0, 0.01, {})
     client = ControlledClient()
@@ -55,6 +58,8 @@ def test_failure_reflection_and_repair_are_connected(tmp_path, failure):
     attempts = summary["attempts"]
     assert not attempts[0]["verify_ok"] if failure == "execution" else attempts[0]["status"] == "feasible_not_optimal"
     assert attempts[1]["status"] == "ok" and attempts[1]["attempt"] == 2
+    if failure == "objective_gap":
+        assert attempts[0]["gold_objective"] == 4 and attempts[0]["gap_to_gold"] == 0.5
     assert [attempt["status"] for attempt in attempts[2:]] == ["skipped_previous_solved", "skipped_previous_solved"]
     assert client.calls == ["agent", "llm_verifier", "reflection", "agent", "llm_verifier"]
     assert client.generations == 2
