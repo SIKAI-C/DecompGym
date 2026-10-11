@@ -18,12 +18,14 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from src.reporting_policy import MODEL_EXCLUSIONS, model_exclusion, require_reportable_model
+from src.campaign_plan import model_queue
 from src.agent.policy_completion import TERMINAL_KIND, is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
 
 
 APP_ID = "decompbench-dashboard-v1"
 ASSETS = Path(__file__).resolve().parent / "dashboard"
 MODEL_NAMES = {"gpt-5.6-luna": "GPT-5.6 Luna", "gpt-5.6-sol": "GPT-5.6 Sol", "gpt-6-luna": "GPT-6 Luna", "gpt-6-sol": "GPT-6 Sol", "gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6-astra": "GPT-6 Astra", "gpt-oss-120b-medium": "GPT-OSS 120B", "gemini-3.8-flash-medium": "Gemini 3.8 Flash", "gemini-3.1-pro-high": "Gemini 3.1 Pro", "claude-sonnet-4-6": "Claude Sonnet 4.6", "claude-opus-4-6-thinking": "Claude Opus 4.6"}
+MODEL_NAMES.update({"claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5"})
 FAMILIES = {"ufl": "Facility location", "fctp": "Fixed-charge transportation", "km": "K-median", "lrp": "Location routing", "tsso": "Two-stage stochastic optimization", "bp": "Bin packing", "csp": "Cutting stock", "gap": "Generalized assignment", "shift": "Shift scheduling"}
 
 
@@ -131,7 +133,7 @@ class Dashboard:
     def case_directory(self, model, instance):
         require_reportable_model(model)
         manifest = self.manifest()
-        if model not in manifest.get("gpt_order", []) + manifest.get("agy_order", []):
+        if model not in [item["model"] for item in model_queue(manifest)]:
             raise ValueError("Unknown model")
         case = next((item for item in manifest["instances"] if item["instance"] == instance), None)
         if case is None:
@@ -210,10 +212,12 @@ class Dashboard:
             agy_order = status.get("execution_agy_order", manifest.get("agy_order", []))
             if sorted(agy_order) != sorted(manifest.get("agy_order", [])):
                 agy_order = manifest.get("agy_order", [])
-            for model in manifest.get("gpt_order", []) + agy_order:
+            queue = model_queue(manifest if "model_queue" in manifest else dict(manifest, agy_order=agy_order))
+            for specification in queue:
+                model = specification["model"]
                 if model_exclusion(model):
                     continue
-                backend = "Codex" if model in manifest.get("gpt_order", []) else "AGY"
+                backend = {"codex-cli": "Codex", "agy-cli": "AGY", "claude-code-cli": "Claude Code"}[specification["backend"]]
                 completed = []
                 model_root = self.root / "runs" / model / "plain"
                 for path in model_root.glob("*/*/*/instance_summary.json"):
@@ -270,7 +274,7 @@ class Dashboard:
                 else:
                     model_state = "queued" if count == 0 else "in_progress"
                 passed = sum(row["passed"] for row in completed)
-                effort = "Thinking" if model.startswith("claude") else ("High" if model.endswith("pro-high") else "Medium")
+                effort = specification["effort"].title() if specification.get("effort") not in (None, "catalog-slug") else ("Thinking" if model.startswith("claude") else ("High" if model.endswith("pro-high") else "Medium"))
                 models.append({"id": model, "name": MODEL_NAMES.get(model, model), "backend": backend, "effort": effort, "state": model_state, "expected": len(expected), "completed": count, "remaining": len(expected) - count, "passed": passed, "failed": count - passed, "pass_rate": passed / count if count else None, "execution_passes": sum(row["execution_ok"] for row in completed), "feasibility_passes": sum(row["feasibility_ok"] for row in completed), "algorithm_passes": sum(row["algorithm_ok"] for row in completed)})
             results.sort(key=lambda row: row["finished_at"], reverse=True)
             total = sum(row["expected"] for row in models)
@@ -343,7 +347,9 @@ class Dashboard:
                 snapshot["protocol"]["execution_phase_id"] = status.get("execution_phase_id")
                 if effective_state in {"recovering", "draining_for_recovery"}:
                     alerts.append({"kind": "warning", "text": redact(status.get("error", "Waiting to resume the saved stage after a recovery pause."))})
-            snapshot["reporting_exclusions"] = [dict(value) for model, value in MODEL_EXCLUSIONS.items() if model in manifest.get("gpt_order", []) + manifest.get("agy_order", [])]
+            snapshot["reporting_exclusions"] = [dict(value) for model, value in MODEL_EXCLUSIONS.items() if model in [item["model"] for item in queue]]
+            if manifest.get("schema_version") == 3:
+                snapshot["historical_reference"] = manifest.get("historical_reuse")
             self.last_snapshot, self.last_built = snapshot, time.monotonic()
             return snapshot
 

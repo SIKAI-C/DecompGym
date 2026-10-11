@@ -14,14 +14,15 @@ import threading
 import time
 
 from src.agent.agy_client import AgyClient
+from src.agent.claude_client import ClaudeClient
 from src.agent.codex_client import CodexClient
 from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, identity, read, save
 from src.agent.resource_monitor import ResourceGuard, sample_host, supervise, thermal_warnings
-from src.agent.runtime_state import runtime_lock
+from src.agent.runtime_state import runtime_lock, state_root
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.campaign_plan import load_plan, model_queue
 
 
-GPT_ORDER = ["gpt-5.6-sol", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"]
-AGY_ORDER = ["gpt-oss-120b-medium", "gemini-3.8-flash-medium", "gemini-3.1-pro-high", "claude-sonnet-4-6", "claude-opus-4-6-thinking"]
 FAMILIES = ["ufl", "fctp", "km", "lrp", "tsso", "bp", "csp", "gap", "shift"]
 
 
@@ -29,7 +30,10 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def initialize(root, data):
+def initialize(root, data, plan_path=None, *, include_optional=False):
+    if plan_path is None:
+        raise ProtocolError("New campaigns require an explicit --plan; legacy frozen campaigns are preserved")
+    plan = load_plan(plan_path)
     if root.exists():
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
     paths = list(data.glob("*/*/*/data.json"))
@@ -41,29 +45,47 @@ def initialize(root, data):
         _, size, seed = name.rsplit("_", 2)
         if problem not in FAMILIES or size not in ("small", "medium", "large") or seed not in ("seed000", "seed001", "seed002"):
             raise ProtocolError("Dataset identity differs from the fixed 81")
-        destination = root / "dataset" / suite / problem / name
-        destination.mkdir(parents=True)
-        hashes = {}
-        for filename in ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json"):
-            original = path.parent / filename
-            shutil.copyfile(original, destination / filename)
-            hashes[filename] = digest(original)
-            if digest(destination / filename) != hashes[filename]:
-                raise ProtocolError("Dataset copy differs")
-            (destination / filename).chmod(0o444)
+        hashes = {filename: digest(path.parent / filename) for filename in ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json")}
         cases.append({"suite": suite, "problem": problem, "instance": name, "size": size, "seed": int(seed[4:]), "sha256": hashes})
     expected = {(p, s, k) for p in FAMILIES for s in ("small", "medium", "large") for k in range(3)}
     if {(c["problem"], c["size"], c["seed"]) for c in cases} != expected:
         raise ProtocolError("Fixed dataset coverage mismatch")
     cases.sort(key=lambda c: (["small", "medium", "large"].index(c["size"]), c["seed"], FAMILIES.index(c["problem"])))
+    if identity(cases) != plan["dataset_inventory_sha256"]:
+        raise ProtocolError("Dataset differs from the fixed-81 inventory pinned in the plan")
+    for case in cases:
+        relative = Path(case["suite"]) / case["problem"] / case["instance"]
+        destination = root / "dataset" / relative
+        destination.mkdir(parents=True)
+        for filename, expected_hash in case["sha256"].items():
+            shutil.copyfile(data / relative / filename, destination / filename)
+            if digest(destination / filename) != expected_hash:
+                raise ProtocolError("Dataset copy differs")
+            (destination / filename).chmod(0o444)
     source = Path(__file__).resolve().parent
     frozen = root / "controller"
     shutil.copytree(source, frozen / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     hashes = {str(p.relative_to(frozen)): digest(p) for p in frozen.rglob("*") if p.is_file()}
-    manifest = {"schema_version": 2, "created_at": now(), "backend": "native", "scope": "existing_fixed_81", "data_regenerated": False, "original_data_root": str(data), "historical_reuse": {"model": "gpt-5.6-luna", "new_generation_sessions": 0}, "gpt_order": GPT_ORDER, "agy_order": AGY_ORDER, "generation_effort": "medium", "judge_model": "gpt-6-astra", "judge_effort": "high", "max_attempts": 10, "modes": ["plain", "reflection"], "shared_first_attempt": True, "stop_after_success": True, "workers": 2, "active_codex_invocation_limit": 1, "active_agy_invocation_limit": 1, "agent_timeout": 900, "solver_timeout": 60, "solver_threads": 1, "solver_cooldown_seconds": 10, "resource_guard": {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3}, "license_route": "existing host local license", "python": sys.version, "controller_sha256": hashes, "instances": cases, "maximum_unique_generated_candidates": 81 * 10 * 19, "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh workspace and conversation, native user settings retained, slash expansion disabled"}
+    manifest = {"schema_version": 3, "created_at": now(), "backend": "native", "scope": "existing_fixed_81",
+                "data_regenerated": False, "original_data_root": str(data), "modes": ["plain", "reflection"],
+                "resource_guard": {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3},
+                "license_route": "existing host local license", "python": sys.version, "controller_sha256": hashes, "instances": cases,
+                "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh workspace and conversation, native user settings retained, slash expansion disabled"}
+    queue = plan["model_queue"] + (plan["optional_queue"] if include_optional else [])
+    manifest.update(plan["execution"])
+    manifest.update(schema_version=3, experiment_plan=plan, experiment_plan_id=identity(plan),
+                    prompt_policies=plan["prompt_policies"], model_queue=queue, historical_reuse=plan["historical_reference"],
+                    wrong_target_reflection_failure=plan["wrong_target_reflection_failure"],
+                    gpt_order=[item["model"] for item in queue if item["backend"] == "codex-cli"],
+                    agy_order=[item["model"] for item in queue if item["backend"] == "agy-cli"],
+                    claude_order=[item["model"] for item in queue if item["backend"] == "claude-code-cli"],
+                    maximum_unique_generated_candidates=81 * len(queue) * 19,
+                    fresh_execution_pairs=81 * len(queue), historical_reference_in_fresh_totals=False)
     manifest["protocol_id"] = identity(manifest)
     save(root / "campaign.json", manifest)
-    print(json.dumps({"root": str(root), "instances": len(cases), "models": GPT_ORDER + AGY_ORDER, "max_attempts": 10, "workers": 2, "shared_first_attempt": True}, indent=2))
+    save(root / "pause_request.json", {"recorded_at": now(), "resume_requires_explicit_user_request": True,
+                                      "reason": "Fresh campaign prepared for review; initialization does not authorize execution."})
+    print(json.dumps({"root": str(root), "instances": len(cases), "models": [item["model"] for item in queue], "max_attempts": 10, "workers": 2, "shared_first_attempt": True}, indent=2))
 
 
 def validate(root):
@@ -107,13 +129,36 @@ def pair_complete(root, model, case, protocol):
 
 def run(root):
     manifest = validate(root)
+    ensure_execution_allowed(root, manifest)
     if Path(__file__).resolve().parents[1] != root / "controller":
         raise ProtocolError("Run from the frozen native controller")
     state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "native_adapter_ready", "models": {}}
     mutex = threading.RLock()
+    from src.native_execution_phase import NativeCallGate, auth_failure_marker
+    gate = NativeCallGate(state_root(), root)
+    class CampaignCodexClient(CodexClient):
+        def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
+            result = super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
+            stderr_path = (log_dir or target.parent) / f"{step}_stderr.log"
+            marker = auth_failure_marker(result, stderr_path.read_text() if stderr_path.exists() else "")
+            if marker:
+                gate.fallback(marker, role=self.role, invocation_id=Path(log_dir or target.parent).name)
+            return result
+    def call_lock(client):
+        backend = client.protocol()["backend"]
+        return gate.enter() if backend == "codex-cli" else runtime_lock("native-agy-auth" if backend == "agy-cli" else "native-claude-auth")
+    specifications = {item["model"]: item for item in model_queue(manifest)}
+    def make_client(model, role):
+        specification = specifications[model]
+        backend = specification["backend"]
+        if backend == "agy-cli":
+            return AgyClient(model, role=role, timeout=manifest["agent_timeout"])
+        cls = CampaignCodexClient if backend == "codex-cli" else ClaudeClient
+        return cls(model, role=role, effort=specification["effort"], timeout=manifest["agent_timeout"])
     def checkpoint():
         with mutex:
             state["updated_at"] = now()
+            state["active_codex_invocation_limit"] = gate.limit
             save(root / "status.json", state)
     def job(model, case):
         worker = threading.current_thread().name
@@ -125,10 +170,10 @@ def run(root):
             state["active_instances"][worker] = {"model": model, "instance": case["instance"], "started_at": now(), "mode": "shared", "attempt": 1, "phase": "starting"}
             checkpoint()
         try:
-            client = CodexClient(model, effort="medium") if model in GPT_ORDER else AgyClient(model)
-            reflection_client = CodexClient(model, effort="medium", role="reflection") if model in GPT_ORDER else AgyClient(model, role="reflection")
-            judge = CodexClient(manifest["judge_model"], effort=manifest["judge_effort"], role="algorithm_judge")
-            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase)
+            client = make_client(model, "generation")
+            reflection_client = make_client(model, "reflection")
+            judge = CampaignCodexClient(manifest["judge_model"], effort=manifest["judge_effort"], role="algorithm_judge")
+            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock)
             source = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
             return runner.run_pair(source, root / "runs" / model)
         finally:
@@ -141,7 +186,7 @@ def run(root):
     signal.signal(signal.SIGINT, stop)
     with runtime_lock("fixed81-native-campaign"):
         try:
-            for model in manifest["gpt_order"] + manifest["agy_order"]:
+            for model in specifications:
                 state["active_model"] = model
                 pending = [case for case in manifest["instances"] if not pair_complete(root, model, case, manifest["protocol_id"])]
                 state["models"][model] = {"completed_pairs": 81 - len(pending), "expected": 81}
@@ -191,6 +236,7 @@ def run(root):
 def watch(root):
     """Keep monitoring and resume durable stages after backoff or a cooling stop."""
     manifest = validate(root)
+    ensure_execution_allowed(root, manifest)
     monitor_root = root / "monitor"
     monitor_root.mkdir(exist_ok=True)
     attempts = 0
@@ -204,6 +250,7 @@ def watch(root):
     try:
         with runtime_lock("fixed81-native-watchdog"):
             while True:
+                ensure_execution_allowed(root, manifest)
                 try:
                     result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options))
                 except (RuntimeError, OSError) as error:
@@ -237,15 +284,25 @@ def watch(root):
         return 130
 
 
+def ensure_execution_allowed(root, manifest):
+    if manifest.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
+        raise ProtocolError("Use the original frozen controller for legacy data; this controller requires a fresh cohort")
+    pause = read(root / "pause_request.json") or {}
+    if pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists():
+        raise ProtocolError("Campaign is paused; explicit user resumption is required")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["init", "run", "watch"])
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data", type=Path, default=Path("data"))
+    parser.add_argument("--plan", type=Path)
+    parser.add_argument("--include-optional", action="store_true", help="Include the optional last-priority model in a new frozen plan")
     args = parser.parse_args()
     root = args.root.resolve()
     if args.command == "init":
-        initialize(root, args.data.resolve())
+        initialize(root, args.data.resolve(), args.plan, include_optional=args.include_optional)
         return
     raise SystemExit(run(root) if args.command == "run" else watch(root))
 
