@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,15 +23,21 @@ class CodexResult:
     usage: dict[str, int]
     error: str | None = None
     warnings: list[str] = field(default_factory=list)
+    terminal_state: str | None = None
+    artifact_sha256: str | None = None
 
 
 class CodexClient:
     """Start one fresh CLI session per edit and copy back only the requested file."""
 
-    def __init__(self, model: str | None = None, *, executable: str = "codex", timeout: int = 900) -> None:
+    def __init__(self, model: str | None = None, *, executable: str = "codex", timeout: int = 900, effort: str | None = None, role: str = "generation") -> None:
         self.model = model
         self.executable = executable
         self.timeout = timeout
+        self.effort, self.role = effort, role
+
+    def protocol(self) -> dict:
+        return {"backend": "codex-cli", "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout}
 
     def edit_file(
         self,
@@ -75,7 +82,7 @@ class CodexClient:
             staged.write_text(target.read_text() if target.exists() else "")
             command = [
                 executable, "--no-daemon", "exec", "--ephemeral", "--ignore-user-config",
-                "--skip-git-repo-check", "--sandbox", "workspace-write", "--json",
+                "--ignore-rules", "--skip-git-repo-check", "--sandbox", "workspace-write", "--json",
                 "--color", "never", "--cd", str(workspace),
                 "--disable", "plugins", "--disable", "remote_plugin", "--disable", "apps",
                 "--disable", "hooks", "--disable", "memories", "--disable", "multi_agent",
@@ -89,10 +96,13 @@ class CodexClient:
             ]
             if self.model:
                 command.extend(["--model", self.model])
+            if self.effort:
+                command.extend(["-c", "model_reasoning_effort=" + json.dumps(self.effort)])
             command.append("-")
             # Record configuration without host paths or environment values.
             (log_dir / f"{step}_invocation.json").write_text(json.dumps({
                 "backend": "codex-cli", "requested_model": self.model,
+                "requested_effort": self.effort, "role": self.role,
                 "ephemeral": True, "ignore_user_config": True, "project_doc_max_bytes": 0,
                 "sandbox": "workspace-write", "external_context": False,
                 "target": target.name, "timeout_seconds": self.timeout,
@@ -130,6 +140,14 @@ class CodexClient:
                         error = message
                     else:
                         warnings.append(message)
+            infrastructure_markers = ("code-mode host exited during handshake", "timed out negotiating with the code-mode host", "failed to initialize code-mode", "failed to spawn code-mode")
+            diagnostics = (log_dir / f"{step}_stderr.log").read_text()
+            host_failure = next((marker for marker in infrastructure_markers if marker in diagnostics.lower()), None)
+            if host_failure:
+                # A terminal model response can still follow a failed local tool host.
+                # Such a response must not turn an OS launch gate into a model failure.
+                error = "Local Codex infrastructure failure: " + host_failure
+                terminal_state = "infrastructure_failed"
             if (workspace / "response.md").exists():
                 shutil.copyfile(workspace / "response.md", log_dir / f"{step}_response.md")
             ok = returncode == 0 and error is None and terminal_state == "completed" and staged.exists() and bool(staged.read_text().strip())
@@ -138,10 +156,13 @@ class CodexClient:
                 shutil.copyfile(staged, target)
             elif error is None:
                 error = warnings[-1] if warnings else f"Codex did not complete a successful edit of {target.name} (status {returncode}); see {step}_stderr.log"
-        result = CodexResult(ok, returncode, time.perf_counter() - started, usage, error, warnings)
+        result = CodexResult(ok, returncode, time.perf_counter() - started, usage, error, warnings, terminal_state, hashlib.sha256(target.read_bytes()).hexdigest() if ok else None)
         self._save_result(log_dir, step, result)
         return result
 
     @staticmethod
     def _save_result(log_dir: Path, step: str, result: CodexResult) -> None:
-        (log_dir / f"{step}_metrics.json").write_text(json.dumps(asdict(result), indent=2))
+        path = log_dir / f"{step}_metrics.json"
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(asdict(result), indent=2))
+        temporary.replace(path)

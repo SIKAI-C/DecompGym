@@ -91,6 +91,20 @@ print(json.dumps({'type':'turn.failed','error':{'message':'turn failed'}}))
     assert target.read_text() == "original"
 
 
+def test_completed_turn_after_tool_host_failure_is_infrastructure_failure(tmp_path):
+    target = tmp_path / "solver.py"
+    target.write_text("original")
+    cli = fake_cli(tmp_path / "fake-codex", """
+import json,sys
+print('ERROR timed out negotiating with the code-mode host',file=sys.stderr)
+print(json.dumps({'type':'turn.completed','usage':{'input_tokens':10}}))
+""")
+    result = CodexClient(executable=str(cli)).edit_file(target, "Edit.")
+    assert not result.ok and result.terminal_state == "infrastructure_failed"
+    assert "code-mode host" in result.error
+    assert target.read_text() == "original" and result.usage['input_tokens'] == 10
+
+
 def test_codex_timeout_keeps_original(tmp_path):
     target = tmp_path / "solver.py"
     target.write_text("original")
