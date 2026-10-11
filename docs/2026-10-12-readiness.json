@@ -1,0 +1,166 @@
+{
+  "verified_at": "2026-10-11T06:25:19.282623+00:00",
+  "journey_date": "2026-10-12",
+  "benchmark_started": false,
+  "hourly_reviews_resumed": false,
+  "models_checked": [
+    {
+      "model": "gpt-5.6-luna",
+      "backend": "codex-cli",
+      "verified_at": "2026-10-11T06:20:11.215648+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 14.285,
+      "evidence": "outputs/diagnostics/codex_readiness_20261011/gpt-5.6-luna/readiness.json",
+      "evidence_sha256": "a3dca51d3d55b77943eb82e6d2d3934a2dcbe8045889ec85362d639a7e0ad39f"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "backend": "codex-cli",
+      "verified_at": "2026-10-11T06:20:33.221215+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 21.998,
+      "evidence": "outputs/diagnostics/codex_readiness_20261011/gpt-5.6-sol/readiness.json",
+      "evidence_sha256": "3224a5fff3603941d8957e310cc4d5a8f6e35d06554aa25e48686747345bd384"
+    },
+    {
+      "model": "gpt-6-luna",
+      "backend": "codex-cli",
+      "verified_at": "2026-10-11T06:20:44.800082+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 11.574,
+      "evidence": "outputs/diagnostics/codex_readiness_20261011/gpt-6-luna/readiness.json",
+      "evidence_sha256": "43454b50fe54982e02309ac1d046f35c13a5eb3a93dd32092f18c6686eaacb32"
+    },
+    {
+      "model": "gpt-6-sol",
+      "backend": "codex-cli",
+      "verified_at": "2026-10-11T06:20:58.219695+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 13.409,
+      "evidence": "outputs/diagnostics/codex_readiness_20261011/gpt-6-sol/readiness.json",
+      "evidence_sha256": "3aa32b0a383813ec40d83098517c6c7982ce93f9ff2f67fdff9bf5e1132e5a27"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "backend": "codex-cli",
+      "verified_at": "2026-10-11T06:21:11.774613+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 13.547,
+      "evidence": "outputs/diagnostics/codex_readiness_20261011/gpt-6.1-sol/readiness.json",
+      "evidence_sha256": "31d1cf021c58d7aae2fab77f8dcac8aa445a1ce109b7c485b3da650bbc640639"
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "backend": "agy-cli",
+      "verified_at": "2026-10-11T06:22:20.539788+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 21.09,
+      "evidence": "outputs/diagnostics/agy_readiness_20261011/gemini-3.8-flash-medium/readiness.json",
+      "evidence_sha256": "5b3675a3aaf938a331105749300b401e5f2d03afa504533bbdca6f3e7c1b8b6d"
+    },
+    {
+      "model": "gemini-3.1-pro-high",
+      "backend": "agy-cli",
+      "verified_at": "2026-10-11T06:23:03.708861+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 43.163,
+      "evidence": "outputs/diagnostics/agy_readiness_20261011/gemini-3.1-pro-high/readiness.json",
+      "evidence_sha256": "092b7e3104a7ef9d3adad59c4273666f43c17ccafb7ac4c06a46f0b5020be62f"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "backend": "claude-code-cli",
+      "verified_at": "2026-10-11T06:12:50.808278+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 10.5,
+      "evidence": "outputs/diagnostics/claude_code_readiness_20261011/claude-opus-5-5/readiness.json",
+      "evidence_sha256": "9e90dbc44ad861f968e1cad2d9eadb983f918191dc79138e78cd2b8940862342"
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "backend": "claude-code-cli",
+      "verified_at": "2026-10-11T06:12:57.755853+00:00",
+      "ok": true,
+      "expected_content": true,
+      "experiment_attempt": false,
+      "elapsed_seconds": 6.943,
+      "evidence": "outputs/diagnostics/claude_code_readiness_20261011/claude-sonnet-5-5/readiness.json",
+      "evidence_sha256": "031596c86ea9b6542a462b0e13716a23861d5036a7b4fc3814a9470b1674f4c8"
+    }
+  ],
+  "cli_versions": {
+    "codex": "0.161.0",
+    "agy": "1.3.3",
+    "claude_code": "2.1.296"
+  },
+  "catalog_notes": {
+    "codex": "The current model cache omitted gpt-6-luna, gpt-6-sol and gpt-6.1-sol; all five requested GPT IDs subsequently completed real CLI edits without fallback warnings.",
+    "agy": "The live catalog contained both requested Gemini IDs and optional gpt-oss-120b-medium. Version was 1.3.1 initially and 1.3.3 at recheck; readiness edits used the installed 1.3.3 adapter path.",
+    "claude_code": "Logged in with first-party OAuth. Both exact pinned model IDs were observed in successful invocation receipts. Restricted safe mode and Read/Edit/Write-only tools worked."
+  },
+  "optional_model": {
+    "model": "gpt-oss-120b-medium",
+    "catalog_present": true,
+    "live_edit_probe_performed": false,
+    "priority": "optional_last"
+  },
+  "validation": {
+    "full_suite": {
+      "passed": 379,
+      "failed": 0,
+      "seconds": 19.99,
+      "verified_at": "2026-10-11T06:18:25.002175+00:00",
+      "log": "outputs/diagnostics/harness_revision_20261012/final_tests.txt"
+    },
+    "baseline": {
+      "passed": 340,
+      "failed": 1,
+      "fault": "Timeout child cleanup test failed once; isolated native recheck and final native full suite passed without cleanup-code changes.",
+      "log": "outputs/diagnostics/harness_revision_20261012/baseline_tests.txt"
+    },
+    "old_protected_artifacts_verified": 54466,
+    "old_campaign_verification": "outputs/diagnostics/harness_revision_20261012/old_campaign_preservation.json"
+  },
+  "plan_sha256": "a27982187ad6674bc924e2d6d384f775c3d0259aab472edc8cc55d0748ab46f8",
+  "astra_historical": {
+    "model": "gpt-6-astra",
+    "complete_pairs": 81,
+    "first_attempt_passes": 81,
+    "unique_generated_candidates": 81,
+    "actual_reflection_calls": 0,
+    "included_in_fresh_totals": false
+  },
+  "git": {
+    "baseline_commits": [
+      "6b10752",
+      "1011cbb",
+      "45fb6ce",
+      "531d2c7",
+      "cc02981",
+      "08fffe4",
+      "b7d3d33"
+    ],
+    "revision_commits": [
+      "183f5e3",
+      "67776ba",
+      "b5ae358"
+    ],
+    "push_performed": false
+  }
+}
