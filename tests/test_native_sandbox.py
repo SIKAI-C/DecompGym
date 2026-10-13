@@ -55,6 +55,7 @@ for name,action in [('write',lambda:data.write_text('changed')),('delete',lambda
 checks['solver_write_denied']=denied(lambda:Path('solver.py').write_text('changed'))
 checks['config_write_denied']=denied(lambda:Path('gurobi.env').write_text('Threads 8'))
 checks['reference_read_denied']=denied(lambda:Path(PRIVATE).read_text())
+checks['data_volume_alias_denied']=denied(lambda:Path('/System/Volumes/Data'+PRIVATE).read_text())
 checks['repository_read_denied']=denied(lambda:Path(REPOSITORY).read_text())
 Path('reference_alias').symlink_to(PRIVATE)
 Path('input_alias').symlink_to(data)

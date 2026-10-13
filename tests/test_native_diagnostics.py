@@ -61,3 +61,10 @@ def test_environment_drift_does_not_touch_existing_output(tmp_path, monkeypatch)
     with pytest.raises(RuntimeEnvironmentError, match="changed during execution"):
         task(work, 60)
     assert (work / "output.json").read_text() == "preserved"
+
+
+def test_equivalent_interpreter_spelling_is_not_software_drift():
+    original = {"python_executable": "/project/v2/../main/.venv/bin/python", "python_binary": "/installed/python", "site_packages": "/project/main/.venv/lib/site-packages"}
+    assert native_solver.same_environment(original, original | {"python_executable": "/project/main/.venv/bin/python"})
+    assert not native_solver.same_environment(original, original | {"python_binary": "/different/python"})
+    assert not native_solver.same_environment(original, original | {"site_packages": "/different/packages"})

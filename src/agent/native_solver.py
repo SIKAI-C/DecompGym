@@ -69,6 +69,11 @@ def native_environment():
                        "process_policy_sha256": sha(PROCESS_POLICY.encode()), "policy": NATIVE_SOLVER_POLICY}
 
 
+def same_environment(observed, expected):
+    # The recorded invocation spelling may differ while the resolved binary and package tree are identical.
+    return {key: value for key, value in observed.items() if key != "python_executable"} == {key: value for key, value in expected.items() if key != "python_executable"}
+
+
 def seatbelt_profile(case, work, environment, license_file):
     """One OS profile is necessary: macOS rejects applying a second sandbox."""
     literal = lambda path: "(literal " + json.dumps(str(path)) + ")"
@@ -93,12 +98,14 @@ class NativeSandboxExecutor:
         if not self.license_file.is_file():
             raise RuntimeEnvironmentError("The declared local Gurobi license is unavailable")
         self.environment = native_environment()
-        if expected_environment is not None and self.environment != expected_environment:
-            raise RuntimeEnvironmentError("Native sandbox environment differs from the frozen campaign")
+        if expected_environment is not None:
+            if not same_environment(self.environment, expected_environment):
+                raise RuntimeEnvironmentError("Native sandbox environment differs from the frozen campaign")
+            self.environment = expected_environment
 
     def __call__(self, attempt_dir, timeout, threads=1):
         attempt_dir = Path(attempt_dir).resolve()
-        if native_environment() != self.environment:
+        if not same_environment(native_environment(), self.environment):
             raise RuntimeEnvironmentError("Native sandbox dependencies or launcher changed during execution")
         solver = read_regular(attempt_dir, "solver.py")
         data = read_regular(attempt_dir.parent.parent, "data.json")
