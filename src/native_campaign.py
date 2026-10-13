@@ -285,11 +285,11 @@ def watch(root):
                 try:
                     result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options), container_sampler=engine.resource_samples)
                 except (RuntimeError, OSError) as error:
-                    if type(error).__name__ == "CleanupError":
+                    if isinstance(error, RuntimeEnvironmentError) or type(error).__name__ == "CleanupError":
                         raise
                     result = 75
                     print(f"Monitoring startup failed: {type(error).__name__}: {error}", flush=True)
-                if result in (0, 64, 130):
+                if result != 75:
                     return result
                 delay = manifest["retry_delays_seconds"][min(attempts, len(manifest["retry_delays_seconds"]) - 1)]
                 attempts += 1
@@ -357,6 +357,11 @@ def main():
     except InfrastructureError as error:
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(75) from error
+    except Exception as error:
+        if root.is_dir():
+            save(root / "controller_failures" / f"{time.time_ns()}.json", {"recorded_at": now(), "retryable": False, "error_type": type(error).__name__, "error": str(error), "traceback": traceback.format_exc()})
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(64) from error
 
 
 if __name__ == "__main__":

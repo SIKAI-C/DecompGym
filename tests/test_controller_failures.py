@@ -87,3 +87,36 @@ def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_p
         assert client.runtime is engine
         assert (client.protocol()["transport"], client.backend, client.role, client.model, client.image_id) == ("docker", expected_backend, role, model, environment["image_id"])
     assert set(checked_backends) == {backend, "codex-cli"}
+
+
+@pytest.mark.parametrize("returncode", [0, 1, 64, 130, -9])
+def test_watchdog_does_not_retry_an_unclassified_exit(tmp_path, monkeypatch, returncode):
+    from types import SimpleNamespace
+    from src import hybrid_runtime
+
+    manifest = {"execution_environment": {}, "resource_guard": {}, "retry_delays_seconds": [0]}
+    monkeypatch.setattr(campaign, "validate", lambda _: manifest)
+    monkeypatch.setattr(campaign, "ensure_execution_allowed", lambda *_: None)
+    monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
+    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: SimpleNamespace(bind_environment=lambda _: None, resource_samples=lambda: []))
+    monkeypatch.setattr(campaign, "runtime_lock", lambda *_: nullcontext())
+    monkeypatch.setattr(campaign.signal, "signal", lambda *_: None)
+    calls = []
+    monkeypatch.setattr(campaign, "supervise", lambda *args, **kwargs: calls.append(args) or returncode)
+    monkeypatch.setattr(campaign.time, "sleep", lambda _: pytest.fail("Unclassified exits must not enter retry backoff"))
+    assert campaign.watch(tmp_path) == returncode
+    assert len(calls) == 1
+    assert not (tmp_path / "restarts.jsonl").exists()
+
+
+def test_unexpected_startup_failure_is_recorded_as_nonretryable(tmp_path, monkeypatch):
+    def malformed_evidence(_):
+        raise KeyError("missing readiness field")
+
+    monkeypatch.setattr(campaign, "run", malformed_evidence)
+    monkeypatch.setattr(campaign.sys, "argv", ["native_campaign", "run", "--root", str(tmp_path)])
+    with pytest.raises(SystemExit) as stopped:
+        campaign.main()
+    assert stopped.value.code == 64
+    receipt = read(next((tmp_path / "controller_failures").glob("*.json")))
+    assert receipt["error_type"] == "KeyError" and receipt["retryable"] is False
