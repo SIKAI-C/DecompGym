@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.agent.codex_client import CodexResult
-from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, ReflectionArtifactError, digest, read, save, solver_infrastructure_error
+from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, ReflectionArtifactError, digest, read, save
 
 
 @pytest.fixture(autouse=True)
@@ -184,32 +184,82 @@ def test_generated_wrong_data_path_is_scored_and_not_reexecuted(tmp_path, monkey
     assert len([call for call in client.calls if call[0] == "agent"]) == 3
 
 
-@pytest.mark.parametrize("problem", ["launch", "missing_input", "changed_input", "changed_solver", "dependency", "license", "network"])
-def test_missing_file_exemption_preserves_infrastructure_failures(tmp_path, problem):
+@pytest.mark.parametrize("program", [
+    "open('../data.json').read()",
+    "from pathlib import Path; Path('../data.json').read_text()",
+    "from pathlib import Path; Path('../data.json').read_bytes()",
+    "from pathlib import Path; Path('../data.json').open()",
+    "from pathlib import Path\ndef helper(): return Path('../data.json').read_text()\nhelper()",
+    "import subprocess; subprocess.run(['/decompbench/nonexistent-command'])",
+    "open('license.json').read()",
+    "raise RuntimeError('license unavailable')",
+    "raise RuntimeError('network is unreachable')",
+    "raise RuntimeError('failed to connect')",
+    "import nonexistent_decompbench_module",
+])
+def test_candidate_diagnostics_do_not_become_launcher_failures(tmp_path, monkeypatch, program):
     source = source_case(tmp_path)
-    task = runner(Client())
-    directory = task.prepare(source, tmp_path / "runs", "plain") / "attempts/attempt_01"
-    directory.mkdir()
-    solver = directory / "solver.py"
-    solver.write_text("open('../data.json')\n")
-    save(directory / "agent_receipt.json", {"result": {"artifact_sha256": digest(solver)}})
-    stderr = f'Traceback (most recent call last):\n  File "{solver}", line 1, in <module>\nFileNotFoundError: [Errno 2] No such file or directory: \'../data.json\'\n'
-    assert not solver_infrastructure_error(directory, stderr)
-    if problem == "launch":
-        stderr = "[Errno 2] No such file or directory: '/missing/python'"
-    elif problem == "missing_input":
-        (directory.parent.parent / "data.json").unlink()
-    elif problem == "changed_input":
-        (directory.parent.parent / "data.json").write_text("{}")
-    elif problem == "changed_solver":
-        solver.write_text("changed")
-    elif problem == "dependency":
-        stderr = stderr.replace(str(solver), "/dependency/library.py")
-    elif problem == "license":
-        stderr += "Gurobi license unavailable"
-    else:
-        stderr += "network is unreachable"
-    assert solver_infrastructure_error(directory, stderr)
+    client = Client([False, True, True])
+    edit = client.edit_file
+    def edit_once(target, prompt, **kwargs):
+        result = edit(target, prompt, **kwargs)
+        if kwargs["step"] == "agent" and len(client.calls) == 1:
+            target.write_text(program + "\n")
+            result.artifact_sha256 = digest(target)
+            save(kwargs["log_dir"] / "agent_metrics.json", asdict(result))
+        return result
+    monkeypatch.setattr(client, "edit_file", edit_once)
+    task = runner(client, max_attempts=2)
+    value = task.run_pair(source, tmp_path / "runs")
+    assert all([a["status"] for a in summary["attempts"]] == ["exec_failed", "ok"] for summary in value.values())
+    calls = len(client.calls)
+    task.run_pair(source, tmp_path / "runs")
+    assert len(client.calls) == calls
+
+
+@pytest.mark.parametrize("errno", [2, 13])
+def test_structured_launch_error_preserves_generation_for_recovery(tmp_path, monkeypatch, errno):
+    from src.agent.solver_errors import SolverLaunchError
+    client = Client()
+    task = runner(client)
+    source = source_case(tmp_path)
+    execute = task.run_solver
+    def unavailable(*args):
+        raise SolverLaunchError("launch failed", {"phase": "launch", "errno": errno})
+    monkeypatch.setattr(task, "run_solver", unavailable)
+    with pytest.raises(InfrastructureError, match="launcher unavailable"):
+        task.run_pair(source, tmp_path / "runs")
+    first = tmp_path / "runs/plain/bd/ufl/ufl_small_seed000/attempts/attempt_01"
+    assert not (first / "score_receipt.json").exists()
+    assert read(next(first.glob("solver_infrastructure_*.json")))["errno"] == errno
+    monkeypatch.setattr(task, "run_solver", execute)
+    assert task.run_pair(source, tmp_path / "runs")["plain"]["complete"]
+    assert [step for step, *_ in client.calls] == ["agent", "llm_verifier"]
+
+
+def test_modified_runtime_input_is_a_durable_failure_and_restored(tmp_path, monkeypatch):
+    source = source_case(tmp_path)
+    original = (source / "data.json").read_bytes()
+    client = Client([True, True, True])
+    edit = client.edit_file
+    def corrupt_once(target, prompt, **kwargs):
+        result = edit(target, prompt, **kwargs)
+        if kwargs["step"] == "agent" and len(client.calls) == 1:
+            target.write_text(target.read_text() + "Path('../../data.json').write_text('{}')\n")
+            result.artifact_sha256 = digest(target)
+            save(kwargs["log_dir"] / "agent_metrics.json", asdict(result))
+        return result
+    monkeypatch.setattr(client, "edit_file", corrupt_once)
+    task = runner(client, max_attempts=2)
+    value = task.run_pair(source, tmp_path / "runs")
+    assert all([a["status"] for a in summary["attempts"]] == ["exec_failed", "ok"] for summary in value.values())
+    assert (source / "data.json").read_bytes() == original
+    directory = tmp_path / "runs/plain/bd/ufl/ufl_small_seed000"
+    assert (directory / "data.json").read_bytes() == original
+    assert (directory / "attempts/attempt_01/input_integrity_failure.json").exists()
+    count = len(client.calls)
+    task.run_pair(source, tmp_path / "runs")
+    assert len(client.calls) == count
 
 
 class MissingAgyReflection(Client):

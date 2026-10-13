@@ -20,6 +20,7 @@ from src.agent.files_manager import ArtifactManager, InstanceManager
 from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
 from src.agent.resource_monitor import CleanupError, stop_owned_tree
+from src.agent.solver_errors import SolverLaunchError
 from src.runtime_environment import require_runtime_environment
 from src.utils.json_utils import safe_load_json
 
@@ -128,7 +129,7 @@ class ExperimentRunner:
                     raise CleanupError("Solver pipes remained open after owned process cleanup") from error
                 return False, stdout[-12000:], stderr[-12000:] + f"\n[framework] solver execution timed out after {timeout} seconds", None
         except OSError as error:
-            return False, "", str(error), None
+            raise SolverLaunchError("Python process launch failed", {"phase": "launch", "error_type": type(error).__name__, "errno": error.errno, "executable": sys.executable, "message": str(error)}) from error
         stdout, stderr = stdout[-12000:], stderr[-12000:]
         if process.returncode:
             return False, stdout, stderr or f"returncode={process.returncode}", None

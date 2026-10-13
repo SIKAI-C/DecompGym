@@ -6,7 +6,6 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
-import re
 import shutil
 import time
 import uuid
@@ -21,6 +20,7 @@ from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.agent.runtime_state import runtime_lock
+from src.agent.solver_errors import SolverLaunchError
 
 
 class InfrastructureError(RuntimeError):
@@ -58,36 +58,16 @@ def identity(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def solver_infrastructure_error(attempt_dir, stderr):
-    """Separate a generated solver's bad path from a failed Python launch."""
-    text = stderr.lower()
-    if any(marker in text for marker in ("license", "failed to connect", "network is unreachable")):
-        return True
-    if "no such file or directory: '" not in text:
-        return False
-    lines = stderr.strip().splitlines()
-    frames = re.findall(r'^  File "([^"]+)", line \d+', stderr, re.MULTILINE)
-    solver = attempt_dir / "solver.py"
-    if not lines or not lines[-1].startswith("FileNotFoundError: [Errno 2] No such file or directory:") or not frames or Path(frames[-1]).resolve() != solver.resolve() or "Traceback (most recent call last):" not in stderr:
-        return True
-    instance = attempt_dir.parent.parent
-    case = read(instance / "identity.json") or {}
-    generation = read(attempt_dir / "agent_receipt.json") or {}
-    for name in ("data.json", "prompt.txt"):
-        path = instance / name
-        if not path.is_file() or digest(path) != case.get("inputs", {}).get(name):
-            return True
-    return not solver.is_file() or digest(solver) != generation.get("result", {}).get("artifact_sha256")
-
-
 class PairedRunner(ExperimentRunner):
-    def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, **kwargs):
+    def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, solver_executor=None, **kwargs):
         super().__init__(client=client, **kwargs)
         self.judge_client = judge_client
         self.reflection_client = reflection_client or client
         self.protocol_id = protocol_id
         self.on_stage = on_stage or (lambda **kwargs: None)
         self.call_lock = call_lock
+        if solver_executor is not None:
+            self.run_solver = solver_executor
         self.mode = "plain"
 
     def edit(self, client, target, prompt, context, step):
@@ -209,6 +189,10 @@ class PairedRunner(ExperimentRunner):
             return AttemptResult(**saved["result"])
         started = time.perf_counter()
         instance = attempt_dir.parent.parent
+        case_identity = read(instance / "identity.json") or {}
+        canonical = Path(case_identity.get("canonical_source", instance)) / "data.json"
+        if not canonical.is_file() or digest(canonical) != case_identity.get("inputs", {}).get("data.json"):
+            raise ProtocolError("Canonical scoring input differs from the frozen case identity")
         context = [instance / "data.json"]
         if self.mode == "reflection" and idx > 1:
             context += [Path(p) for p in ArtifactManager.collect_previous_attempt_files(attempt_dir.parent, idx)]
@@ -228,14 +212,28 @@ class PairedRunner(ExperimentRunner):
             else:
                 self.on_stage(mode=self.mode, attempt=idx, phase="solver")
                 execution_started = time.perf_counter()
-                exec_ok, stdout, stderr, output = self.run_solver(attempt_dir, self.solver_timeout, self.solver_threads)
+                try:
+                    exec_ok, stdout, stderr, output = self.run_solver(attempt_dir, self.solver_timeout, self.solver_threads)
+                except SolverLaunchError as error:
+                    save(attempt_dir / f"solver_infrastructure_{uuid.uuid4().hex}.json", error.evidence | {"solver_sha256": code_hash})
+                    raise InfrastructureError("Solver launcher unavailable; see structured execution diagnostics") from error
                 elapsed = time.perf_counter() - execution_started
-                if not exec_ok and solver_infrastructure_error(attempt_dir, stderr):
-                    save(attempt_dir / f"solver_infrastructure_{uuid.uuid4().hex}.json", {"stdout": stdout, "stderr": stderr, "solver_sha256": code_hash})
-                    raise InfrastructureError("Native solver infrastructure unavailable; see saved execution diagnostics")
-                execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": elapsed, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
+                native_receipt = read(attempt_dir / "native_solver_receipt.json")
+                scored_seconds = native_receipt["result"]["execution_seconds"] if native_receipt else elapsed
+                if digest(canonical) != case_identity["inputs"]["data.json"]:
+                    raise ProtocolError("Canonical scoring input changed during execution")
+                runtime_input = instance / "data.json"
+                if not runtime_input.is_file() or runtime_input.is_symlink() or digest(runtime_input) != case_identity["inputs"]["data.json"]:
+                    save(attempt_dir / "input_integrity_failure.json", {"expected_sha256": case_identity["inputs"]["data.json"], "observed_sha256": digest(runtime_input) if runtime_input.is_file() and not runtime_input.is_symlink() else None})
+                    if runtime_input.exists() or runtime_input.is_symlink():
+                        runtime_input.rename(attempt_dir / f"altered_input_{uuid.uuid4().hex}")
+                    shutil.copyfile(canonical, runtime_input)
+                    exec_ok, output = False, None
+                    stderr += "\n[framework] execution input changed; the candidate failed and the canonical input was restored"
+                execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": scored_seconds, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
                 save(execution_path, execution)
-                save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": self.solver_timeout, "threads": self.solver_threads, "solver_sha256": code_hash})
+                if not (attempt_dir / "solver_invocation.json").exists():
+                    save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": self.solver_timeout, "threads": self.solver_threads, "solver_sha256": code_hash})
                 if elapsed >= 5 and self.solver_cooldown_seconds:
                     self.on_stage(mode=self.mode, attempt=idx, phase="solver cooldown")
                     time.sleep(self.solver_cooldown_seconds)
@@ -246,7 +244,7 @@ class PairedRunner(ExperimentRunner):
             objective, issues, message = OutputVerifier.extract_objective(output)
             verification = {"ok": False, "issues": []}
             if exec_ok:
-                verification = OutputVerifier.verify_output(self.suite, problem, instance / "data.json", attempt_dir / "output.json", self.tol)
+                verification = OutputVerifier.verify_output(self.suite, problem, canonical, attempt_dir / "output.json", self.tol)
                 issues.extend(verification.get("issues", []))
                 if verification.get("objective_value") is not None:
                     objective = float(verification["objective_value"])
@@ -346,6 +344,7 @@ class PairedRunner(ExperimentRunner):
         destination = root / mode / self.suite / self.problems[0] / source.name
         destination.mkdir(parents=True, exist_ok=True)
         expected = {"protocol_id": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
+        expected["canonical_source"] = str(source.resolve())
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")
