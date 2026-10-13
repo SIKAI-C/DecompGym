@@ -6,7 +6,7 @@ import pytest
 
 from src.agent.agy_client import AgyClient
 from src.agent.paired_runner import PairedRunner, ProtocolError, ReflectionDeliveryFailure, digest, identity, read, save
-from src.agent.policy_completion import DELIVERY_AMENDMENT, validate_delivery_call
+from src.agent.policy_completion import DELIVERY_AMENDMENT, TerminalCompletionError, validate_delivery_call
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
 
 
@@ -45,8 +45,8 @@ print(json.dumps({'event':'result','result':{'status':'SUCCESS'}}))
 def test_short_wording_wrong_target_is_committed_once_and_not_retried(tmp_path):
     root, attempt, task, client = fresh_call(tmp_path)
     for _ in range(2):
-        with pytest.raises(ReflectionDeliveryFailure):
-            task.edit(client, attempt / "debug.md", "Reflect.", [], "reflection")
+        result = task.edit(client, attempt / "debug.md", "Reflect.", [], "reflection")
+        assert not result["ok"] and result["file_delivery_failure"]
     calls = list((attempt / "calls").iterdir())
     assert len(calls) == 1 and (attempt / "debug.md").read_text() == ""
     authorization = validate_delivery_call(calls[0], root)
@@ -57,8 +57,7 @@ def test_short_wording_wrong_target_is_committed_once_and_not_retried(tmp_path):
 @pytest.mark.parametrize("changed", ["authorization", "prompt", "artifact", "controller"])
 def test_short_wording_rejects_tampering(tmp_path, changed):
     root, attempt, task, client = fresh_call(tmp_path)
-    with pytest.raises(ReflectionDeliveryFailure):
-        task.edit(client, attempt / "debug.md", "Reflect.", [], "reflection")
+    task.edit(client, attempt / "debug.md", "Reflect.", [], "reflection")
     call = next((attempt / "calls").iterdir())
     if changed == "authorization":
         manifest = read(root / "campaign.json")
@@ -70,5 +69,5 @@ def test_short_wording_rejects_tampering(tmp_path, changed):
         (call / "unexpected_outputs/nested/debug.md").write_text("Changed")
     else:
         (root / "controller/src/agent/agy_client.py").write_text("Changed")
-    with pytest.raises(ProtocolError):
-        task.edit(client, attempt / "debug.md", "Reflect.", [], "reflection")
+    with pytest.raises(TerminalCompletionError):
+        validate_delivery_call(call, root)

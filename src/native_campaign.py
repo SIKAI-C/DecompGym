@@ -20,7 +20,7 @@ from src.agent.codex_client import CodexClient
 from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, identity, read, save
 from src.agent.resource_monitor import ResourceGuard, sample_host, supervise, thermal_warnings
 from src.agent.runtime_state import runtime_lock, state_root
-from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.campaign_plan import load_plan, model_queue
 from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
 
@@ -81,6 +81,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     manifest.update(schema_version=3, experiment_plan=plan, experiment_plan_id=identity(plan),
                     prompt_policies=plan["prompt_policies"], model_queue=queue, historical_reuse=plan["historical_reference"],
                     wrong_target_reflection_failure=plan["wrong_target_reflection_failure"],
+                    reflection_policy=plan["reflection_policy"],
                     gpt_order=[item["model"] for item in queue if item["backend"] == "codex-cli"],
                     agy_order=[item["model"] for item in queue if item["backend"] == "agy-cli"],
                     claude_order=[item["model"] for item in queue if item["backend"] == "claude-code-cli"],
@@ -296,6 +297,8 @@ def watch(root):
 def ensure_execution_allowed(root, manifest):
     if manifest.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Use the original frozen controller for legacy data; this controller requires a fresh cohort")
+    if manifest.get("reflection_policy") != REFLECTION_POLICY:
+        raise ProtocolError("This controller requires the new reflection delivery policy; preserve the legacy controller")
     pause = read(root / "pause_request.json") or {}
     if pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists():
         raise ProtocolError("Campaign is paused; explicit user resumption is required")

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from src.agent.paired_runner import ProtocolError, identity
-from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 
 
 def load_plan(path: Path) -> dict:
@@ -42,8 +42,8 @@ def load_plan(path: Path) -> dict:
         raise ProtocolError("Execution settings differ from the reviewed paired protocol")
     if not plan.get("dataset_inventory_sha256") or plan.get("reuse_generated_context") is not False:
         raise ProtocolError("A fresh cohort and pinned fixed dataset are required")
-    if plan.get("wrong_target_reflection_failure") != "fail_future_verified_wrong_target_reflections_without_synthetic_attempts":
-        raise ProtocolError("Wrong-path delivery must remain a recorded failure")
+    if plan.get("reflection_policy") != REFLECTION_POLICY or plan.get("wrong_target_reflection_failure") != REFLECTION_POLICY:
+        raise ProtocolError("Completed reflection omissions must consume their opportunity and advance")
     return plan
 
 

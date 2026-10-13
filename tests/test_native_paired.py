@@ -90,7 +90,7 @@ def test_exhaustion_counts_nineteen_candidates_not_twenty(tmp_path):
     value = runner(client).run_pair(source_case(tmp_path), tmp_path / "runs")
     assert sum(step == "agent" for step, *_ in client.calls) == 19
     assert sum(step == "llm_verifier" for step, *_ in client.calls) == 19
-    assert sum(step == "reflection" for step, *_ in client.calls) == 10
+    assert sum(step == "reflection" for step, *_ in client.calls) == 9
     assert all(len(s["attempts"]) == 10 and not any(a["reused_from_previous"] for a in s["attempts"]) for s in value.values())
     ids = [a["metrics"]["generation"]["invocation_id"] for s in value.values() for a in s["attempts"]]
     assert len(set(ids)) == 19
@@ -232,38 +232,27 @@ class MissingAgyReflection(Client):
         return super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
 
 
-def test_reflection_omission_retries_identical_request_without_repeating_scoring(tmp_path, monkeypatch):
+def test_reflection_omission_consumes_one_opportunity_and_continues(tmp_path, monkeypatch):
     waits = []
     monkeypatch.setattr("src.agent.paired_runner.time.sleep", waits.append)
-    client = MissingAgyReflection(2)
+    client = MissingAgyReflection(10)
     task = runner(client)
     source = source_case(tmp_path)
     result = task.run_pair(source, tmp_path / "runs")
     directory = tmp_path / "runs/reflection/bd/ufl/ufl_small_seed000/attempts/attempt_01"
-    requests = [read(p) for p in directory.glob("calls/*/request.json")]
-    assert len(requests) == 3
-    assert len({request["request_sha256"] for request in requests}) == 1
-    assert len({request["invocation_id"] for request in requests}) == 3
-    assert waits == [5, 10]
+    assert len(list(directory.glob("calls/*/request.json"))) == 1
+    assert waits == []
     assert result["reflection"]["attempts"][1]["status"] == "ok"
     assert len([call for call in client.calls if call[0] == "agent"]) == 3
-    assert read(directory / "reflection_receipt.json")["result"]["ok"]
+    assert len([call for call in client.calls if call[0] == "reflection"]) == 1
+    assert read(directory / "reflection_receipt.json")["result"]["file_delivery_failure"]
+    assert (directory / "debug.md").read_text() == ""
+    later = [call for call in client.calls if call[0] == "agent"][-1]
+    assert [p.name for p in later[2]] == ["data.json", "solver.py", "debug.md", "reflection_feedback.md"]
+    assert "framework" in later[2][-1].read_text()
     count = len(client.calls)
     task.run_pair(source, tmp_path / "runs")
     assert len(client.calls) == count
-
-
-def test_reflection_omission_exhaustion_returns_to_watchdog(tmp_path, monkeypatch):
-    waits = []
-    monkeypatch.setattr("src.agent.paired_runner.time.sleep", waits.append)
-    client = MissingAgyReflection(3)
-    with pytest.raises(ReflectionArtifactError):
-        runner(client).run_pair(source_case(tmp_path), tmp_path / "runs")
-    assert waits == [5, 10]
-    assert len([call for call in client.calls if call[0] == "reflection"]) == 3
-    directory = tmp_path / "runs/reflection/bd/ufl/ufl_small_seed000/attempts/attempt_01"
-    assert not (directory / "reflection_receipt.json").exists()
-    assert (directory / "score_receipt.json").exists()
 
 
 @pytest.mark.parametrize("diagnostics", ["authentication required", "HTTP 429 rate limit", "quota exceeded"])

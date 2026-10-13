@@ -19,7 +19,7 @@ from src.agent.experiment_runner import AttemptResult, ExperimentRunner
 from src.agent.files_manager import ArtifactManager
 from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
-from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.agent.runtime_state import runtime_lock
 
 
@@ -81,8 +81,6 @@ def solver_infrastructure_error(attempt_dir, stderr):
 
 
 class PairedRunner(ExperimentRunner):
-    reflection_retry_delays = (5, 10)
-
     def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, **kwargs):
         super().__init__(client=client, **kwargs)
         self.judge_client = judge_client
@@ -95,7 +93,7 @@ class PairedRunner(ExperimentRunner):
     def edit(self, client, target, prompt, context, step):
         """Commit each physical call once; retain all failed-call evidence."""
         directory = target.parent
-        request = {"protocol": self.protocol_id, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
+        request = {"protocol": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
         fingerprint = identity(request)
         receipt_path = directory / f"{step}_receipt.json"
         cached = read(receipt_path)
@@ -105,7 +103,7 @@ class PairedRunner(ExperimentRunner):
             if cached["result"]["ok"] and (not target.exists() or digest(target) != cached["result"]["artifact_sha256"]):
                 raise ProtocolError("A committed CLI artifact changed")
             if cached["result"].get("file_delivery_failure"):
-                self.commit_delivery_failure(directory / "calls" / cached["result"]["invocation_id"], target, step, fingerprint, cached["result"])
+                self.validate_reflection_omission(directory / "calls" / cached["result"]["invocation_id"], target, cached["result"])
             return cached["result"]
         calls = directory / "calls"
         calls.mkdir(exist_ok=True)
@@ -115,8 +113,8 @@ class PairedRunner(ExperimentRunner):
             metrics = read(call / f"{step}_metrics.json")
             if not prior or prior.get("request_sha256") != fingerprint or not metrics or (call / "rejected.json").exists():
                 continue
-            self.commit_delivery_failure(call, target, step, fingerprint, metrics)
-            if metrics.get("ok"):
+            metrics = self.record_reflection_omission(call, target, step, metrics)
+            if metrics.get("ok") or metrics.get("file_delivery_failure"):
                 if not target.exists() or digest(target) != metrics.get("artifact_sha256"):
                     raise ProtocolError("Completed CLI call lost its committed artifact")
                 metrics["invocation_id"] = call.name
@@ -135,18 +133,45 @@ class PairedRunner(ExperimentRunner):
         if result.ok and not metrics.get("artifact_sha256"):
             metrics["artifact_sha256"] = digest(target)
         metrics["invocation_id"] = call.name
+        metrics = self.record_reflection_omission(call, target, step, metrics)
         save(call / f"{step}_metrics.json", metrics)
         self.publish_call(call, directory, step)
-        self.commit_delivery_failure(call, target, step, fingerprint, metrics)
-        if not result.ok and not (step == "agent" and result.terminal_state == "completed" and result.returncode == 0):
-            if step == "reflection" and client.protocol().get("backend") == "agy-cli" and result.terminal_state == "completed" and result.returncode == 0 and (result.error or "").startswith("AGY did not complete an edit (exit 0)"):
-                diagnostics = "\n".join([result.error or "", *result.warnings, *(p.read_text(errors="replace") for p in (call / f"{step}_stderr.log", call / f"{step}_events.jsonl") if p.exists())]).lower()
-                access_markers = ("unauthorized", "authentication", "not logged in", "access token", "refresh token", "refresh_token", "rate limit", "rate_limit", "quota", "resource_exhausted", "http 429", "status code 429")
-                if not any(marker in diagnostics for marker in access_markers) and (not target.exists() or not target.read_text().strip()):
-                    raise ReflectionArtifactError(f"{self.model} {step}: {result.error}")
+        if not result.ok and not metrics.get("file_delivery_failure") and not (step == "agent" and result.terminal_state == "completed" and result.returncode == 0):
             raise InfrastructureError(f"{self.model} {step}: {result.error}")
         save(receipt_path, {"request_sha256": fingerprint, "result": metrics})
         return metrics
+
+    def record_reflection_omission(self, call, target, step, metrics):
+        if step != "reflection":
+            return metrics
+        if metrics.get("file_delivery_failure"):
+            self.validate_reflection_omission(call, target, metrics)
+            return metrics
+        if metrics.get("terminal_state") != "completed" or metrics.get("returncode") != 0 or metrics.get("ok"):
+            return metrics
+        diagnostics = "\n".join([metrics.get("error") or "", *metrics.get("warnings", []), *(p.read_text(errors="replace") for p in (call / "reflection_stderr.log",) if p.exists())]).lower()
+        infrastructure_markers = ("unauthorized", "authentication", "not logged in", "access token", "refresh token", "refresh_token", "rate limit", "rate_limit", "quota", "resource_exhausted", "http 429", "status code 429", "permission denied", "operation not permitted", "failed to spawn", "failed to initialize", "connection refused", "network is unreachable", "timed out")
+        if any(marker in diagnostics for marker in infrastructure_markers):
+            return metrics
+        if not target.exists() and not target.is_symlink():
+            target.write_text("")
+        if not target.is_file() or target.is_symlink() or target.read_bytes().strip():
+            return metrics
+        # A completed omission has one durable outcome, including misplaced-file evidence.
+        evidence = [p for p in call.glob("reflection_*") if p.is_file() and p.suffix != ".jsonl" and not p.name.endswith("metrics.json")]
+        evidence += [p for p in (call / "unexpected_outputs").rglob("*") if p.is_file() and not p.is_symlink()]
+        metrics = dict(metrics, invocation_id=call.name, file_delivery_failure=True, reflection_policy=REFLECTION_POLICY, artifact_sha256=digest(target), delivery_evidence_sha256={str(p.relative_to(call)): digest(p) for p in evidence})
+        save(call / "reflection_metrics.json", metrics)
+        return metrics
+
+    @staticmethod
+    def validate_reflection_omission(call, target, metrics):
+        if metrics.get("reflection_policy") != REFLECTION_POLICY or not target.is_file() or target.is_symlink() or target.read_bytes().strip() or digest(target) != metrics.get("artifact_sha256"):
+            raise ProtocolError("Committed reflection delivery outcome changed")
+        for name, expected in metrics.get("delivery_evidence_sha256", {}).items():
+            path = call / name
+            if not path.is_file() or path.is_symlink() or digest(path) != expected:
+                raise ProtocolError("Committed reflection delivery evidence changed")
 
     def commit_delivery_failure(self, call, target, step, fingerprint, metrics):
         if step != "reflection" or not (call / "reflection_delivery_failure.json").exists():
@@ -259,7 +284,7 @@ class PairedRunner(ExperimentRunner):
         # Let edit() recover and validate a successful physical call unchanged.
         for metrics_path in (attempt_dir / "calls").glob("*/reflection_metrics.json"):
             metrics = read(metrics_path)
-            if metrics and metrics.get("ok") and not (metrics_path.parent / "rejected.json").exists():
+            if metrics and (metrics.get("ok") or metrics.get("file_delivery_failure")) and not (metrics_path.parent / "rejected.json").exists():
                 return
         log_path = attempt_dir / "exec.log"
         provenance_path = attempt_dir / "generation_failure_context.json"
@@ -307,26 +332,20 @@ class PairedRunner(ExperimentRunner):
         prompt = PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=self.objective_quality_failed(result))
         prompt += "\nKeep the reflection concise and actionable."
         context = [instance / "data.json"] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
-        for retry in range(len(self.reflection_retry_delays) + 1):
-            try:
-                reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection")
-                break
-            except ReflectionArtifactError:
-                if retry == len(self.reflection_retry_delays):
-                    raise
-                delay = self.reflection_retry_delays[retry]
-                failed = read(attempt_dir / "reflection_metrics.json")
-                request = read(attempt_dir / "calls" / failed["invocation_id"] / "request.json")
-                save(attempt_dir / f"reflection_retry_{uuid.uuid4().hex}.json", {"reason": "AGY completed without saving debug.md in the task workspace", "failed_invocation_id": failed["invocation_id"], "request_sha256": request["request_sha256"], "local_retry": retry + 1, "delay_seconds": delay, "recorded_at_unix": time.time()})
-                self.on_stage(mode=self.mode, attempt=result.attempt, phase=f"reflection retry in {delay}s: missing debug.md")
-                time.sleep(delay)
+        reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection")
+        if reflected.get("file_delivery_failure"):
+            feedback = attempt_dir / "reflection_feedback.md"
+            contents = reflection_delivery_feedback(result.attempt) + "\n"
+            if feedback.exists() and feedback.read_text() != contents:
+                raise ProtocolError("Framework reflection feedback changed")
+            feedback.write_text(contents)
         result.metrics["reflection"] = reflected
         return result
 
     def prepare(self, source, root, mode):
         destination = root / mode / self.suite / self.problems[0] / source.name
         destination.mkdir(parents=True, exist_ok=True)
-        expected = {"protocol_id": self.protocol_id, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
+        expected = {"protocol_id": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")
@@ -395,7 +414,7 @@ class PairedRunner(ExperimentRunner):
                     result = deepcopy(first) if idx == 1 else self.run_attempt(idx, directory, self.problems[0], gold)
                     if self.can_early_stop(result, self.gap_threshold):
                         successful, first_success = result, idx
-                    elif mode == "reflection":
+                    elif mode == "reflection" and idx < self.max_attempts:
                         # Scoring is already durable even when this separate stage fails.
                         try:
                             result = self.ensure_reflection(directory, result)

@@ -190,7 +190,7 @@ class ExperimentRunner:
             verifier_metrics = safe_load_json(attempt_dir / "llm_verifier_metrics.json")
             if verifier_metrics:
                 metrics["algorithm_verification"] = verifier_metrics
-        if self.reflection and result.status != "ok":
+        if self.reflection and result.status != "ok" and idx < self.max_attempts:
             reflection_prompt = PromptBuilder.build_reflection_prompt(prompt, objective_quality_failed=self.objective_quality_failed(result))
             reflection_prompt += "\nKeep the reflection concise and actionable."
             paths = [instance_root / "data.json"] + [attempt_dir / name for name in ["solver.py", "exec.log", "alg_verifier.md", "output.json"]]
