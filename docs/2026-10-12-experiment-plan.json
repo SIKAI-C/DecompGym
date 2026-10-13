@@ -100,5 +100,12 @@
     "gpt-5.6-sol": "October 13 user decision: include the next fresh Docker-workflow cohort under the same evaluation and reporting rules as other models. Historical Docker/native discrepancy investigation is no longer required. Historical Sol results remain excluded and must not be mixed into fresh totals. Replace the current model-wide exclusion with cohort-specific eligibility during report adaptation after the next experiment finishes."
   },
   "launch_status": "prepared_only_explicit_user_start_required",
-  "reflection_policy": "consume-reflection-opportunity-and-continue-v1"
+  "reflection_policy": "consume-reflection-opportunity-and-continue-v1",
+  "prompt_protocol": {
+    "problem_templates": "reviewed-problem-prompts-20261013-v1",
+    "runtime_location": "separate-edit-runtime-v1",
+    "algorithm_judge": "reachable-decomposition-source-review-v1",
+    "output_contract": "prompt-output-contract-v1",
+    "reflection_delivery": "consume-reflection-opportunity-and-continue-v1"
+  }
 }

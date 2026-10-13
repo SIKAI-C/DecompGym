@@ -11,6 +11,7 @@ from src.native_campaign import FAMILIES, ensure_execution_allowed, initialize, 
 from src.reporting_policy import model_exclusion
 from src import native_campaign, runtime_environment
 from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
+from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes
 
 
 PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-12-experiment-plan.json"
@@ -61,6 +62,21 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path, optional
     assert manifest["runtime_environment"] == require_runtime_environment()
     assert {"pyproject.toml", ".python-version"} <= manifest["controller_sha256"].keys()
     assert native_campaign.require_campaign_environment(manifest) == manifest["runtime_environment"]
+    assert manifest["prompt_protocol"] == PROMPT_PROTOCOL
+    assert manifest["algorithm_judge_prompt_sha256"] == judge_prompt_hashes()
+    for case in manifest["instances"]:
+        relative = Path(case["suite"]) / case["problem"] / case["instance"]
+        original = data / relative / "prompt.txt"
+        frozen = root / "dataset" / relative
+        assert original.read_text() == "TASK"
+        assert (frozen / "prompt.original.txt").read_bytes() == original.read_bytes()
+        assert case["source_sha256"]["prompt.txt"] == case["prompt_snapshot"]["original_sha256"]
+        assert case["sha256"]["prompt.txt"] == case["prompt_snapshot"]["effective_sha256"]
+        assert (frozen / "prompt.txt").read_text() != "TASK"
+        if case["problem"] == "ufl":
+            assert "current directory" not in (frozen / "prompt.txt").read_text()
+        if case["problem"] == "lrp":
+            assert "1 means open and 0 means closed" in (frozen / "prompt.txt").read_text()
     assert read(root / "pause_request.json")["resume_requires_explicit_user_request"]
     with pytest.raises(ProtocolError, match="paused"):
         ensure_execution_allowed(root, manifest)

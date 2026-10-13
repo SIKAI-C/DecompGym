@@ -23,6 +23,7 @@ from src.agent.runtime_state import runtime_lock, state_root
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.campaign_plan import load_plan, model_queue
 from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
+from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes, snapshot_prompt
 
 
 FAMILIES = ["ufl", "fctp", "km", "lrp", "tsso", "bp", "csp", "gap", "shift"]
@@ -57,6 +58,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     if identity(cases) != plan["dataset_inventory_sha256"]:
         raise ProtocolError("Dataset differs from the fixed-81 inventory pinned in the plan")
     for case in cases:
+        case["source_sha256"] = dict(case["sha256"])
         relative = Path(case["suite"]) / case["problem"] / case["instance"]
         destination = root / "dataset" / relative
         destination.mkdir(parents=True)
@@ -64,6 +66,10 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
             shutil.copyfile(data / relative / filename, destination / filename)
             if digest(destination / filename) != expected_hash:
                 raise ProtocolError("Dataset copy differs")
+        case["prompt_snapshot"] = snapshot_prompt(destination, case["suite"], case["problem"])
+        case["sha256"]["prompt.txt"] = digest(destination / "prompt.txt")
+        case["sha256"]["prompt.original.txt"] = digest(destination / "prompt.original.txt")
+        for filename in case["sha256"]:
             (destination / filename).chmod(0o444)
     source = Path(__file__).resolve().parent
     frozen = root / "controller"
@@ -82,6 +88,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
                     prompt_policies=plan["prompt_policies"], model_queue=queue, historical_reuse=plan["historical_reference"],
                     wrong_target_reflection_failure=plan["wrong_target_reflection_failure"],
                     reflection_policy=plan["reflection_policy"],
+                    prompt_protocol=PROMPT_PROTOCOL, algorithm_judge_prompt_sha256=judge_prompt_hashes(),
                     gpt_order=[item["model"] for item in queue if item["backend"] == "codex-cli"],
                     agy_order=[item["model"] for item in queue if item["backend"] == "agy-cli"],
                     claude_order=[item["model"] for item in queue if item["backend"] == "claude-code-cli"],
@@ -299,6 +306,8 @@ def ensure_execution_allowed(root, manifest):
         raise ProtocolError("Use the original frozen controller for legacy data; this controller requires a fresh cohort")
     if manifest.get("reflection_policy") != REFLECTION_POLICY:
         raise ProtocolError("This controller requires the new reflection delivery policy; preserve the legacy controller")
+    if manifest.get("prompt_protocol") != PROMPT_PROTOCOL:
+        raise ProtocolError("This controller requires the reviewed prompt and output contracts")
     pause = read(root / "pause_request.json") or {}
     if pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists():
         raise ProtocolError("Campaign is paused; explicit user resumption is required")

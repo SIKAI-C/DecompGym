@@ -7,12 +7,15 @@ from pathlib import Path
 
 from src.agent.paired_runner import ProtocolError, identity
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
+from src.prompt_snapshot import PROMPT_PROTOCOL
 
 
 def load_plan(path: Path) -> dict:
     plan = json.loads(path.read_text())
     if plan.get("schema_version") != 1 or plan.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Plan prompt policy differs from the current harness")
+    if plan.get("prompt_protocol") != PROMPT_PROTOCOL:
+        raise ProtocolError("Plan must freeze the reviewed problem, judge, and output contracts")
     queue = plan.get("model_queue", [])
     optional = plan.get("optional_queue", [])
     all_models = queue + optional
