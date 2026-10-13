@@ -9,6 +9,8 @@ from src.campaign_plan import load_plan, model_queue
 from src.dashboard_server import Dashboard
 from src.native_campaign import FAMILIES, ensure_execution_allowed, initialize, validate
 from src.reporting_policy import model_exclusion
+from src import native_campaign, runtime_environment
+from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
 
 
 PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-12-experiment-plan.json"
@@ -56,6 +58,9 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path, optional
     assert manifest["maximum_unique_generated_candidates"] == 81 * len(queue) * 19
     assert not (root / "runs").exists()
     assert (root / "controller/src/agent/claude_client.py").exists()
+    assert manifest["runtime_environment"] == require_runtime_environment()
+    assert {"pyproject.toml", ".python-version"} <= manifest["controller_sha256"].keys()
+    assert native_campaign.require_campaign_environment(manifest) == manifest["runtime_environment"]
     assert read(root / "pause_request.json")["resume_requires_explicit_user_request"]
     with pytest.raises(ProtocolError, match="paused"):
         ensure_execution_allowed(root, manifest)
@@ -67,6 +72,26 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path, optional
     assert dashboard["historical_reference"]["model"] == "gpt-6-astra"
     with pytest.raises(ProtocolError, match="existing experiments are preserved"):
         initialize(root, data, plan)
+
+
+def test_wrong_runtime_stops_before_creating_campaign(tmp_path, monkeypatch):
+    data, plan = fixture_plan(tmp_path)
+    root = tmp_path / "new"
+    monkeypatch.setattr(runtime_environment, "version", lambda _: "12.0.0")
+    with pytest.raises(RuntimeEnvironmentError, match="Gurobi"):
+        initialize(root, data, plan)
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("command", ["run", "watch"])
+def test_runtime_failure_has_nonretryable_exit_code(tmp_path, monkeypatch, command):
+    def wrong_runtime(_):
+        raise RuntimeEnvironmentError("version changed")
+    monkeypatch.setattr(native_campaign, command, wrong_runtime)
+    monkeypatch.setattr(native_campaign.sys, "argv", ["native_campaign", command, "--root", str(tmp_path)])
+    with pytest.raises(SystemExit) as stopped:
+        native_campaign.main()
+    assert stopped.value.code == 64
 
 
 def test_mismatched_inputs_fail_before_creating_a_campaign(tmp_path):

@@ -21,6 +21,7 @@ from src.agent.resource_monitor import ResourceGuard, sample_host, supervise, th
 from src.agent.runtime_state import runtime_lock, state_root
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
 from src.campaign_plan import load_plan, model_queue
+from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
 
 
 FAMILIES = ["ufl", "fctp", "km", "lrp", "tsso", "bp", "csp", "gap", "shift"]
@@ -36,6 +37,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     plan = load_plan(plan_path)
     if root.exists():
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
+    environment = require_runtime_environment()
     paths = list(data.glob("*/*/*/data.json"))
     if len(paths) != 81:
         raise ProtocolError("Exactly 81 existing fixed instances are required")
@@ -65,11 +67,13 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     source = Path(__file__).resolve().parent
     frozen = root / "controller"
     shutil.copytree(source, frozen / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    for filename in ("pyproject.toml", ".python-version"):
+        shutil.copyfile(source.parent / filename, frozen / filename)
     hashes = {str(p.relative_to(frozen)): digest(p) for p in frozen.rglob("*") if p.is_file()}
     manifest = {"schema_version": 3, "created_at": now(), "backend": "native", "scope": "existing_fixed_81",
                 "data_regenerated": False, "original_data_root": str(data), "modes": ["plain", "reflection"],
                 "resource_guard": {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3},
-                "license_route": "existing host local license", "python": sys.version, "controller_sha256": hashes, "instances": cases,
+                "license_route": "existing host local license", "python": sys.version, "runtime_environment": environment, "controller_sha256": hashes, "instances": cases,
                 "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh workspace and conversation, native user settings retained, slash expansion disabled"}
     queue = plan["model_queue"] + (plan["optional_queue"] if include_optional else [])
     manifest.update(plan["execution"])
@@ -130,6 +134,7 @@ def pair_complete(root, model, case, protocol):
 def run(root):
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    require_campaign_environment(manifest)
     if Path(__file__).resolve().parents[1] != root / "controller":
         raise ProtocolError("Run from the frozen native controller")
     state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "native_adapter_ready", "models": {}}
@@ -230,13 +235,14 @@ def run(root):
             state.update(state="infrastructure_stopped", error=f"{type(error).__name__}: {error}")
             checkpoint()
             print(state["error"], flush=True)
-            return 64 if isinstance(error, ProtocolError) else 75
+            return 64 if isinstance(error, (ProtocolError, RuntimeEnvironmentError)) else 75
 
 
 def watch(root):
     """Keep monitoring and resume durable stages after backoff or a cooling stop."""
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    require_campaign_environment(manifest)
     monitor_root = root / "monitor"
     monitor_root.mkdir(exist_ok=True)
     attempts = 0
@@ -292,6 +298,13 @@ def ensure_execution_allowed(root, manifest):
         raise ProtocolError("Campaign is paused; explicit user resumption is required")
 
 
+def require_campaign_environment(manifest):
+    environment = manifest.get("runtime_environment")
+    if not isinstance(environment, dict):
+        raise ProtocolError("Campaign has no frozen runtime environment; use its original frozen controller")
+    return require_runtime_environment(environment)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["init", "run", "watch"])
@@ -301,10 +314,14 @@ def main():
     parser.add_argument("--include-optional", action="store_true", help="Include the optional last-priority model in a new frozen plan")
     args = parser.parse_args()
     root = args.root.resolve()
-    if args.command == "init":
-        initialize(root, args.data.resolve(), args.plan, include_optional=args.include_optional)
-        return
-    raise SystemExit(run(root) if args.command == "run" else watch(root))
+    try:
+        if args.command == "init":
+            initialize(root, args.data.resolve(), args.plan, include_optional=args.include_optional)
+            return
+        raise SystemExit(run(root) if args.command == "run" else watch(root))
+    except (ProtocolError, RuntimeEnvironmentError) as error:
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(64) from error
 
 
 if __name__ == "__main__":

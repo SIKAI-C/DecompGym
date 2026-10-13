@@ -20,6 +20,7 @@ from src.agent.files_manager import ArtifactManager, InstanceManager
 from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
 from src.agent.resource_monitor import CleanupError, stop_owned_tree
+from src.runtime_environment import require_runtime_environment
 from src.utils.json_utils import safe_load_json
 
 
@@ -65,6 +66,7 @@ class ExperimentRunner:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
             raise ValueError("Attempt/time/tolerance budgets must be positive; gap threshold must be nonnegative.")
+        self.runtime_environment = require_runtime_environment()
         self.model, self.note, self.suite = model, note, suite
         self.problems = list(problem) if problem else list(SUITE_PROBLEMS[suite])
         if any(p not in SUITE_PROBLEMS[suite] for p in self.problems):
@@ -105,6 +107,7 @@ class ExperimentRunner:
 
     @staticmethod
     def run_solver(attempt_dir: Path, timeout: int, threads: int = 1) -> tuple[bool, str, str, dict[str, Any] | None]:
+        require_runtime_environment()
         if not (attempt_dir / "solver.py").exists() or not (attempt_dir / "solver.py").stat().st_size:
             return False, "", "solver.py missing or empty", None
         (attempt_dir / "output.json").unlink(missing_ok=True)

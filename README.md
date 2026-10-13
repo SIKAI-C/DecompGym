@@ -48,14 +48,17 @@ Each problem folder contains a data generator (`a_gen_data.py`), a business desc
 
 ## Quick start
 
-The tested environment uses Python 3.12 and a working [Gurobi](https://www.gurobi.com/) 11 license.
+The experiment environment is pinned to Python **3.12.11** and `gurobipy` / [Gurobi](https://www.gurobi.com/) **11.0.3**, with a working Gurobi 11 license. Use a Python 3.12.11 installation to create the virtual environment; `pyproject.toml` requires that exact interpreter and package version, and `.python-version` records the interpreter version for version managers.
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python -m pip install -e .
+python -m src.runtime_environment
 python -m src.01_gen
 ```
+
+The runtime check prints the actual Python executable and Python/Gurobi versions without starting a Gurobi solve. New native campaigns freeze these versions and the installation declarations; campaign startup, runner creation, and each solver launch check the pins. A mismatch stops execution without scoring a candidate, and the native watchdog does not retry it automatically. Keep this virtual environment unchanged for the campaign. Other Python dependencies retain their declared version ranges.
 
 The default educational dataset is **9 instances per problem**: three seeds at each of `small`, `medium`, and `large`, for **81 instances total**. Sizes are relative to each generator and are intended to run locally. Complete existing instances are reused; missing or incomplete instances are generated. Explicitly pass `--regenerate` to rebuild them.
 
