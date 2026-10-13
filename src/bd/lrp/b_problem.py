@@ -44,9 +44,10 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
       "status": "optimal | feasible | infeasible | error",
       "method": "benders_decomposition",
       "objective_value": <float>,
-      "y": [length m],
+      "y": [0/1 list of length m indicating open depots],
       "lambda": [0/1 list of length R]  # feasible integer routing plan; LP relaxations may be used during cut generation
     }}
+Each y element corresponds to one depot: 1 means open and 0 means closed.
 """
 
 
