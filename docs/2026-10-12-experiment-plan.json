@@ -97,7 +97,7 @@
     "optional_execution_pairs": 81,
     "historical_reference_pairs": 81,
     "mix_legacy_results_into_fresh_totals": false,
-    "gpt-5.6-sol": "Controlled rerun is authorized; retain the current reporting exclusion until the discrepancy is reviewed and inclusion is explicitly approved."
+    "gpt-5.6-sol": "October 13 user decision: include the next fresh Docker-workflow cohort under the same evaluation and reporting rules as other models. Historical Docker/native discrepancy investigation is no longer required. Historical Sol results remain excluded and must not be mixed into fresh totals. Replace the current model-wide exclusion with cohort-specific eligibility during report adaptation after the next experiment finishes."
   },
   "launch_status": "prepared_only_explicit_user_start_required"
 }
