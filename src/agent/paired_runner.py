@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 from src.agent.codex_client import CodexClient
+from src.agent.algorithm_verifier import algorithm_review_prompt
 from src.agent.exec_logger import ExecLogger
 from src.agent.experiment_runner import AttemptResult, ExperimentRunner
 from src.agent.files_manager import ArtifactManager
@@ -229,8 +230,7 @@ class PairedRunner(ExperimentRunner):
                     objective = float(verification["objective_value"])
             else:
                 issues.append(stderr or "solver execution failed")
-            method = "Benders decomposition" if self.suite == "bd" else "column generation"
-            prompt = f"Inspect the supplied solver.py and determine whether it implements {method}. Check the master/subproblem split, dual or reduced-cost information, and iterative cut/column updates. A monolithic optimization model alone does not pass. Do not execute or modify solver.py. Write alg_verifier.md with exactly a first line VERDICT: PASS or VERDICT: FAIL, followed by NOTES: and concise evidence. Feasibility is checked separately."
+            prompt = algorithm_review_prompt(self.suite)
             judged = self.edit(self.judge_client, attempt_dir / "alg_verifier.md", prompt, [attempt_dir / "solver.py"], "llm_verifier")
             notes = (attempt_dir / "alg_verifier.md").read_text().strip()
             verdict = {"VERDICT: PASS": "pass", "VERDICT: FAIL": "fail"}.get(notes.splitlines()[0].strip().upper() if notes else "")
