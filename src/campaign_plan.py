@@ -16,6 +16,8 @@ def load_plan(path: Path) -> dict:
         raise ProtocolError("Plan prompt policy differs from the current harness")
     if plan.get("prompt_protocol") != PROMPT_PROTOCOL:
         raise ProtocolError("Plan must freeze the reviewed problem, judge, and output contracts")
+    if not plan.get("runtime_manifest") or not plan.get("runtime_manifest_sha256"):
+        raise ProtocolError("The fresh Docker workflow requires a prepared runtime manifest")
     queue = plan.get("model_queue", [])
     optional = plan.get("optional_queue", [])
     all_models = queue + optional

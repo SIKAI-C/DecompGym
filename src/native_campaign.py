@@ -14,9 +14,6 @@ import threading
 import time
 import traceback
 
-from src.agent.agy_client import AgyClient
-from src.agent.claude_client import ClaudeClient
-from src.agent.codex_client import CodexClient
 from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, identity, read, save
 from src.agent.resource_monitor import ResourceGuard, sample_host, supervise, thermal_warnings
 from src.agent.runtime_state import runtime_lock, state_root
@@ -24,6 +21,7 @@ from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTIO
 from src.campaign_plan import load_plan, model_queue
 from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
 from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes, snapshot_prompt
+from src.execution_environment import load_execution_environment, validate_execution_environment, require_backend_readiness
 
 
 FAMILIES = ["ufl", "fctp", "km", "lrp", "tsso", "bp", "csp", "gap", "shift"]
@@ -40,6 +38,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     if root.exists():
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
     environment = require_runtime_environment()
+    execution_environment = load_execution_environment(plan, plan_path)
     paths = list(data.glob("*/*/*/data.json"))
     if len(paths) != 81:
         raise ProtocolError("Exactly 81 existing fixed instances are required")
@@ -74,6 +73,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     source = Path(__file__).resolve().parent
     frozen = root / "controller"
     shutil.copytree(source, frozen / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(source.parent / "docker", frozen / "docker", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     for filename in ("pyproject.toml", ".python-version"):
         shutil.copyfile(source.parent / filename, frozen / filename)
     hashes = {str(p.relative_to(frozen)): digest(p) for p in frozen.rglob("*") if p.is_file()}
@@ -81,7 +81,8 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
                 "data_regenerated": False, "original_data_root": str(data), "modes": ["plain", "reflection"],
                 "resource_guard": {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3},
                 "license_route": "existing host local license", "python": sys.version, "runtime_environment": environment, "controller_sha256": hashes, "instances": cases,
-                "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh workspace and conversation, native user settings retained, slash expansion disabled"}
+                "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh Docker workspace and conversation; only dedicated authentication state retained; slash expansion disabled",
+                "agent_execution": "docker", "solver_execution": "native-macos-seatbelt", "execution_environment": execution_environment}
     queue = plan["model_queue"] + (plan["optional_queue"] if include_optional else [])
     manifest.update(plan["execution"])
     manifest.update(schema_version=3, experiment_plan=plan, experiment_plan_id=identity(plan),
@@ -144,13 +145,25 @@ def run(root):
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
     require_campaign_environment(manifest)
+    environment = manifest["execution_environment"]
+    readiness = require_backend_readiness(environment, [item["backend"] for item in model_queue(manifest)] + ["codex-cli"])
     if Path(__file__).resolve().parents[1] != root / "controller":
         raise ProtocolError("Run from the frozen native controller")
-    state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "native_adapter_ready", "models": {}}
+    state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "docker_adapter_ready", "models": {}, "readiness": readiness}
     mutex = threading.RLock()
     from src.native_execution_phase import NativeCallGate, auth_failure_marker
     gate = NativeCallGate(state_root(), root)
-    class CampaignCodexClient(CodexClient):
+    from src.agent.docker_client import DockerCliClient, AuthenticationRequired
+    from src.agent.native_solver import NativeSandboxExecutor
+    from src.hybrid_runtime import runtime
+    engine = runtime()
+    engine.bind_environment(environment)
+    if engine.image_id(environment["image_id"]) != environment["image_id"]:
+        raise RuntimeEnvironmentError("The frozen Docker image is unavailable")
+    if any(item["backend"] == "agy-cli" for item in model_queue(manifest)) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
+        raise AuthenticationRequired("Supply the benchmark AGY keyring passphrase privately in the local launch environment")
+    solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"])
+    class CampaignCodexClient(DockerCliClient):
         def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
             result = super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
             stderr_path = (log_dir or target.parent) / f"{step}_stderr.log"
@@ -163,12 +176,10 @@ def run(root):
         return gate.enter() if backend == "codex-cli" else runtime_lock("native-agy-auth" if backend == "agy-cli" else "native-claude-auth")
     specifications = {item["model"]: item for item in model_queue(manifest)}
     def make_client(model, role):
-        specification = specifications[model]
+        specification = {"backend": "codex-cli", "effort": manifest["judge_effort"]} if role == "algorithm_judge" else specifications[model]
         backend = specification["backend"]
-        if backend == "agy-cli":
-            return AgyClient(model, role=role, timeout=manifest["agent_timeout"])
-        cls = CampaignCodexClient if backend == "codex-cli" else ClaudeClient
-        return cls(model, role=role, effort=specification["effort"], timeout=manifest["agent_timeout"])
+        cls = CampaignCodexClient if backend == "codex-cli" else DockerCliClient
+        return cls(model, backend=backend, image_id=environment["image_id"], runtime=engine, evidence_root=root / "diagnostics/runtime", role=role, effort=specification["effort"], timeout=manifest["agent_timeout"])
     def checkpoint():
         with mutex:
             state["updated_at"] = now()
@@ -186,8 +197,8 @@ def run(root):
         try:
             client = make_client(model, "generation")
             reflection_client = make_client(model, "reflection")
-            judge = CampaignCodexClient(manifest["judge_model"], effort=manifest["judge_effort"], role="algorithm_judge")
-            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock)
+            judge = make_client(manifest["judge_model"], "algorithm_judge")
+            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor)
             source = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
             return runner.run_pair(source, root / "runs" / model)
         finally:
@@ -254,6 +265,9 @@ def watch(root):
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
     require_campaign_environment(manifest)
+    from src.hybrid_runtime import runtime
+    engine = runtime()
+    engine.bind_environment(manifest["execution_environment"])
     monitor_root = root / "monitor"
     monitor_root.mkdir(exist_ok=True)
     attempts = 0
@@ -269,7 +283,7 @@ def watch(root):
             while True:
                 ensure_execution_allowed(root, manifest)
                 try:
-                    result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options))
+                    result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options), container_sampler=engine.resource_samples)
                 except (RuntimeError, OSError) as error:
                     if type(error).__name__ == "CleanupError":
                         raise
@@ -317,6 +331,9 @@ def require_campaign_environment(manifest):
     environment = manifest.get("runtime_environment")
     if not isinstance(environment, dict):
         raise ProtocolError("Campaign has no frozen runtime environment; use its original frozen controller")
+    if manifest.get("agent_execution") != "docker" or manifest.get("solver_execution") != "native-macos-seatbelt":
+        raise ProtocolError("The new cohort requires Docker editing and restricted native execution")
+    validate_execution_environment(manifest["execution_environment"])
     return require_runtime_environment(environment)
 
 
@@ -337,6 +354,9 @@ def main():
     except (ProtocolError, RuntimeEnvironmentError) as error:
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(64) from error
+    except InfrastructureError as error:
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(75) from error
 
 
 if __name__ == "__main__":

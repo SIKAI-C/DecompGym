@@ -17,6 +17,13 @@ from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes
 PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-12-experiment-plan.json"
 
 
+@pytest.fixture(autouse=True)
+def synthetic_execution_environment(monkeypatch):
+    # Environment validation has its own tests; campaign layout tests need no local Docker daemon.
+    monkeypatch.setattr(native_campaign, "load_execution_environment", lambda *_: {"image_id": "sha256:fixture", "native_environment": {}, "evidence_root": "fixture"})
+    monkeypatch.setattr(native_campaign, "validate_execution_environment", lambda *_: None)
+
+
 def fixture_plan(tmp_path):
     plan = load_plan(PLAN)
     data = tmp_path / "input"
@@ -59,6 +66,9 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path, optional
     assert manifest["maximum_unique_generated_candidates"] == 81 * len(queue) * 19
     assert not (root / "runs").exists()
     assert (root / "controller/src/agent/claude_client.py").exists()
+    assert (root / "controller/docker/agents/worker.py").exists()
+    assert manifest["agent_execution"] == "docker"
+    assert manifest["solver_execution"] == "native-macos-seatbelt"
     assert manifest["runtime_environment"] == require_runtime_environment()
     assert {"pyproject.toml", ".python-version"} <= manifest["controller_sha256"].keys()
     assert native_campaign.require_campaign_environment(manifest) == manifest["runtime_environment"]

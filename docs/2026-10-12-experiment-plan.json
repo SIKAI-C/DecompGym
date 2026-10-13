@@ -107,5 +107,7 @@
     "algorithm_judge": "reachable-decomposition-source-review-v1",
     "output_contract": "prompt-output-contract-v1",
     "reflection_delivery": "consume-reflection-opportunity-and-continue-v1"
-  }
+  },
+  "runtime_manifest": "/Users/scheng326/Desktop/GT_ML_PhD/z_oo/code/DecompBench/outputs/diagnostics/hybrid_runtime_20261013/runtime.json",
+  "runtime_manifest_sha256": "50249d6a266b0929b2ad3884e8a8f388c754b39868c1707529840a03bc3bec2b"
 }
