@@ -171,7 +171,7 @@ def stop_owned_tree(process: subprocess.Popen, known: dict[int, ProcessSample] |
         raise CleanupError(f"Owned root process {process.pid} did not exit") from error
 
 
-def supervise(command: list[str], monitor_root: Path, *, interval: float = 5, guard: ResourceGuard | None = None) -> int:
+def supervise(command: list[str], monitor_root: Path, *, interval: float = 5, guard: ResourceGuard | None = None, container_sampler=None) -> int:
     monitor_root.mkdir(parents=True, exist_ok=True)
     guard = guard or ResourceGuard()
     _, thermal, free = sample_host()
@@ -179,7 +179,7 @@ def supervise(command: list[str], monitor_root: Path, *, interval: float = 5, gu
     if initial_issue:
         atomic_json(monitor_root / "status.json", {"state": "not_started", "reason": initial_issue})
         raise RuntimeError(initial_issue)
-    (monitor_root / "protocol.json").write_text(json.dumps({"command": command, "sample_interval_seconds": interval, "max_cpu_percent": guard.max_cpu_percent, "max_rss_mib": guard.max_rss_mib, "min_system_free_percent": guard.min_free_percent, "sustained_samples": guard.sustained_samples, "cpu_units": "100 percent is one logical core", "temperature_celsius_available": False, "monitor": "macOS process resources and OS thermal/performance warnings"}, indent=2))
+    (monitor_root / "protocol.json").write_text(json.dumps({"command": command, "sample_interval_seconds": interval, "max_cpu_percent": guard.max_cpu_percent, "max_rss_mib": guard.max_rss_mib, "min_system_free_percent": guard.min_free_percent, "sustained_samples": guard.sustained_samples, "cpu_units": "100 percent is one logical core", "temperature_celsius_available": False, "container_resources_included": container_sampler is not None, "monitor": "macOS process resources, optional Docker worker resources, and OS thermal/performance warnings"}, indent=2))
     stopped_reason = None
     cleanup_failed = False
     known = {}
@@ -197,9 +197,12 @@ def supervise(command: list[str], monitor_root: Path, *, interval: float = 5, gu
                 known.update({item.pid: item for item in selected})
                 cpu = sum(item.cpu_percent for item in selected)
                 rss = sum(item.rss_kib for item in selected) / 1024
+                containers = container_sampler() if container_sampler else []
+                cpu += sum(item["cpu_percent"] for item in containers)
+                rss += sum(item["rss_mib"] for item in containers)
                 peaks = {"cpu_percent": max(peaks["cpu_percent"], cpu), "rss_mib": max(peaks["rss_mib"], rss)}
                 stopped_reason = guard.check(cpu_percent=cpu, rss_mib=rss, free_percent=free, thermal=thermal)
-                snapshot = {"sampled_at_utc": datetime.now(timezone.utc).isoformat(), "root_pid": process.pid, "state": "stopping_resource_guard" if stopped_reason else "running", "cpu_percent": cpu, "rss_mib": rss, "system_free_percent": free, "thermal": thermal.strip(), "processes": [asdict(item) for item in selected], "peaks": peaks, "reason": stopped_reason}
+                snapshot = {"sampled_at_utc": datetime.now(timezone.utc).isoformat(), "root_pid": process.pid, "state": "stopping_resource_guard" if stopped_reason else "running", "cpu_percent": cpu, "rss_mib": rss, "system_free_percent": free, "thermal": thermal.strip(), "processes": [asdict(item) for item in selected], "containers": containers, "peaks": peaks, "reason": stopped_reason}
                 history.write(json.dumps(snapshot) + "\n")
                 history.flush()
                 atomic_json(monitor_root / "status.json", snapshot)
