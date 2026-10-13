@@ -221,10 +221,7 @@ class PairedRunner(ExperimentRunner):
             objective, issues, message = OutputVerifier.extract_objective(output)
             verification = {"ok": False, "issues": []}
             if exec_ok:
-                if self.suite == "cg" and problem in {"csp", "gap", "shift"} and isinstance(output, dict) and "solution" in output and output["solution"] is None:
-                    verification = {"ok": False, "issues": ["solution is null; no candidate solution supplied"]}
-                else:
-                    verification = OutputVerifier.verify_output(self.suite, problem, instance / "data.json", attempt_dir / "output.json", self.tol)
+                verification = OutputVerifier.verify_output(self.suite, problem, instance / "data.json", attempt_dir / "output.json", self.tol)
                 issues.extend(verification.get("issues", []))
                 if verification.get("objective_value") is not None:
                     objective = float(verification["objective_value"])

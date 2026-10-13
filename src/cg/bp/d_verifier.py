@@ -3,18 +3,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-
-INT_TOL = 1e-6
+from src.agent.output_contract import integer_value
 
 
 def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
-    try:
-        val = float(value)
-    except (TypeError, ValueError):
-        return None, f"{field} is not numeric"
-    if abs(val - round(val)) > INT_TOL:
-        return None, f"{field} is not an integer: {value}"
-    return round(val), None
+    if not integer_value(value):
+        return None, f"{field} must be a finite integer JSON number: {value!r}"
+    return int(value), None
 
 
 def _load_bp_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -69,10 +64,9 @@ def _parse_bins(solution: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, 
                     return None, f"bin {idx} uses usage with explicit item list"
             items: list[tuple[int, int]] = []
             for item_id in ids:
-                try:
-                    item_id = int(item_id)
-                except (TypeError, ValueError):
-                    return None, f"bin {idx} item id not int"
+                if not integer_value(item_id):
+                    return None, f"bin {idx} item_id must be a finite integer JSON number"
+                item_id = int(item_id)
                 items.append((item_id, 1))
             parsed.append({"usage": 1, "items": items, "mode": "items"})
             continue
@@ -94,10 +88,9 @@ def _parse_bins(solution: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, 
                 item_id = entry.get("item_id")
                 if item_id is None:
                     return None, f"bin {idx} content missing item_id"
-                try:
-                    item_id = int(item_id)
-                except (TypeError, ValueError):
-                    return None, f"bin {idx} item_id not int"
+                if not integer_value(item_id):
+                    return None, f"bin {idx} item_id must be a finite integer JSON number"
+                item_id = int(item_id)
                 count_raw = entry.get("count", 1)
                 count, err = _coerce_int(count_raw, f"bins[{idx}].contents[{item_id}].count")
                 if err:
@@ -206,8 +199,8 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         return _result(False, f"data load error: {exc}")
 
     solution = output_dict.get("solution")
-    if solution is None:
-        return _result(False, "missing solution")
+    if not isinstance(solution, dict):
+        return _result(False, "solution must be an object")
     bins, err = _parse_bins(solution)
     if err:
         return _result(False, err)

@@ -6,7 +6,7 @@ from typing import Any
 
 
 def reference_output(suite: str, problem: str, data: dict, result: dict) -> dict[str, Any]:
-    output = {"objective_value": result["best_objective"]}
+    output = {"status": "feasible", "method": "benders_decomposition" if suite == "bd" else "column_generation", "objective_value": result["best_objective"]}
     metadata = {**result.get("master_metadata", {}), **result.get("sub_metadata", {})}
     variables = result.get("final_vars", {})
     if suite == "bd":

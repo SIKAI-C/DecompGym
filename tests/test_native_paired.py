@@ -42,7 +42,7 @@ class Client:
         if step == "agent":
             success = next(self.outcomes)
             if success:
-                target.write_text("import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'y':[0,1],'x':[[0],[1]],'objective_value':4}))\n")
+                target.write_text("import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'status':'feasible','method':'benders_decomposition','y':[0,1],'x':[[0],[1]],'objective_value':4}))\n")
             else:
                 target.write_text("raise RuntimeError('controlled solver failure')\n")
         elif step == "llm_verifier":

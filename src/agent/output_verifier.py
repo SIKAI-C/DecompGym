@@ -12,6 +12,11 @@ from typing import Any
 
 from src.utils.json_utils import safe_load_json
 from src.agent.solution_checks import check_bd_solution
+from src.agent.output_contract import validate_output_contract
+
+
+class VerificationError(RuntimeError):
+    """Trusted verifier malfunction; stop for repair without rescoring or retrying."""
 
 class OutputVerifier:
     """Verify solution outputs and compute status metrics."""
@@ -38,17 +43,23 @@ class OutputVerifier:
     @staticmethod
     def verify_output(suite: str, problem: str, data_path: Path, output_path: Path, tol: float) -> dict[str, Any]:
         """Run the problem verifier on an output file."""
+        data = json.loads(data_path.read_text())
+        try:
+            output = json.loads(output_path.read_text())
+        except (json.JSONDecodeError, UnicodeError) as exc:
+            return {"ok": False, "issues": [f"invalid output JSON: {exc}"]}
+        issues = validate_output_contract(suite, problem, data, output)
+        if issues:
+            return {"ok": False, "issues": issues, "failure_kind": "output_contract"}
         verifier, import_err = OutputVerifier.import_verifier(suite, problem)
         if import_err:
-            return {"ok": False, "issues": [import_err]}
+            raise VerificationError(import_err)
         if not hasattr(verifier, "verify_solution"):
-            return {"ok": False, "issues": ["verify_solution not found"]}
+            raise VerificationError("verify_solution not found")
         try:
             result = verifier.verify_solution(str(data_path), str(output_path), tol=tol)
             if not result.get("ok"):
                 return result
-            data = json.loads(data_path.read_text())
-            output = json.loads(output_path.read_text())
             if suite == "bd":
                 result = check_bd_solution(problem, data, output, tol)
             objective = result.get("objective_value")
@@ -60,8 +71,8 @@ class OutputVerifier:
             result["issues"] = result.get("issues", []) + issues
             result["ok"] = bool(result.get("ok")) and not result["issues"]
             return result
-        except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
-            return {"ok": False, "issues": [f"invalid solution: {exc}"]}
+        except Exception as exc:
+            raise VerificationError(f"{suite}/{problem} verifier failed: {type(exc).__name__}: {exc}") from exc
 
     @staticmethod
     def load_gold_objective(inst_dir: Path, suite: str) -> float | None:

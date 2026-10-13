@@ -3,18 +3,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-
-INT_TOL = 1e-6
+from src.agent.output_contract import integer_value
 
 
 def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
-    try:
-        val = float(value)
-    except (TypeError, ValueError):
-        return None, f"{field} is not numeric"
-    if abs(val - round(val)) > INT_TOL:
-        return None, f"{field} is not an integer: {value}"
-    return round(val), None
+    if not integer_value(value):
+        return None, f"{field} must be a finite integer JSON number: {value!r}"
+    return int(value), None
 
 
 def _load_json_if_path(obj: Any) -> dict[str, Any]:
@@ -46,6 +41,8 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         return _result(False, f"data load error: {exc}")
 
     solution = output_dict.get("solution", {})
+    if not isinstance(solution, dict):
+        return _result(False, "solution must be an object")
     shifts = solution.get("shifts")
     if not isinstance(shifts, list):
         return _result(False, "solution.shifts missing or not a list")
@@ -60,11 +57,9 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
 
         start = shift.get("start_slot", shift.get("start"))
         end = shift.get("end_slot", shift.get("end"))
-        try:
-            start = int(start)
-            end = int(end)
-        except (TypeError, ValueError):
-            return _result(False, f"shift {idx} start/end not int")
+        if not integer_value(start) or not integer_value(end):
+            return _result(False, f"shift {idx} start/end must be finite integer JSON numbers")
+        start, end = int(start), int(end)
 
         count_raw = shift.get("count", shift.get("usage", 1))
         count, err = _coerce_int(count_raw, f"shifts[{idx}].count")

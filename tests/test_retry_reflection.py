@@ -22,6 +22,7 @@ def source_instance(tmp_path: Path) -> Path:
 
 def solver_code(objective: int) -> str:
     output = {"y": [0, 1], "x": [[0], [1]], "objective_value": 4} if objective == 4 else {"y": [1, 0], "x": [[1], [0]], "objective_value": 6}
+    output.update(status="feasible", method="benders_decomposition")
     return "import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps(" + repr(output) + "))\n"
 
 

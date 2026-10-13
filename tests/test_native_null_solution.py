@@ -11,9 +11,10 @@ from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolE
 
 
 CASES = {
-    "csp": ("cg", {"roll_width": 2, "item_types": [{"id": 0, "width": 2, "demand": 1}]}, {"objective_value": 1, "solution": {"patterns": [{"usage": 1, "cuts": [{"item_id": 0, "count": 1}]}]}}),
+    "bp": ("cg", {"bin_capacity": 1, "items": [{"id": 0, "size": 1}]}, {"objective_value": 1, "solution": {"bins": [{"usage": 1, "contents": [{"item_id": 0, "count": 1}]}]}}),
+    "csp": ("cg", {"roll_width": 2, "item_types": [{"id": 0, "width": 2, "demand": 1}]}, {"objective_value": 1, "solution": {"patterns": [{"pattern_id": 0, "usage": 1, "cuts": [{"item_id": 0, "count": 1}]}]}}),
     "gap": ("cg", {"machines": [{"id": 0, "capacity": 1}], "jobs": [{"id": 0, "assignments": [{"machine_id": 0, "resource": 1, "cost": 2}]}]}, {"objective_value": 2, "solution": {"assignments": [{"job_id": 0, "machine_id": 0}]}}),
-    "shift": ("cg", {"demand": [1], "shift_min_length": 1, "shift_max_length": 1, "shift_cost": 1}, {"objective_value": 1, "solution": {"shifts": [{"start": 0, "end": 0, "count": 1}]}}),
+    "shift": ("cg", {"demand": [1], "shift_min_length": 1, "shift_max_length": 1, "shift_cost": 1}, {"objective_value": 1, "solution": {"shifts": [{"start": 0, "end": 0, "usage": 1}]}}),
     "ufl": ("bd", {"m": 2, "n": 1, "f": [2, 3], "D": [[4], [1]]}, {"y": [0, 1], "x": [[0], [1]], "objective_value": 4, "solution": None}),
 }
 
@@ -50,6 +51,7 @@ def no_native_auth_lock(monkeypatch):
 
 def prepare(tmp_path, problem, output=None):
     suite, data, valid = CASES[problem]
+    valid = {"status": "feasible", "method": "column_generation" if suite == "cg" else "benders_decomposition", **valid}
     source = tmp_path / "data" / suite / problem / f"{problem}_small_seed000"
     source.mkdir(parents=True)
     save(source / "data.json", data)
@@ -78,7 +80,7 @@ def test_explicit_null_solution_is_scored_and_still_judged(tmp_path, problem, cl
     assert result.status == ("objective_not_available" if claimed_objective is None else "verify_failed")
     assert result.exec_ok and not result.feasibility_ok and not result.verify_ok
     assert result.llm_verdict == "pass"
-    assert "solution is null; no candidate solution supplied" in result.issues
+    assert "solution must be an object" in result.issues
     assert client.calls == ["agent", "llm_verifier"]
     assert (attempt / "score_receipt.json").is_file()
 
@@ -130,3 +132,26 @@ def test_unrelated_verifier_attribute_error_is_not_scored(tmp_path, monkeypatch)
     with pytest.raises(AttributeError, match="unrelated verifier defect"):
         task.run_attempt(1, attempt, "csp", gold)
     assert client.calls == ["agent"] and not (attempt / "score_receipt.json").exists()
+
+
+@pytest.mark.parametrize("problem", ["bp", "csp", "gap", "shift"])
+@pytest.mark.parametrize("malformed", [[], True, "invalid"])
+def test_malformed_solution_consumes_attempt_and_repair_survives_restart(tmp_path, problem, malformed):
+    task, client, destination, _, _ = prepare(tmp_path, problem)
+    task.max_attempts = 2
+    source = tmp_path / "data/cg" / problem / f"{problem}_small_seed000"
+    valid = client.output
+    original_edit = client.edit_file
+    def edit(target, prompt, **kwargs):
+        client.output = valid | {"solution": malformed} if not client.calls else valid
+        return original_edit(target, prompt, **kwargs)
+    client.edit_file = edit
+    # prepare() above is only the helper's scratch; the actual pair uses a fresh root.
+    root = tmp_path / "fresh"
+    pair = task.run_pair(source, root)
+    for summary in pair.values():
+        assert summary["complete"]
+        assert [a["status"] for a in summary["attempts"]] == ["verify_failed", "ok"]
+    calls = list(client.calls)
+    task.run_pair(source, root)
+    assert client.calls == calls
