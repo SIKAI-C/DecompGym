@@ -23,11 +23,11 @@ decide which facilities to open and how to assign each customer so total open-pl
 - Shipping cost matrix (D): each line is for one facility i, listing cost to each customer j (i -> j):
 {D}
 
-All data are stored in a JSON file named data.json in the current directory.
+All input data are stored in a JSON file named data.json.
 
 Task:
 Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
-1) Reads data.json from the current directory.
+1) Reads the input data.json file.
 2) Implements a Benders decomposition where the master problem decides y and a theta variable,
     and the subproblem solves the subproblem given a fixed y.
 3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
