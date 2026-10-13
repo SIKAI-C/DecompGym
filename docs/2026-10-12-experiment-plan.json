@@ -11,7 +11,7 @@
     "workspace": "existing-target-cwd-v2"
   },
   "reuse_generated_context": false,
-  "wrong_target_reflection_failure": "fail_future_verified_wrong_target_reflections_without_synthetic_attempts",
+  "wrong_target_reflection_failure": "consume-reflection-opportunity-and-continue-v1",
   "model_queue": [
     {
       "model": "gpt-5.6-luna",
@@ -99,5 +99,15 @@
     "mix_legacy_results_into_fresh_totals": false,
     "gpt-5.6-sol": "October 13 user decision: include the next fresh Docker-workflow cohort under the same evaluation and reporting rules as other models. Historical Docker/native discrepancy investigation is no longer required. Historical Sol results remain excluded and must not be mixed into fresh totals. Replace the current model-wide exclusion with cohort-specific eligibility during report adaptation after the next experiment finishes."
   },
-  "launch_status": "prepared_only_explicit_user_start_required"
+  "launch_status": "prepared_only_explicit_user_start_required",
+  "reflection_policy": "consume-reflection-opportunity-and-continue-v1",
+  "prompt_protocol": {
+    "problem_templates": "reviewed-problem-prompts-20261013-v1",
+    "runtime_location": "separate-edit-runtime-v1",
+    "algorithm_judge": "reachable-decomposition-source-review-v1",
+    "output_contract": "prompt-output-contract-v1",
+    "reflection_delivery": "consume-reflection-opportunity-and-continue-v1"
+  },
+  "runtime_manifest": "/Users/scheng326/Desktop/GT_ML_PhD/z_oo/code/DecompBench/outputs/diagnostics/hybrid_runtime_20261013/runtime.json",
+  "runtime_manifest_sha256": "50249d6a266b0929b2ad3884e8a8f388c754b39868c1707529840a03bc3bec2b"
 }
