@@ -12,6 +12,7 @@ import signal
 import sys
 import threading
 import time
+import traceback
 
 from src.agent.agy_client import AgyClient
 from src.agent.claude_client import ClaudeClient
@@ -232,10 +233,12 @@ def run(root):
             checkpoint()
             return 130
         except Exception as error:
-            state.update(state="infrastructure_stopped", error=f"{type(error).__name__}: {error}")
+            retryable = isinstance(error, InfrastructureError)
+            state.update(state="infrastructure_stopped" if retryable else "repair_required", error=f"{type(error).__name__}: {error}")
             checkpoint()
+            save(root / "controller_failures" / f"{time.time_ns()}.json", {"recorded_at": now(), "retryable": retryable, "error_type": type(error).__name__, "error": str(error), "traceback": traceback.format_exc()})
             print(state["error"], flush=True)
-            return 64 if isinstance(error, (ProtocolError, RuntimeEnvironmentError)) else 75
+            return 75 if retryable else 64
 
 
 def watch(root):
