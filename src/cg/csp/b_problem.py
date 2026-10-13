@@ -30,17 +30,27 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
 1) loads data.json,
 2) Implements a Column Generation to solve the cutting stock problem,
 3) writes output.json with at least:
-    {{
-      "status": "optimal | feasible | infeasible | error",
-      "method": "column_generation",
-      "objective_value": <#stock pieces used>,
-      "solution": {{
-        "patterns": [
-          {{ "pattern_id": <int>, "usage": <int>, "cuts": [{{\"item_id\": <int>, \"count\": <int>}}, ...] }},
+{{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "column_generation",
+  "objective_value": <#stock pieces used>,
+  "solution": {{
+    "patterns": [
+      {{
+        "pattern_id": <int>,
+        "usage": <int>,
+        "cuts": [
+          {{
+            "item_id": <int>,
+            "count": <int>
+          }},
           ...
         ]
-      }}
-    }}
+      }},
+      ...
+    ]
+  }}
+}}
 Each pattern's total width must not exceed stock_size. Across all patterns (accounting for usage) every item demand must be met.
 """
 

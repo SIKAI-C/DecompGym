@@ -31,20 +31,26 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
 1) loads data.json,
 2) Implements a Column Generation to solve the bin-packing problem.
 3) writes output.json with at least:
-    {{
-      "status": "optimal | feasible | infeasible | error",
-      "method": "column_generation",
-      "objective_value": <#bins used as float>,
-      "solution": {{
-        "bins": [
+{{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "column_generation",
+  "objective_value": <#bins used as float>,
+  "solution": {{
+    "bins": [
+      {{
+        "usage": <int>,              # number of identical bins of this pattern
+        "contents": [
           {{
-            "usage": <int>,              # number of identical bins of this pattern
-            "contents": [{{"item_id": <int>, "count": <int>}}, ...]
+            "item_id": <int>,
+            "count": <int>
           }},
           ...
         ]
-      }}
-    }}
+      }},
+      ...
+    ]
+  }}
+}}
   Each item id from data.json must appear exactly once across the bins (count=1 for single items).
 """
 

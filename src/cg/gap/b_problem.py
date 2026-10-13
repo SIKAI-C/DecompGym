@@ -36,7 +36,13 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
   "method": "column_generation",
   "objective_value": <float>,
   "solution": {{
-     "assignments": [{{"job_id": i, "machine_id": j}}, ...]
+    "assignments": [
+      {{
+        "job_id": i,
+        "machine_id": j
+      }},
+      ...
+    ]
   }}
 }}
 All jobs must be assigned exactly once and no machine capacity may be exceeded.

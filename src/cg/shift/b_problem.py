@@ -36,7 +36,14 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
   "method": "column_generation",
   "objective_value": <#shifts>,
   "solution": {{
-     "shifts": [{{"start": <int>, "end": <int>, "usage": <int>}}, ...]  # end is inclusive index
+    "shifts": [
+      {{
+        "start": <int>,
+        "end": <int>,
+        "usage": <int>
+      }},
+      ...
+    ]  # end is inclusive index
   }}
 }}
 Each shift covers its contiguous slots fully; across all shifts (counting usage) every slot demand must be met.
