@@ -60,6 +60,8 @@ def identity(value):
 
 class PairedRunner(ExperimentRunner):
     def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, solver_executor=None, **kwargs):
+        if client.protocol().get("transport") == "docker" and solver_executor is None:
+            raise ProtocolError("Docker editing requires an explicitly configured restricted solver executor")
         super().__init__(client=client, **kwargs)
         self.judge_client = judge_client
         self.reflection_client = reflection_client or client
@@ -91,11 +93,16 @@ class PairedRunner(ExperimentRunner):
         for call in sorted(calls.iterdir()):
             prior = read(call / "request.json")
             metrics = read(call / f"{step}_metrics.json")
+            if prior and prior.get("request_sha256") == fingerprint and not metrics and hasattr(client, "recover_file"):
+                recovered = client.recover_file(target, log_dir=call, step=step)
+                if recovered is not None:
+                    metrics = asdict(recovered)
             if not prior or prior.get("request_sha256") != fingerprint or not metrics or (call / "rejected.json").exists():
                 continue
             metrics = self.record_reflection_omission(call, target, step, metrics)
-            if metrics.get("ok") or metrics.get("file_delivery_failure"):
-                if not target.exists() or digest(target) != metrics.get("artifact_sha256"):
+            completed_generation_failure = step == "agent" and metrics.get("terminal_state") == "completed" and metrics.get("returncode") == 0 and not metrics.get("ok")
+            if metrics.get("ok") or metrics.get("file_delivery_failure") or completed_generation_failure:
+                if not completed_generation_failure and (not target.exists() or digest(target) != metrics.get("artifact_sha256")):
                     raise ProtocolError("Completed CLI call lost its committed artifact")
                 metrics["invocation_id"] = call.name
                 save(receipt_path, {"request_sha256": fingerprint, "result": metrics})
