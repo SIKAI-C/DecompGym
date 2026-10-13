@@ -76,6 +76,7 @@ class CodexClient:
         warnings = []
         terminal_state = None
         returncode = None
+        observed_models: set[str] = set()
         # A directory outside the repository avoids incidental project/source/gold context.
         with tempfile.TemporaryDirectory(prefix="decompbench-codex-") as temporary:
             workspace = Path(temporary).resolve()
@@ -102,13 +103,16 @@ class CodexClient:
                 command.extend(["-c", "model_reasoning_effort=" + json.dumps(self.effort)])
             command.append("-")
             # Record configuration without host paths or environment values.
-            (log_dir / f"{step}_invocation.json").write_text(json.dumps({
+            invocation_path = log_dir / f"{step}_invocation.json"
+            invocation = {
                 "backend": "codex-cli", "requested_model": self.model,
                 "requested_effort": self.effort, "role": self.role,
                 "ephemeral": True, "ignore_user_config": True, "project_doc_max_bytes": 0,
                 "sandbox": "workspace-write", "external_context": False,
                 "target": target.name, "timeout_seconds": self.timeout,
-            }, indent=2))
+                "observed_models": [],
+            }
+            invocation_path.write_text(json.dumps(invocation, indent=2))
             with (log_dir / f"{step}_events.jsonl").open("w") as events, (log_dir / f"{step}_stderr.log").open("w") as stderr:
                 process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=events, stderr=stderr, text=True, start_new_session=True)
                 try:
@@ -127,6 +131,11 @@ class CodexClient:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(event, dict):
+                    continue
+                reported_model = event.get("model")
+                if isinstance(reported_model, str) and reported_model.strip():
+                    observed_models.add(reported_model)
                 if event.get("type") == "turn.completed":
                     terminal_state = "completed"
                     if returncode == 0:
@@ -142,6 +151,8 @@ class CodexClient:
                         error = message
                     else:
                         warnings.append(message)
+            invocation["observed_models"] = sorted(observed_models)
+            invocation_path.write_text(json.dumps(invocation, indent=2))
             infrastructure_markers = ("code-mode host exited during handshake", "timed out negotiating with the code-mode host", "failed to initialize code-mode", "failed to spawn code-mode")
             diagnostics = (log_dir / f"{step}_stderr.log").read_text()
             host_failure = next((marker for marker in infrastructure_markers if marker in diagnostics.lower()), None)

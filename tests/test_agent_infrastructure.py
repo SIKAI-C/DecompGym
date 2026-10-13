@@ -63,6 +63,21 @@ def test_missing_cli_is_reported(tmp_path):
     assert not result.ok and "not found" in result.error
 
 
+@pytest.mark.parametrize("reported_model", [None, "gpt-6.1-sol", "gpt-6.1-sol-snapshot", 123, ""])
+def test_codex_records_optional_model_metadata_without_changing_outcome(tmp_path, reported_model):
+    event = {"type": "turn.completed", "usage": {"input_tokens": 10}}
+    if reported_model is not None:
+        event["model"] = reported_model
+    body = "from pathlib import Path\nPath('solver.py').write_text('answer = 42')\n"
+    body += "print(" + repr(json.dumps(event)) + ")\n"
+    cli = fake_cli(tmp_path / "fake-codex", body)
+    result = CodexClient(model="gpt-6.1-sol", executable=str(cli)).edit_file(tmp_path / "solver.py", "Edit.")
+    invocation = json.loads((tmp_path / "codex_invocation.json").read_text())
+    assert result.ok and result.usage == {"input_tokens": 10}
+    assert invocation["requested_model"] == "gpt-6.1-sol"
+    assert invocation["observed_models"] == ([reported_model] if isinstance(reported_model, str) and reported_model else [])
+
+
 def test_recovered_connection_warning_does_not_discard_successful_edit(tmp_path):
     target = tmp_path / "solver.py"
     target.write_text("original")
