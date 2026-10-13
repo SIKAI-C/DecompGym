@@ -38,18 +38,10 @@ def _load_bp_data(data: dict[str, Any]) -> dict[str, Any]:
 
     items = sorted(data["items"], key=lambda it: it["id"])
     sizes_by_id = {int(it["id"]): int(it["size"]) for it in items}
-    unique_sizes = sorted(set(sizes_by_id.values()))
-    size_to_type = {s: i for i, s in enumerate(unique_sizes)}
-    type_demands = [0] * len(unique_sizes)
-    for size in sizes_by_id.values():
-        type_demands[size_to_type[size]] += 1
-
     return {
         "mode": "items",
         "capacity": capacity,
         "sizes_by_id": sizes_by_id,
-        "type_sizes": unique_sizes,
-        "type_demands": type_demands,
     }
 
 
@@ -227,12 +219,9 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         ok, msg, obj = _verify_with_types(bins, capacity, bp_data["sizes"], bp_data["demands"])
         return _result(ok, msg, obj if ok else None)
 
-    ok, msg, obj = _verify_with_types(bins, capacity, bp_data["type_sizes"], bp_data["type_demands"])
-    if ok:
-        return _result(True, msg, obj)
-
-    ok2, msg2, obj2 = _verify_with_items(bins, capacity, bp_data["sizes_by_id"])
-    return _result(ok2, msg2, obj2 if ok2 else None)
+    # For individual items, item_id refers to the input ID, not a sorted size index.
+    ok, msg, obj = _verify_with_items(bins, capacity, bp_data["sizes_by_id"])
+    return _result(ok, msg, obj if ok else None)
 
 
 def main() -> None:

@@ -94,7 +94,11 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
         master_solution: MasterLPSolution[TPattern],
         patterns: list[TPattern],
     ) -> PricingResult[TPattern]:
-        """Solve pricing; return a new pattern (or None) and its reduced cost."""
+        """Complete pricing across all subproblems; return the best reduced cost.
+
+        Raise if pricing is incomplete. Convergence uses rc_tolerance and
+        requires every pricing subproblem to have been checked.
+        """
 
     @abstractmethod
     def solve_integer_master(
@@ -158,14 +162,20 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
         else:
             total_time = self._run_end_time - self._run_start_time
 
-        # The last master LP objective is a bound for minimization problems.
-        global_lb = master_solution.objective if self.is_minimization else integer_solution.objective
-        global_ub = integer_solution.objective if self.is_minimization else master_solution.objective
+        # Report the LP bound only when complete pricing meets the convergence tolerance.
+        lp_converged = (
+            math.isfinite(pricing_result.reduced_cost)
+            and pricing_result.reduced_cost >= -self.rc_tolerance
+        )
+        lp_bound = master_solution.objective if lp_converged else None
+        global_lb = lp_bound if self.is_minimization else integer_solution.objective
+        global_ub = integer_solution.objective if self.is_minimization else lp_bound
 
         return {
             "best_objective": integer_solution.objective,
             "global_lb": global_lb,
             "global_ub": global_ub,
+            "lp_converged": lp_converged,
             "iters": iterations,
             "total_time": total_time,
             "iter_records": self.iter_records,
