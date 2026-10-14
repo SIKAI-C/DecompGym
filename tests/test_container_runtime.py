@@ -9,6 +9,38 @@ import pytest
 from src.agent import container_runtime as containers
 from src.agent.container_runtime import ContainerError, ContainerResult, DockerRuntime, bounded_process, parse_docker_sample
 from src.runtime_environment import RuntimeEnvironmentError
+from src.agent.resource_monitor import CleanupError
+
+
+@pytest.mark.parametrize("ownership_matches", [True, False])
+def test_campaign_shutdown_uses_owned_receipts_and_preserves_volumes(tmp_path, monkeypatch, ownership_matches):
+    runtime = DockerRuntime(seccomp_profile=tmp_path / "profile")
+    state_file(tmp_path)
+    commands, removed, inspected = [], [], []
+
+    def command(*args):
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, "existing-worker\nother-campaign-worker\n", "")
+
+    def inspect(name):
+        inspected.append(name)
+        return {"State": {"Running": True}, "Config": {"Labels": {runtime.LABEL: "v2-worker"}}, "Mounts": [{"Type": "volume", "Name": volume} for volume in ("owned-work", "owned-record" if ownership_matches else "foreign-record")]}
+
+    monkeypatch.setattr(runtime, "command", command)
+    monkeypatch.setattr(runtime, "inspect", inspect)
+    monkeypatch.setattr(runtime, "remove_container", removed.append)
+    ticks = iter([0, 9])
+    monkeypatch.setattr(containers.time, "monotonic", lambda: next(ticks))
+    if ownership_matches:
+        runtime.stop_campaign_workers(tmp_path)
+        assert removed == ["existing-worker"]
+    else:
+        with pytest.raises(CleanupError, match="ownership"):
+            runtime.stop_campaign_workers(tmp_path)
+        assert not removed
+    assert inspected == ["existing-worker"]
+    assert all(args[0] == "ps" for args in commands)
+    assert (tmp_path / "container.json").exists()
 
 
 def test_heartbeat_channel_stays_open_until_the_worker_finishes():

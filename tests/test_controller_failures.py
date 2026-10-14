@@ -98,7 +98,7 @@ def test_watchdog_does_not_retry_an_unclassified_exit(tmp_path, monkeypatch, ret
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
     monkeypatch.setattr(campaign, "ensure_execution_allowed", lambda *_: None)
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
-    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: SimpleNamespace(bind_environment=lambda _: None, resource_samples=lambda: []))
+    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: SimpleNamespace(bind_environment=lambda _: None, resource_samples=lambda: [], stop_campaign_workers=lambda _: None))
     monkeypatch.setattr(campaign, "runtime_lock", lambda *_: nullcontext())
     monkeypatch.setattr(campaign.signal, "signal", lambda *_: None)
     calls = []

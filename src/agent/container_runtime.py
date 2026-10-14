@@ -194,6 +194,37 @@ class DockerRuntime:
         if self.inspect(name) is not None:
             raise CleanupError(f"Could not verify container cleanup: {name}")
 
+    def stop_campaign_workers(self, root: Path):
+        """After the host owner exits, verify only this campaign's durable handles."""
+        result = self.command("ps", "--filter", f"label={self.LABEL}=v2-worker", "--format", "{{.Names}}")
+        if result.returncode:
+            raise CleanupError("Cannot verify Docker worker state after the controller exited")
+        running = set(result.stdout.split())
+        if not running:
+            return
+        owned = {}
+        for path in root.rglob("*container.json"):
+            state = json.loads(path.read_text())
+            if state.get("name") in running:
+                owned[state["name"]] = state
+        deadline = time.monotonic() + 8
+        while owned:
+            for name, state in list(owned.items()):
+                observed = self.inspect(name)
+                if observed is None or not observed.get("State", {}).get("Running"):
+                    owned.pop(name)
+                    continue
+                labels = observed.get("Config", {}).get("Labels") or {}
+                volumes = {item.get("Name") for item in observed.get("Mounts", []) if item.get("Type") == "volume"}
+                if labels.get(self.LABEL) != "v2-worker" or not {state["work_volume"], state["record_volume"]} <= volumes:
+                    raise CleanupError("Docker worker ownership differs from the campaign receipt")
+                if time.monotonic() >= deadline:
+                    # Preserve both volumes so recovery can collect already produced artifacts.
+                    self.remove_container(name)
+                    owned.pop(name)
+            if owned:
+                time.sleep(0.25)
+
     def _dispose(self, state):
         self.remove_container(state["name"])
         for volume in (state["work_volume"], state["record_volume"]):

@@ -15,7 +15,7 @@ import time
 import traceback
 
 from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, identity, read, save
-from src.agent.resource_monitor import ResourceGuard, sample_host, supervise, thermal_warnings
+from src.agent.resource_monitor import CleanupError, ResourceGuard, sample_host, supervise, thermal_warnings
 from src.agent.runtime_state import runtime_lock, state_root
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.campaign_plan import load_plan, model_queue
@@ -229,16 +229,28 @@ def run(root, models=None):
     signal.signal(signal.SIGINT, stop)
     with runtime_lock("fixed81-native-campaign"):
         try:
+            admission_stopped = False
+            def stop_admission():
+                nonlocal admission_stopped
+                if pause_requested(root):
+                    admission_stopped = True
+                    state.update(state="draining_for_pause")
+                    checkpoint()
+                return admission_stopped
             for model in specifications:
+                if stop_admission():
+                    break
                 state["active_model"] = model
                 pending = [case for case in manifest["instances"] if not pair_complete(root, model, case, manifest["protocol_id"])]
-                state["models"][model] = {"completed_pairs": 81 - len(pending), "expected": 81}
+                state["models"][model] = {"completed_pairs": len(manifest["instances"]) - len(pending), "expected": len(manifest["instances"])}
                 checkpoint()
                 error = None
                 with ThreadPoolExecutor(max_workers=2, thread_name_prefix="experiment") as pool:
                     queue = iter(pending)
                     active = {}
                     def submit():
+                        if stop_admission():
+                            return
                         case = next(queue, None)
                         if case:
                             active[pool.submit(job, model, case)] = case
@@ -262,11 +274,16 @@ def run(root, models=None):
                                 submit()
                 if error:
                     raise error
-            remaining_models = [item["model"] for item in model_queue(manifest) if item["model"] not in specifications and any(not pair_complete(root, item["model"], case, manifest["protocol_id"]) for case in manifest["instances"])]
-            state.update(state="paused" if remaining_models else "complete", active_model=None, scope_complete=True, campaign_complete=not remaining_models, remaining_models=remaining_models)
-            if remaining_models:
+                if admission_stopped:
+                    break
+            remaining_models = [item["model"] for item in model_queue(manifest) if any(not pair_complete(root, item["model"], case, manifest["protocol_id"]) for case in manifest["instances"])]
+            scope_complete = not any(model in specifications for model in remaining_models)
+            state.update(state="paused" if remaining_models or admission_stopped else "complete", active_model=None, scope_complete=scope_complete, campaign_complete=not remaining_models, remaining_models=remaining_models)
+            if remaining_models or admission_stopped:
                 pause = read(root / "pause_request.json") or {}
-                pause.update(recorded_at=now(), state="paused", resume_requires_explicit_user_request=True, reason="launch_scope_complete", completed_execution_scope=selected_models, remaining_models=remaining_models)
+                pause.update(recorded_at=now(), state="paused", resume_requires_explicit_user_request=True, reason=pause.get("reason", "user_requested_drain") if admission_stopped else "launch_scope_complete", remaining_models=remaining_models)
+                if scope_complete:
+                    pause["completed_execution_scope"] = selected_models
                 save(root / "pause_request.json", pause)
             checkpoint()
             return 0
@@ -309,7 +326,14 @@ def watch(root, models=None):
             while True:
                 ensure_execution_allowed(root, manifest)
                 try:
-                    result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options), container_sampler=engine.resource_samples)
+                    try:
+                        result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options), container_sampler=engine.resource_samples)
+                    finally:
+                        try:
+                            engine.stop_campaign_workers(root)
+                        except Exception as cleanup_error:
+                            save(monitor_root / "status.json", {"state": "cleanup_failed", "reason": str(cleanup_error), "updated_at": now()})
+                            raise CleanupError("Docker worker shutdown could not be verified; automatic restart disabled") from cleanup_error
                 except (RuntimeError, OSError) as error:
                     if isinstance(error, RuntimeEnvironmentError) or type(error).__name__ == "CleanupError":
                         raise
@@ -341,6 +365,11 @@ def watch(root, models=None):
         return 130
 
 
+def pause_requested(root):
+    pause = read(root / "pause_request.json") or {}
+    return bool(pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists())
+
+
 def ensure_execution_allowed(root, manifest):
     if manifest.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Use the original frozen controller for legacy data; this controller requires a fresh cohort")
@@ -348,8 +377,7 @@ def ensure_execution_allowed(root, manifest):
         raise ProtocolError("This controller requires the new reflection delivery policy; preserve the legacy controller")
     if manifest.get("prompt_protocol") != PROMPT_PROTOCOL:
         raise ProtocolError("This controller requires the reviewed prompt and output contracts")
-    pause = read(root / "pause_request.json") or {}
-    if pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists():
+    if pause_requested(root):
         raise ProtocolError("Campaign is paused; explicit user resumption is required")
 
 

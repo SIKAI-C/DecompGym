@@ -2,6 +2,7 @@
 from contextlib import nullcontext
 from copy import deepcopy
 from types import SimpleNamespace
+import threading
 
 import pytest
 
@@ -30,7 +31,7 @@ def scoped_campaign(tmp_path, monkeypatch):
                 "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "reflection_policy": REFLECTION_POLICY,
                 "prompt_protocol": PROMPT_PROTOCOL, "resource_guard": {}, "retry_delays_seconds": [0]}
     before = deepcopy(manifest)
-    engine = SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None, resource_samples=lambda: [])
+    engine = SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None, resource_samples=lambda: [], stop_campaign_workers=lambda _: None)
     monkeypatch.setattr(hybrid_runtime, "runtime", lambda: engine)
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: object())
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
@@ -132,6 +133,33 @@ def test_watchdog_reuses_the_same_scope_on_infrastructure_retry(scoped_campaign,
     assert len(commands) == 2 and commands[0] == commands[1]
     assert commands[0][commands[0].index("--model"):] == ["--model", "gpt-a", "--model", "gpt-b"]
     assert read(fixture.root / "watchdog.json")["execution_scope"] == ["gpt-a", "gpt-b"]
+
+
+@pytest.mark.parametrize("marker", ["STOP", "pause_request"])
+def test_live_pause_drains_both_admitted_pairs_without_dispatching_more(scoped_campaign, monkeypatch, marker):
+    fixture = scoped_campaign
+    fixture.manifest["instances"].extend({"suite": "bd", "problem": "ufl", "instance": f"case-{index}"} for index in range(2, 4))
+    both_admitted = threading.Barrier(2)
+    original = campaign.PairedRunner.run_pair
+
+    def run_pair(self, source, destination):
+        both_admitted.wait(timeout=5)
+        if marker == "STOP":
+            (fixture.root / "STOP").touch()
+        elif source.name == "case-0":
+            save(fixture.root / "pause_request.json", {"resume_requires_explicit_user_request": True, "reason": "user requested current two then pause"})
+        both_admitted.wait(timeout=5)
+        return original(self, source, destination)
+
+    monkeypatch.setattr(campaign.PairedRunner, "run_pair", run_pair)
+    assert campaign.run(fixture.root, models=["gpt-a", "gpt-b"]) == 0
+    assert fixture.completed == {("gpt-a", "case-0"), ("gpt-a", "case-1")}
+    state = read(fixture.root / "status.json")
+    assert state["state"] == "paused" and not state["active_instances"]
+    assert not state["scope_complete"] and not state["campaign_complete"]
+    assert read(fixture.root / "pause_request.json")["resume_requires_explicit_user_request"]
+    with pytest.raises(ProtocolError, match="paused"):
+        campaign.run(fixture.root, models=["gpt-a", "gpt-b"])
 
 
 @pytest.mark.parametrize("command", ["run", "watch"])
