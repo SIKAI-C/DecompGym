@@ -23,6 +23,7 @@ MODEL_EXCLUSIONS = {
 
 AUTHORIZED_FRESH_PROTOCOL_IDS = {"e6a01d3d1cf966de676323a7d9f9e5b344552ee678281b46feb92823b4a65c73"}
 AUTHORIZED_FRESH_PLAN = "fixed81_qualitative_20261012"
+AUTHORIZED_FRESH_PLANS = {AUTHORIZED_FRESH_PLAN, "fixed81_strict_decomposition_all_models_20261013"}
 AUTHORIZED_INVENTORY_SHA256 = "8e8cda5f0a4d37eea74fb85f75530e91c7a94a8ec4632dd31b6e3eea88f7cb34"
 
 
@@ -32,7 +33,7 @@ def cohort_eligibility(manifest: dict | None) -> dict:
     plan = manifest.get("experiment_plan", {})
     authorized = (manifest.get("protocol_id") in AUTHORIZED_FRESH_PROTOCOL_IDS
                   and hashlib.sha256(json.dumps({k: v for k, v in manifest.items() if k != "protocol_id"}, sort_keys=True).encode()).hexdigest() == manifest.get("protocol_id")
-                  and plan.get("name") == AUTHORIZED_FRESH_PLAN
+                  and plan.get("name") in AUTHORIZED_FRESH_PLANS
                   and plan.get("dataset_inventory_sha256") == AUTHORIZED_INVENTORY_SHA256
                   and plan.get("reuse_generated_context") is False
                   and manifest.get("agent_execution") == "docker"
