@@ -260,7 +260,7 @@ def test_reading_never_changes_source_or_writes_inside_campaign(campaign, tmp_pa
     assert before == {str(p.relative_to(root)): digest(p) for p in root.rglob("*") if p.is_file()}
 
 
-def test_historical_sol_stays_excluded_and_fresh_requires_registered_identity(campaign, monkeypatch):
+def test_user_sol_exclusion_also_applies_to_registered_fresh_cohorts(campaign, monkeypatch):
     root, manifest = campaign
     set_backend(campaign, "codex-cli", "gpt-5.6-sol")
     write_pair(campaign)
@@ -272,10 +272,14 @@ def test_historical_sol_stays_excluded_and_fresh_requires_registered_identity(ca
     manifest["protocol_id"] = reporter.identity(manifest)
     assert reporting_policy.model_exclusion("gpt-5.6-sol", manifest)
     monkeypatch.setattr(reporting_policy, "AUTHORIZED_FRESH_PROTOCOL_IDS", {manifest["protocol_id"]})
-    assert reporting_policy.model_exclusion("gpt-5.6-sol", manifest) is None
+    assert reporting_policy.cohort_eligibility(manifest)["authorized_fresh_cohort"]
+    assert reporting_policy.model_exclusion("gpt-5.6-sol", manifest) is not None
     assert reporting_policy.model_exclusion("gpt-5.6-sol") is not None
     save(root / "campaign.json", manifest)
-    assert reporting_policy.artifact_exclusion(root / "runs/gpt-5.6-sol/plain") is None
+    assert reporting_policy.artifact_exclusion(root / "runs/gpt-5.6-sol/plain") is not None
+    fresh_excluded = reporter.build_campaign_report(root)
+    assert fresh_excluded["coverage"]["expected_pairs"] == 0
+    assert not fresh_excluded["calls"] and not fresh_excluded["paired_curves"]
 
 
 def test_snapshot_detects_replacement_without_locking(campaign):

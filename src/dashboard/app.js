@@ -79,7 +79,7 @@ function renderModels(data) {
   $("models").replaceChildren(fragment);
   $("model-count").textContent = `${data.models.length + (history ? 1 : 0)} configurations`;
   $("model-note").textContent = "Progress counts completed plain + reflection pairs. Pass rate uses the shared first attempt." + (history ? " Historical Luna remains separate." : "") + (data.execution_scope ? " Later-run models are outside the current execution scope." : "");
-  if (data.reporting_exclusions?.length) $("model-note").textContent += ` Historical ${data.reporting_exclusions.map((entry) => entry.name).join(", ")} results are excluded.`;
+  if (data.reporting_exclusions?.length) $("model-note").textContent += " Only included models are shown and counted.";
 }
 
 function renderWorkers(data) {

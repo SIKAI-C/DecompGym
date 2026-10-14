@@ -11,12 +11,10 @@ MODEL_EXCLUSIONS = {
     "gpt-5.6-sol": {
         "model": "gpt-5.6-sol",
         "name": "GPT-5.6 Sol",
-        "effective_date": "2026-10-08",
-        "status": "historical_cohorts_excluded",
-        "reason": "Historical Docker/native Sol results remain excluded. The explicitly authorized fresh Docker cohort is eligible under the October 13 decision.",
-        "docker_observation": {"passed": 52, "evaluated": 62, "planned": 81, "complete": False},
-        "native_observation": {"passed": 79, "evaluated": 81, "planned": 81, "complete": True},
-        "reinstatement": "No investigation of the historical discrepancy is required; inclusion is limited to the explicitly authorized fresh cohort.",
+        "effective_date": "2026-10-14",
+        "original_historical_exclusion_date": "2026-10-08",
+        "status": "all_cohorts_excluded_by_user",
+        "reason": "October 14 user decision: exclude GPT-5.6 Sol from the experiment results, dashboard, totals, reports and exports in every cohort. Preserve all raw records.",
     }
 }
 
@@ -47,15 +45,13 @@ def cohort_eligibility(manifest: dict | None) -> dict:
 
 def model_exclusion(model, cohort: dict | None = None):
     normalized = re.sub(r"[\s_]+", "-", str(model or "").strip().lower())
-    if normalized == "gpt-5.6-sol" and cohort_eligibility(cohort)["authorized_fresh_cohort"]:
-        return None
     return MODEL_EXCLUSIONS.get(normalized)
 
 
 def require_reportable_model(model, cohort: dict | None = None):
     exclusion = model_exclusion(model, cohort)
     if exclusion:
-        raise ValueError(f"{exclusion['name']} is excluded from reported results and figures since {exclusion['effective_date']}: {exclusion['reason']} Raw results are retained for investigation.")
+        raise ValueError(f"{exclusion['name']} is excluded from reported results and figures since {exclusion['effective_date']}: {exclusion['reason']} Raw records are preserved.")
 
 
 def artifact_exclusion(path: Path):
