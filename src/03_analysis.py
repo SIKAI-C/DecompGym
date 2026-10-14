@@ -48,21 +48,27 @@ def load_attempts(instance_dir: Path) -> tuple[list[dict[str, Any]], float | Non
 
 
 def infer_difficulty(instance_dir: Path) -> str | None:
-    # Prefer meta.json if present
+    """Prefer the frozen inventory size; retain legacy aliases at the boundary."""
+    for directory in (instance_dir, *instance_dir.parents):
+        campaign = directory / "campaign.json"
+        if campaign.is_file():
+            inventory = json.loads(campaign.read_text()).get("instances", [])
+            record = next((case for case in inventory if case["instance"] == instance_dir.name), None)
+            if record:
+                return record["size"]
+            break
     meta_path = instance_dir / "meta.json"
     if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text())
-            diff = meta.get("difficulty")
-            if isinstance(diff, str):
-                return diff
-        except Exception:
-            pass
-    # Fallback to name pattern
-    name = instance_dir.name.lower()
-    for level in ("easy", "medium", "hard"):
-        if level in name:
+        meta = json.loads(meta_path.read_text())
+        value = meta.get("size", meta.get("difficulty"))
+        if isinstance(value, str):
+            return {"easy": "small", "hard": "large"}.get(value, value)
+    for level in ("small", "medium", "large"):
+        if f"_{level}_" in instance_dir.name.lower():
             return level
+    for old, size in (("easy", "small"), ("hard", "large")):
+        if old in instance_dir.name.lower():
+            return size
     return None
 
 
@@ -171,11 +177,11 @@ def analyze_instance(inst_dir: Path, quality_tol: float, write_outputs: bool) ->
 
 
 def aggregate_by_difficulty(instances: list[dict[str, Any]]) -> dict[str, Any]:
-    buckets: dict[str, list[dict[str, Any]]] = {"easy": [], "medium": [], "hard": []}
+    buckets: dict[str, list[dict[str, Any]]] = {"small": [], "medium": [], "large": [], "unknown": []}
     for inst in instances:
         diff = inst.get("difficulty")
-        if diff in buckets:
-            buckets[diff].append(inst)
+        buckets[diff if diff in buckets else "unknown"].append(inst)
+    assert sum(len(group) for group in buckets.values()) == len(instances)
 
     agg: dict[str, Any] = {}
     for diff, insts in buckets.items():
@@ -258,7 +264,7 @@ def plot_instance(inst: dict[str, Any], out_dir: Path) -> None:
 
 
 def plot_run_by_difficulty(agg: dict[str, Any], out_dir: Path) -> None:
-    diffs = ["easy", "medium", "hard"]
+    diffs = ["small", "medium", "large"]
 
     # Solve rates
     fig, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
@@ -384,8 +390,8 @@ def find_run_dirs(output_root: Path) -> list[Path]:
         if artifact_exclusion(inst_sum.parent):
             continue
         inst_dir = inst_sum.parent
-        run_dir = inst_dir.parent
-        runs.add(run_dir)
+        campaign = next((directory for directory in inst_dir.parents if (directory / "campaign.json").is_file()), None)
+        runs.add(campaign or inst_dir.parent)
     return sorted(runs)
 
 
@@ -397,6 +403,13 @@ def analyze_run(root: Path, quality_tol: float, force: bool = True) -> bool:
     if not root.exists():
         return False
     require_reportable_artifact(root)
+    if (root / "campaign.json").is_file():
+        from datetime import datetime, timezone
+        from src.campaign_report import build_campaign_report, export_campaign_report
+        destination = Path("outputs/analysis") / (root.name + "_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+        export_campaign_report(build_campaign_report(root), destination)
+        print(f"Audited campaign analysis written to {destination}")
+        return True
     if not force and is_analysis_complete(root):
         return False
 

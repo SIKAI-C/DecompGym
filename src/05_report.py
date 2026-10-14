@@ -180,6 +180,9 @@ def attempt_breakdowns(instances: list[dict], max_attempts: int) -> dict[str, li
 
 
 def build_report(root: Path, data_root: Path) -> dict:
+    if (root / "campaign.json").is_file():
+        from src.campaign_report import build_campaign_report
+        return build_campaign_report(root)
     require_reportable_artifact(root)
     config = json.loads((root / "run_config.json").read_text())
     require_reportable_model(config.get("model"))
@@ -494,6 +497,10 @@ def plot_report(report: dict, destination: Path) -> None:
 
 
 def export_report(report: dict, destination: Path, charts: bool = True) -> None:
+    if report.get("layout") == "native_campaign":
+        from src.campaign_report import export_campaign_report
+        export_campaign_report(report, destination)
+        return
     require_reportable_report(report)
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "evaluation.json").write_text(json.dumps(report, indent=2))
@@ -526,12 +533,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-root", type=Path, default=Path("outputs/experiments/default_run"))
     parser.add_argument("--data-root", type=Path, default=Path("data"))
-    parser.add_argument("--output", type=Path, default=None, help="Report destination; defaults to <input-root>/report. Repository documentation is never modified.")
+    parser.add_argument("--output", type=Path, default=None, help="Derived report destination; native campaigns default to timestamped outputs/reports, legacy runs to <input-root>/report.")
     parser.add_argument("--allow-partial", action="store_true")
     parser.add_argument("--no-charts", action="store_true")
     args = parser.parse_args()
     if args.output is None:
-        args.output = args.input_root / "report"
+        args.output = (Path("outputs/reports") / (args.input_root.name + "_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))) if (args.input_root / "campaign.json").is_file() else args.input_root / "report"
     report = build_report(args.input_root, args.data_root)
     if not report["coverage"]["complete"] and not args.allow_partial:
         raise SystemExit(f"Incomplete or unaudited matrix: {report['coverage']['completed_instance_runs']}/{report['coverage']['expected_instance_runs']}; use --allow-partial only for a labeled interim report.")
