@@ -23,6 +23,21 @@ def _aggregate_items(inst: BinPackingInstance) -> tuple[list[int], list[int]]:
     return sizes, demands
 
 
+def _trim_surplus_bins(patterns: list[list[int]], usages: dict[int, float], demands: list[int]) -> dict[int, float]:
+    """Drop redundant bins in a feasible integer incumbent, in output-conversion order."""
+    remaining = list(demands)
+    kept = {}
+    for index, usage in usages.items():
+        for _ in range(round(usage)):
+            contents = [min(left, count) for left, count in zip(remaining, patterns[index])]
+            if any(contents):
+                kept[index] = kept.get(index, 0.0) + 1.0
+                remaining = [left - count for left, count in zip(remaining, contents)]
+    if any(remaining):
+        raise RuntimeError("Integer restricted master incumbent does not cover every item")
+    return kept
+
+
 class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[int]]):
     """Column generation for bin packing, wrapped in BaseColumnGeneration."""
 
@@ -34,8 +49,9 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
         max_iters: int = 200,
         rc_tol: float = 1e-6,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.pricing_params = pricing_params or {}
         self.rc_tolerance = rc_tol
@@ -44,11 +60,11 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
         return BinPackingInstance.from_json_file(instance_name)
 
     def initial_patterns(self, inst: BinPackingInstance) -> list[list[int]]:
-        sizes, _ = _aggregate_items(inst)
+        sizes, demands = _aggregate_items(inst)
         patterns: list[list[int]] = []
         m = len(sizes)
         for i in range(m):
-            max_cnt = inst.bin_capacity // sizes[i]
+            max_cnt = min(demands[i], inst.bin_capacity // sizes[i])
             if max_cnt > 0:
                 pat = [0] * m
                 pat[i] = max_cnt
@@ -82,7 +98,7 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
             demand_constrs.append(c)
 
         model.setObjective(gp.quicksum(lam[p] for p in P), GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="restricted_master", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master LP not optimal (status={model.Status})")
 
@@ -91,13 +107,14 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
 
         return MasterLPSolution(objective=obj, duals=duals, metadata={"patterns": patterns})
 
+
     def solve_pricing(
         self,
         inst: BinPackingInstance,
         master_solution: MasterLPSolution[list[int]],
         patterns: list[list[int]],
     ) -> PricingResult[list[int]]:
-        sizes, _ = _aggregate_items(inst)
+        sizes, demands = _aggregate_items(inst)
         m = len(sizes)
         items = range(m)
 
@@ -106,21 +123,33 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
         for k, v in self.pricing_params.items():
             model.setParam(k, v)
 
-        a = model.addVars(items, vtype=GRB.INTEGER, lb=0, name="a")
+        model.Params.PoolSearchMode = 2
+        model.Params.PoolSolutions = 64
+        a = model.addVars(items, vtype=GRB.INTEGER, lb=0, ub={i: demands[i] for i in items}, name="a")
         model.addConstr(gp.quicksum(sizes[i] * a[i] for i in items) <= inst.bin_capacity, name="capacity")
         model.addConstr(gp.quicksum(a[i] for i in items) >= 1, name="nontrivial")
 
         duals = master_solution.duals
         model.setObjective(gp.quicksum(duals[i] * a[i] for i in items), GRB.MAXIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="pricing", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Pricing problem not optimal (status={model.Status})")
 
         z_price = float(model.ObjVal)
         pattern = [round(a[i].X) for i in items]
-        reduced_cost = 1.0 - z_price  # cost per bin is 1
+        reduced_cost = 1.0 - float(model.ObjBound)
+        known = {tuple(pat) for pat in patterns}
+        for index in range(model.SolCount):
+            model.Params.SolutionNumber = index
+            candidate = [round(a[i].Xn) for i in items]
+            # The base loop adds the improving best column; pool alternatives enrich the integer RMP.
+            if candidate == pattern and reduced_cost < -self.rc_tolerance:
+                continue
+            if tuple(candidate) not in known:
+                patterns.append(candidate)
+                known.add(tuple(candidate))
+        return PricingResult(pattern=pattern, reduced_cost=reduced_cost, metadata={"dual_value": z_price, "pricing_pool_solutions": model.SolCount, "lp_bound": master_solution.objective / max(1.0, float(model.ObjBound))})
 
-        return PricingResult(pattern=pattern, reduced_cost=reduced_cost, metadata={"dual_value": z_price})
 
     def solve_integer_master(
         self,
@@ -134,6 +163,8 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
 
         model = gp.Model("bp_master_int")
         model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.master_params.items():
+            model.setParam(k, v)
 
         x = model.addVars(P, vtype=GRB.INTEGER, lb=0, name="x")
 
@@ -141,16 +172,17 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
             model.addConstr(gp.quicksum(patterns[p][i] * x[p] for p in P) >= demands[i], name=f"demand_{i}")
 
         model.setObjective(gp.quicksum(x[p] for p in P), GRB.MINIMIZE)
-        model.optimize()
-        if model.Status != GRB.OPTIMAL:
+        self.runtime.optimize(model, role="integer_master", allow_incumbent=True)
+        if model.SolCount == 0:
             raise RuntimeError(f"Integer master not optimal (status={model.Status})")
 
-        usage_dict: dict[int, float] = {}
+        # A TIME_LIMIT incumbent may contain redundant bins. Normalize before committing
+        # the objective, usages, and output metadata, so all three describe the same plan.
+        usage_dict = _trim_surplus_bins(patterns, {p: float(x[p].X) for p in P if x[p].X > 1e-6}, demands)
         used_patterns = []
         for p in P:
-            val = x[p].X
+            val = usage_dict.get(p, 0.0)
             if val > 1e-6:
-                usage_dict[p] = float(val)
                 used_patterns.append(
                     {
                         "pattern_id": p,
@@ -160,7 +192,7 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
                 )
 
         return IntegerMasterSolution(
-            objective=float(model.ObjVal),
+            objective=sum(usage_dict.values()),
             pattern_usages=usage_dict,
-            metadata={"patterns": patterns, "solution_patterns": used_patterns},
+            metadata={"patterns": patterns, "solution_patterns": used_patterns, "restricted_master_objective": float(model.ObjVal)},
         )

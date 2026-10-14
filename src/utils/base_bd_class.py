@@ -10,7 +10,7 @@ from pathlib import Path
 import time
 from typing import Any, Generic, TypeVar
 
-import matplotlib.pyplot as plt  # only used inside plot_bounds
+from src.utils.reference_runtime import NoReferenceIncumbent, ReferenceLimit, ReferenceRuntime, relative_gap
 
 
 TInst = TypeVar("TInst")
@@ -31,6 +31,7 @@ class MasterSolution(Generic[TMaster]):
     vars: dict[str, Any]
     master_state: TMaster
     metadata: dict[str, Any] | None = None
+    bound: float | None = None  # certified master bound, distinct from its incumbent objective
 
 
 @dataclass
@@ -79,9 +80,11 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
     violation_tolerance: float = 1e-6
     is_minimization: bool = True  # subclasses can flip if they solve a max problem
 
-    def __init__(self, max_iters: int = 500, verbose: bool = False) -> None:
+    def __init__(self, max_iters: int = 500, verbose: bool = False, *, time_limit: float = 60.0, target_gap: float = 1e-4) -> None:
         self.max_iters = max_iters
         self.verbose = verbose
+        self.runtime = ReferenceRuntime(time_limit)
+        self.target_gap = target_gap
 
         # Bounds and iteration records
         self.global_lb: float = -math.inf
@@ -224,16 +227,8 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
 
         Subclasses can override for a more problem-specific rule.
         """
-        viol_ok = sub_result.worst_violation <= self.violation_tolerance
-        gap_ok = False
-        if not math.isinf(global_lb) and not math.isinf(global_ub):
-            gap = abs(global_ub - global_lb)
-            # relative gap
-            denom = max(1.0, abs(global_lb))
-            rel_gap = gap / denom
-            gap_ok = rel_gap <= 1e-4  # default relative tolerance
-
-        return (sub_result.all_feasible and viol_ok and gap_ok) or (iteration >= self.max_iters)
+        gap = relative_gap(global_lb, global_ub)
+        return (self._incumbent is not None and gap is not None and gap <= self.target_gap) or iteration >= self.max_iters
 
     def on_cuts_added(
         self,
@@ -265,11 +260,13 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
         else:
             total_time = self._run_end_time - self._run_start_time
 
-        # Pick "best" objective from bounds for minimization/maximization
+        if self._incumbent is None:
+            raise NoReferenceIncumbent("Benders stopped without a complete feasible incumbent")
+        # The saved plan and its feasible objective were committed together.
         if self.is_minimization:
-            best_obj = self.global_ub if not math.isinf(self.global_ub) else master_solution.objective
+            best_obj = self.global_ub
         else:
-            best_obj = self.global_lb if not math.isinf(self.global_lb) else master_solution.objective
+            best_obj = self.global_lb
 
         return {
             "best_objective": best_obj,
@@ -293,6 +290,8 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
         `benders_progress.pdf` and the path is returned. Otherwise, the plot is
         only shown.
         """
+        import matplotlib.pyplot as plt
+
         if not self.iter_records:
             raise RuntimeError("No iteration records to plot. Did you call `run`?")
 
@@ -340,95 +339,68 @@ class BaseBenders(ABC, Generic[TInst, TMaster, TFeasCut, TOptCut]):
         return output_path
 
     # --- main driver -----------------------------------------------------------
-    def run(self, instance_name: str) -> dict[str, Any]:
-        """Load an instance and execute the Benders loop."""
+    def run(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        """Return the best complete paired plan within one shared runtime budget."""
+        self.runtime.start(started_at)
+        self._run_start_time = self.runtime.started_at
+        self._run_end_time = None
         inst = self.load_instance(instance_name)
         self.on_before_run(inst)
-
         master = self.build_initial_master(inst)
-
-        self._run_start_time = time.perf_counter()
-        last_master_sol: MasterSolution[TMaster] | None = None
-        last_sub_result: SubproblemResult[TFeasCut, TOptCut] | None = None
-
-        for iteration in range(1, self.max_iters + 1):
-            iter_start = time.perf_counter()
-
-            last_master_sol = self.solve_master(inst, master)
-            last_sub_result = self.solve_subproblems(inst, last_master_sol)
-
-            # Update bounds and record iteration info
-            previous_bound = self.global_ub if self.is_minimization else self.global_lb
-            global_lb, global_ub = self.compute_iteration_bounds(inst, last_master_sol, last_sub_result)
-            incumbent_bound = global_ub if self.is_minimization else global_lb
-            improved = incumbent_bound < previous_bound if self.is_minimization else incumbent_bound > previous_bound
-            if math.isfinite(incumbent_bound) and improved:
-                # Copy the paired plan, not the live master model, at the moment it establishes the incumbent.
-                self._incumbent = {
-                    "vars": deepcopy(last_master_sol.vars),
-                    "master_metadata": deepcopy(last_master_sol.metadata or {}),
-                    "sub_metadata": deepcopy(last_sub_result.metadata or {}),
-                    "iteration": iteration,
-                }
-
-            iter_end = time.perf_counter()
-            elapsed = iter_end - self._run_start_time
-            iter_time = iter_end - iter_start
-
-            rec = IterationRecord(
-                iteration=iteration,
-                elapsed_time=elapsed,
-                iter_time=iter_time,
-                master_obj=last_master_sol.objective,
-                sub_bound=last_sub_result.sub_bound,
-                global_lb=global_lb,
-                global_ub=global_ub,
-                n_feas_cuts=len(last_sub_result.feasibility_cuts),
-                n_opt_cuts=len(last_sub_result.optimality_cuts),
-            )
-            self.iter_records.append(rec)
-
-            if self.verbose:
-                msg = self.format_iteration_log(
-                    iteration,
-                    last_master_sol,
-                    last_sub_result,
-                    global_lb,
-                    global_ub,
-                )
-                if msg:
-                    print(msg)
-
-            if self.should_terminate(
-                iteration,
-                last_master_sol,
-                last_sub_result,
-                global_lb,
-                global_ub,
-            ):
-                self._run_end_time = time.perf_counter()
-                return self.finalize_result(inst, last_master_sol, last_sub_result, iteration)
-
-            # If we still need to continue, we must have cuts to add
-            if not last_sub_result.feasibility_cuts and not last_sub_result.optimality_cuts:
-                # No cuts but not converged: report as-is.
-                self._run_end_time = time.perf_counter()
-                return self.finalize_result(inst, last_master_sol, last_sub_result, iteration)
-
-            # Add cuts
-            if last_sub_result.feasibility_cuts:
-                self.add_feasibility_cuts(inst, master, last_sub_result.feasibility_cuts)
-            if last_sub_result.optimality_cuts:
-                self.add_optimality_cuts(inst, master, last_sub_result.optimality_cuts)
-
-            self.on_cuts_added(
-                master,
-                last_sub_result.feasibility_cuts,
-                last_sub_result.optimality_cuts,
-            )
-
-        # Reached max_iters
+        last_master_sol = None
+        last_sub_result = None
+        termination = "iteration_limit"
+        try:
+            for iteration in range(1, self.max_iters + 1):
+                self.runtime.check()
+                iter_start = time.perf_counter()
+                current_master = self.solve_master(inst, master)
+                # This bound is valid even if recourse is infeasible or interrupted.
+                if current_master.bound is not None and math.isfinite(current_master.bound):
+                    if self.is_minimization:
+                        self.global_lb = max(self.global_lb, current_master.bound)
+                    else:
+                        self.global_ub = min(self.global_ub, current_master.bound)
+                current_sub = self.solve_subproblems(inst, current_master)
+                previous_bound = self.global_ub if self.is_minimization else self.global_lb
+                global_lb, global_ub = self.compute_iteration_bounds(inst, current_master, current_sub)
+                incumbent_bound = global_ub if self.is_minimization else global_lb
+                improved = incumbent_bound < previous_bound if self.is_minimization else incumbent_bound > previous_bound
+                if current_sub.all_feasible and math.isfinite(incumbent_bound) and improved:
+                    self._incumbent = {
+                        "objective": incumbent_bound,
+                        "vars": deepcopy(current_master.vars),
+                        "master_metadata": deepcopy(current_master.metadata or {}),
+                        "sub_metadata": deepcopy(current_sub.metadata or {}),
+                        "iteration": iteration,
+                    }
+                # Commit only a completed master/recourse pair, never partial scenarios.
+                last_master_sol, last_sub_result = current_master, current_sub
+                iter_end = time.perf_counter()
+                self.iter_records.append(IterationRecord(
+                    iteration=iteration, elapsed_time=iter_end - self._run_start_time,
+                    iter_time=iter_end - iter_start, master_obj=current_master.objective,
+                    sub_bound=current_sub.sub_bound, global_lb=global_lb, global_ub=global_ub,
+                    n_feas_cuts=len(current_sub.feasibility_cuts), n_opt_cuts=len(current_sub.optimality_cuts),
+                ))
+                if self.verbose:
+                    print(self.format_iteration_log(iteration, current_master, current_sub, global_lb, global_ub))
+                if self.should_terminate(iteration, current_master, current_sub, global_lb, global_ub):
+                    gap = relative_gap(global_lb, global_ub)
+                    termination = "target_gap" if gap is not None and gap <= self.target_gap else "iteration_limit"
+                    break
+                if not current_sub.feasibility_cuts and not current_sub.optimality_cuts:
+                    termination = "no_new_cuts"
+                    break
+                if current_sub.feasibility_cuts:
+                    self.add_feasibility_cuts(inst, master, current_sub.feasibility_cuts)
+                if current_sub.optimality_cuts:
+                    self.add_optimality_cuts(inst, master, current_sub.optimality_cuts)
+                self.on_cuts_added(master, current_sub.feasibility_cuts, current_sub.optimality_cuts)
+        except ReferenceLimit:
+            termination = "time_limit"
+        if self._incumbent is None:
+            raise NoReferenceIncumbent(f"Benders stopped ({termination}) without a complete feasible incumbent")
         self._run_end_time = time.perf_counter()
-        if last_master_sol is None or last_sub_result is None:
-            raise RuntimeError("Benders loop terminated before solving the master.")
-        return self.finalize_result(inst, last_master_sol, last_sub_result, self.max_iters)
+        result = self.finalize_result(inst, last_master_sol, last_sub_result, len(self.iter_records))
+        return self.runtime.finish(result, target_gap=self.target_gap, termination_reason=termination)

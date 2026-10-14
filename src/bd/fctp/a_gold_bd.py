@@ -42,8 +42,9 @@ class FCTPBenders(BaseBenders[FCTPInstance, FCTPMasterState, FCTPFeasCut, FCTPOp
         subproblem_params: dict[str, Any] | None = None,
         max_iters: int = 500,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.subproblem_params = subproblem_params or {}
 
@@ -66,8 +67,8 @@ class FCTPBenders(BaseBenders[FCTPInstance, FCTPMasterState, FCTPFeasCut, FCTPOp
         return FCTPMasterState(model=model, y=y, z=z)
 
     def solve_master(self, inst: FCTPInstance, master: FCTPMasterState) -> MasterSolution[FCTPMasterState]:
-        master.model.optimize()
-        if master.model.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        self.runtime.optimize(master.model, role="master", allow_incumbent=False)
+        if master.model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master solve failed (status={master.model.Status})")
 
         y_val = np.asarray(master.y.X, dtype=float)
@@ -83,7 +84,9 @@ class FCTPBenders(BaseBenders[FCTPInstance, FCTPMasterState, FCTPFeasCut, FCTPOp
             objective=float(master.model.ObjVal),
             vars=vars_dict,
             master_state=master,
+            bound=float(master.model.ObjBound),
         )
+
 
     def _solve_subproblem(
         self, inst: FCTPInstance, y_vals: np.ndarray
@@ -105,7 +108,7 @@ class FCTPBenders(BaseBenders[FCTPInstance, FCTPMasterState, FCTPFeasCut, FCTPOp
         )
 
         model.setObjective((inst.unit_cost * x).sum(), GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="recourse_lp", allow_incumbent=False)
 
         if model.Status == GRB.INFEASIBLE:
             pi = -np.array([supply_constr[i].FarkasDual for i in range(m)], dtype=float)
@@ -128,6 +131,7 @@ class FCTPBenders(BaseBenders[FCTPInstance, FCTPMasterState, FCTPFeasCut, FCTPOp
 
         x_val = np.asarray(x.X, dtype=float)
         return float(model.ObjVal), pi, sigma, mu, x_val, True
+
 
     def solve_subproblems(
         self,
@@ -216,7 +220,7 @@ class FCTPBenders(BaseBenders[FCTPInstance, FCTPMasterState, FCTPFeasCut, FCTPOp
             return self.global_lb, self.global_ub
 
         ub_candidate = fixed_term + sp_cost
-        lb_candidate = master_solution.objective
+        lb_candidate = master_solution.bound if master_solution.bound is not None else master_solution.objective
 
         if math.isinf(self.global_lb):
             self.global_lb = lb_candidate

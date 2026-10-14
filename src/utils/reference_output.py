@@ -7,6 +7,8 @@ from typing import Any
 
 def reference_output(suite: str, problem: str, data: dict, result: dict) -> dict[str, Any]:
     output = {"objective_value": result["best_objective"]}
+    if result.get("reference_policy"):
+        output.update(status=result["status"], method="benders_decomposition" if suite == "bd" else "column_generation")
     metadata = {**result.get("master_metadata", {}), **result.get("sub_metadata", {})}
     variables = result.get("final_vars", {})
     if suite == "bd":

@@ -6,6 +6,8 @@ import math
 import time
 from typing import Any, Generic, TypeVar
 
+from src.utils.reference_runtime import ReferenceLimit, ReferenceRuntime
+
 
 TInst = TypeVar("TInst")
 TPattern = TypeVar("TPattern")
@@ -63,9 +65,10 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
     rc_tolerance: float = 1e-6  # stop when reduced cost >= -tol (minimization)
     is_minimization: bool = True
 
-    def __init__(self, max_iters: int = 200, verbose: bool = False) -> None:
+    def __init__(self, max_iters: int = 200, verbose: bool = False, *, time_limit: float = 60.0) -> None:
         self.max_iters = max_iters
         self.verbose = verbose
+        self.runtime = ReferenceRuntime(time_limit)
         self.iter_records: list[CGIterationRecord] = []
         self._run_start_time: float | None = None
         self._run_end_time: float | None = None
@@ -167,7 +170,7 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
             math.isfinite(pricing_result.reduced_cost)
             and pricing_result.reduced_cost >= -self.rc_tolerance
         )
-        lp_bound = master_solution.objective if lp_converged else None
+        lp_bound = (pricing_result.metadata or {}).get("lp_bound", master_solution.objective) if lp_converged else None
         global_lb = lp_bound if self.is_minimization else integer_solution.objective
         global_ub = integer_solution.objective if self.is_minimization else lp_bound
 
@@ -186,55 +189,45 @@ class BaseColumnGeneration(ABC, Generic[TInst, TPattern]):
         }
 
     # --- main driver -------------------------------------------------------
-    def run(self, instance_name: str) -> dict[str, Any]:
+    def run(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        self.runtime.start(started_at)
+        self._run_start_time = self.runtime.started_at
+        self._run_end_time = None
+        self.iter_records.clear()
+        # Leave time for constructing and solving the final integer restricted master.
+        self.runtime.stage_reserve = min(5.0, self.runtime.time_limit / 12.0)
         inst = self.load_instance(instance_name)
         patterns = self.initial_patterns(inst)
         if not patterns:
-            raise RuntimeError("initial_patterns returned an empty list.")
-
-        self.iter_records.clear()
-        self._run_start_time = time.perf_counter()
-
-        last_master_sol: MasterLPSolution[TPattern] | None = None
-        last_pricing: PricingResult[TPattern] | None = None
-
-        for iteration in range(1, self.max_iters + 1):
-            iter_start = time.perf_counter()
-
-            last_master_sol = self.solve_restricted_master(inst, patterns)
-            last_pricing = self.solve_pricing(inst, last_master_sol, patterns)
-
-            iter_end = time.perf_counter()
-            elapsed = iter_end - self._run_start_time
-            iter_time = iter_end - iter_start
-
-            record = CGIterationRecord(
-                iteration=iteration,
-                elapsed_time=elapsed,
-                iter_time=iter_time,
-                master_obj=last_master_sol.objective,
-                reduced_cost=last_pricing.reduced_cost,
-                n_patterns=len(patterns),
-            )
-            self.iter_records.append(record)
-
-            if self.verbose:
-                msg = self.format_iteration_log(record, last_master_sol, last_pricing)
-                if msg:
-                    print(msg)
-
-            if self.should_terminate(iteration, last_pricing):
-                break
-
-            added = self.add_pattern(patterns, last_pricing)
-            if not added:
-                # No new pattern but reduced cost suggests improvement; avoid stalling.
-                break
-
+            raise RuntimeError("initial_patterns returned an empty list")
+        last_master_sol = MasterLPSolution(math.nan, None)
+        last_pricing = PricingResult(None, -math.inf)
+        termination = "iteration_limit"
+        try:
+            for iteration in range(1, self.max_iters + 1):
+                self.runtime.check()
+                iter_start = time.perf_counter()
+                master_sol = self.solve_restricted_master(inst, patterns)
+                pricing = self.solve_pricing(inst, master_sol, patterns)
+                # Preserve a certificate only as its complete master/pricing pair.
+                last_master_sol, last_pricing = master_sol, pricing
+                iter_end = time.perf_counter()
+                record = CGIterationRecord(iteration, iter_end - self._run_start_time, iter_end - iter_start, master_sol.objective, pricing.reduced_cost, len(patterns))
+                self.iter_records.append(record)
+                if self.verbose:
+                    print(self.format_iteration_log(record, master_sol, pricing))
+                if self.should_terminate(iteration, pricing):
+                    termination = "pricing_converged" if pricing.reduced_cost >= -self.rc_tolerance else "iteration_limit"
+                    break
+                if not self.add_pattern(patterns, pricing):
+                    termination = "no_new_columns"
+                    break
+        except ReferenceLimit:
+            termination = "time_limit"
+        self.runtime.stage_reserve = 0.0
+        integer = self.solve_integer_master(inst, patterns)
         self._run_end_time = time.perf_counter()
-
-        if last_master_sol is None or last_pricing is None:
-            raise RuntimeError("CG loop ended without solving master/pricing.")
-
-        int_sol = self.solve_integer_master(inst, patterns)
-        return self.finalize_result(inst, last_master_sol, last_pricing, int_sol, len(self.iter_records))
+        result = self.finalize_result(inst, last_master_sol, last_pricing, integer, len(self.iter_records))
+        if getattr(self, "phase_one_records", None):
+            result["phase_one_records"] = self.phase_one_records
+        return self.runtime.finish(result, target_gap=0.005, termination_reason=termination)

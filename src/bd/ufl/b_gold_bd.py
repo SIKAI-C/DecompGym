@@ -38,8 +38,9 @@ class UFLBenders(BaseBenders[UFLInstance, UflMasterState, None, UflOptCut]):
         subproblem_params: dict[str, Any] | None = None,
         max_iters: int = 250,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.subproblem_params = subproblem_params or {}
 
@@ -61,8 +62,8 @@ class UFLBenders(BaseBenders[UFLInstance, UflMasterState, None, UflOptCut]):
         return UflMasterState(model=model, y=y, theta=theta)
 
     def solve_master(self, inst: UFLInstance, master: UflMasterState) -> MasterSolution[UflMasterState]:
-        master.model.optimize()
-        if master.model.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        self.runtime.optimize(master.model, role="master", allow_incumbent=False)
+        if master.model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master solve failed with status {master.model.Status}")
 
         y_val = np.asarray(master.y.X, dtype=float)
@@ -78,7 +79,9 @@ class UFLBenders(BaseBenders[UFLInstance, UflMasterState, None, UflOptCut]):
             objective=float(master.model.ObjVal),
             vars=vars_dict,
             master_state=master,
+            bound=float(master.model.ObjBound),
         )
+
 
     def _solve_subproblem(self, d: np.ndarray, y_vals: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
         m = len(d)
@@ -93,13 +96,14 @@ class UFLBenders(BaseBenders[UFLInstance, UflMasterState, None, UflOptCut]):
         link_constr = model.addConstrs((x[i] <= float(y_vals[i]) for i in range(m)), name="link")
 
         model.setObjective(d @ x, GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="recourse_lp", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Subproblem not optimal (status={model.Status})")
 
         lam = np.array([link_constr[i].Pi for i in range(m)], dtype=float)
         x_val = np.asarray(x.X, dtype=float)
         return float(model.ObjVal), lam, x_val
+
 
     def solve_subproblems(
         self,
@@ -163,9 +167,9 @@ class UFLBenders(BaseBenders[UFLInstance, UflMasterState, None, UflOptCut]):
         ub_candidate = master_obj + delta
 
         if math.isinf(self.global_lb):
-            self.global_lb = master_obj
+            self.global_lb = master_solution.bound if master_solution.bound is not None else master_obj
         else:
-            self.global_lb = max(self.global_lb, master_obj)
+            self.global_lb = max(self.global_lb, master_solution.bound if master_solution.bound is not None else master_obj)
 
         if math.isinf(self.global_ub):
             self.global_ub = ub_candidate

@@ -32,8 +32,9 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
         max_iters: int = 200,
         rc_tol: float = 1e-6,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.pricing_params = pricing_params or {}
         self.rc_tolerance = rc_tol
@@ -77,12 +78,13 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
             demand_constrs.append(c)
 
         model.setObjective(gp.quicksum(lam[p] for p in P), GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="restricted_master", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master LP not optimal (status={model.Status})")
 
         duals = [c.Pi for c in demand_constrs]
         return MasterLPSolution(objective=float(model.ObjVal), duals=duals, metadata={"patterns": patterns})
+
 
     def solve_pricing(
         self,
@@ -105,15 +107,16 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
 
         duals = master_solution.duals
         model.setObjective(gp.quicksum(duals[i] * a[i] for i in items), GRB.MAXIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="pricing", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Pricing problem not optimal (status={model.Status})")
 
         z_price = float(model.ObjVal)
         pattern = [round(a[i].X) for i in items]
-        reduced_cost = 1.0 - z_price
+        reduced_cost = 1.0 - float(model.ObjBound)
 
-        return PricingResult(pattern=pattern, reduced_cost=reduced_cost, metadata={"dual_value": z_price})
+        return PricingResult(pattern=pattern, reduced_cost=reduced_cost, metadata={"dual_value": z_price, "lp_bound": master_solution.objective / max(1.0, float(model.ObjBound))})
+
 
     def solve_integer_master(
         self,
@@ -127,6 +130,8 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
 
         model = gp.Model("csp_master_int")
         model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.master_params.items():
+            model.setParam(k, v)
 
         x = model.addVars(P, vtype=GRB.INTEGER, lb=0, name="x")
 
@@ -134,8 +139,8 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
             model.addConstr(gp.quicksum(patterns[p][i] * x[p] for p in P) >= demands[i], name=f"demand_{i}")
 
         model.setObjective(gp.quicksum(x[p] for p in P), GRB.MINIMIZE)
-        model.optimize()
-        if model.Status != GRB.OPTIMAL:
+        self.runtime.optimize(model, role="integer_master", allow_incumbent=True)
+        if model.SolCount == 0:
             raise RuntimeError(f"Integer master not optimal (status={model.Status})")
 
         usage_dict: dict[int, float] = {}
