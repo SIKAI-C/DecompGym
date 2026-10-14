@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 
 
-OUTPUT_CONTRACT_POLICY = "prompt-output-contract-v1"
+OUTPUT_CONTRACT_POLICY = "strict-decomposition-output-contract-v2"
 
 
 def finite_number(value):
@@ -38,8 +38,6 @@ def validate_output_contract(suite, problem, data, output):
 
     require(output, "status", lambda v: isinstance(v, str) and v in {"optimal", "feasible", "infeasible", "error"}, "a documented status string")
     methods = {"column_generation"} if suite == "cg" else {"benders_decomposition"}
-    if problem == "fctp":
-        methods.add("monolithic")  # Explicitly permitted by this prompt; the algorithm judge remains separate.
     require(output, "method", lambda v: isinstance(v, str) and v in methods, "a method permitted by the problem prompt")
     require(output, "objective_value", finite_number, "a finite JSON number")
 

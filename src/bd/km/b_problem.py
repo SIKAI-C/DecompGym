@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 BASE_PROMPT_KM = """You are an expert operations research engineer and Python programmer.
 
@@ -29,12 +31,10 @@ Cost rows:
 {D}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) Loads data.json.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes output.json with at least:
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
     {{
       "status": "optimal | feasible | infeasible | error",
       "method": "benders_decomposition",
@@ -42,6 +42,8 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
       "y": [0/1 list length m],
       "x": [[assignment matrix m x n]]
     }}
+
+{method_requirements}
 """
 
 
@@ -62,4 +64,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         Xc=_fmt_matrix("Xc", data.get("Xc", [])),
         Xf=_fmt_matrix("Xf", data.get("Xf", [])),
         D=_fmt_matrix("D", data.get("D", [])),
+        method_requirements=method_requirements("bd"),
     )

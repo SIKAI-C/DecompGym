@@ -7,14 +7,16 @@ import json
 from pathlib import Path
 
 from src.agent.algorithm_verifier import algorithm_review_prompt
+from src.agent.decomposition_policy import DECOMPOSITION_POLICY
 from src.agent.output_contract import OUTPUT_CONTRACT_POLICY
 from src.agent.prompt_policy import REFLECTION_POLICY
 
 
 PROMPT_PROTOCOL = {
-    "problem_templates": "reviewed-problem-prompts-20261013-v1",
+    "decomposition_contract": DECOMPOSITION_POLICY,
+    "problem_templates": "instance-bound-decomposition-prompts-20261013-v3",
     "runtime_location": "separate-edit-runtime-v1",
-    "algorithm_judge": "reachable-decomposition-source-review-v1",
+    "algorithm_judge": "strict-decomposition-source-review-v2",
     "output_contract": OUTPUT_CONTRACT_POLICY,
     "reflection_delivery": REFLECTION_POLICY,
 }

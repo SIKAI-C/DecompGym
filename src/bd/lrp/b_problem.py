@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 BASE_PROMPT_LRP = """You are an expert operations research engineer and Python programmer.
 
@@ -34,12 +36,10 @@ Example routes:
 {routes}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) Reads data.json.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes output.json with at least:
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
     {{
       "status": "optimal | feasible | infeasible | error",
       "method": "benders_decomposition",
@@ -48,6 +48,8 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
       "lambda": [0/1 list of length R]  # feasible integer routing plan; LP relaxations may be used during cut generation
     }}
 Each y element corresponds to one depot: 1 means open and 0 means closed.
+
+{method_requirements}
 """
 
 
@@ -74,4 +76,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         depot_cost=_fmt_vector("depot_cost", data.get("depot_cost", [])),
         max_vehicles=_fmt_vector("max_vehicles", data.get("max_vehicles", [])),
         routes=_fmt_routes(data.get("routes", []), data.get("route_depot", [])),
+        method_requirements=method_requirements("bd"),
     )

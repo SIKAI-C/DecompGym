@@ -182,7 +182,7 @@ class PairedRunner(ExperimentRunner):
 
     def generation_prompt(self, instance):
         prompt = PromptBuilder.ensure_location_prompt((instance / "prompt.txt").read_text())
-        prompt += "\n\nImplement a standalone solver.py using gurobipy and standard Python libraries. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
+        prompt += "\n\nImplement a standalone solver.py using gurobipy, NumPy, and the Python standard library. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
         prompt += f"\nThe harness limits the entire solver.py execution to {self.solver_timeout} seconds and numerical solvers to {self.solver_threads} thread(s). Design your algorithm and termination handling within this budget."
         return prompt
 

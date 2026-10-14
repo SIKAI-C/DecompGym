@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 BASE_PROMPT_TSSO = """You are an expert operations research engineer and Python programmer.
 
@@ -51,12 +53,10 @@ Initial backlog B0:
 {B0}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) Loads data.json.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes output.json with at least:
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
     {{
     "status": "optimal | feasible | infeasible | error",
     "method": "benders_decomposition",
@@ -67,6 +67,8 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
     "inv": [[[...]]],      # shape (n_products, n_periods, n_scenarios)
     "back": [[[...]]]      # shape (n_products, n_periods, n_scenarios)
     }}
+
+{method_requirements}
 """
 
 
@@ -125,4 +127,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         demand=_fmt_demand(data.get("demand", [])),
         I0=_fmt_vector("I0", data.get("I0", [])),
         B0=_fmt_vector("B0", data.get("B0", [])),
+        method_requirements=method_requirements("bd"),
     )

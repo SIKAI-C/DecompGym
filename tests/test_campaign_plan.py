@@ -14,7 +14,7 @@ from src.runtime_environment import RuntimeEnvironmentError, require_runtime_env
 from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes
 
 
-PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-12-experiment-plan.json"
+PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-13-strict-decomposition-experiment-plan.json"
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +93,7 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path, optional
     dashboard = Dashboard(root).snapshot()
     assert [m["id"] for m in dashboard["models"]] == [item["model"] for item in queue if not model_exclusion(item["model"])]
     claude = next(m for m in dashboard["models"] if m["id"] == "claude-sonnet-5-5")
-    assert claude["backend"] == "Claude Code" and claude["effort"] == "High"
+    assert claude["backend"] == "Claude Code" and claude["effort"] == "Medium"
     assert dashboard["totals"]["planned"] == 81 * (len(queue) - 1)
     assert dashboard["historical_reference"]["model"] == "gpt-6-astra"
     with pytest.raises(ProtocolError, match="existing experiments are preserved"):
@@ -142,3 +142,9 @@ def test_plan_rejects_silent_protocol_changes(tmp_path, field, value):
     save(path, plan)
     with pytest.raises(ProtocolError):
         load_plan(path)
+
+
+def test_strict_controller_rejects_predecessor_prompt_plan():
+    old = PLAN.with_name("2026-10-12-experiment-plan.json")
+    with pytest.raises(ProtocolError, match="prompt and output contracts|problem, judge, and output contracts"):
+        load_plan(old)

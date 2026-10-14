@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 SIZE_FLAVOR = "a logistics provider packing items into identical bins for shipment"
 
@@ -27,7 +29,7 @@ Examples from this instance:
 {item_lines}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) loads data.json,
 2) Implements a Column Generation to solve the bin-packing problem.
 3) writes output.json with at least:
@@ -52,6 +54,8 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
   }}
 }}
   Each item id from data.json must appear exactly once across the bins (count=1 for single items).
+
+{method_requirements}
 """
 
 
@@ -80,4 +84,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         bin_unit=bin_unit,
         scenario=scenario,
         item_lines=_fmt_items(items),
+        method_requirements=method_requirements("cg"),
     )

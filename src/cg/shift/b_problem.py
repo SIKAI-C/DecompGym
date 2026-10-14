@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 SIZE_FLAVOR = "an operation scheduling staff shifts to cover time-varying demand"
 
@@ -27,7 +29,7 @@ Sample demand (slot label : demand):
 {demand_lines}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) loads data.json,
 2) Implements a Column Generation to solve the shift-cover problem,
 3) writes output.json with at least:
@@ -47,6 +49,8 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
   }}
 }}
 Each shift covers its contiguous slots fully; across all shifts (counting usage) every slot demand must be met.
+
+{method_requirements}
 """
 
 
@@ -68,4 +72,5 @@ def render_prompt(data: dict[str, Any]) -> str:
     return BASE_PROMPT_SHIFT.format(
         scenario=_scenario(data.get("instance_size", "medium")),
         demand_lines=_fmt_demand(data.get("time_slots", []), data.get("demand", [])),
+        method_requirements=method_requirements("cg"),
     )
