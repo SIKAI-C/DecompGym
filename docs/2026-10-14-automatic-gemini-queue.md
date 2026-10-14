@@ -1,0 +1,11 @@
+# Automatic Gemini queue visibility, October 14
+
+The user reiterated that Gemini should be queued and all remaining experiments should continue unattended while the laptop is left running. The verified private continuation helper was already armed; no additional launch, credential input, model change, or experiment restart was needed. The remaining sequence is Claude Opus → Claude Sonnet → Gemini Flash → Gemini Pro, stopping only on completion or a later user pause.
+
+The localhost dashboard now displays both Gemini models as Queued with an After Claude · automatic note while the matching private helper is alive and owns its lock. It checks the cohort protocol, credential-verification flag, full-model authorization, original watchdog association, expected current scope and user pause/STOP guard. A stale or unverified helper does not produce an automatic-queue claim. The ordinary completed-scope handoff remains eligible for continuation.
+
+While that continuation is armed, the headline progress and remaining counts cover the full eligible nine-model/729-pair queue. The underlying current controller scope remains separately recorded as seven included GPT/Claude models/567 pairs. After the all-model controller starts, its ordinary full scope supplies the same denominator. A user pause disables the pending handoff indicator. This is monitoring presentation only; the frozen controller, prompts, source data and raw experiment records remain unchanged.
+
+Only the dashboard service was reloaded at 12:44 EDT. Controller PID 80550, watchdog 38006, private Gemini helper 93734 and hourly scheduler 39804 remained alive with unchanged identities. The live API returned both Gemini models as queued and automatic_continuation.armed true, with progress 480/729 at verification. Evidence is `outputs/experiments/fixed81_strict_decomposition_20261013_r1/operations/gemini_queue_display_20261014/verified.json`.
+
+Validation: 26 focused dashboard/reporting tests passed, including live versus stale helper, lock ownership, protocol/scope mismatch, missing credential verification, user pause, STOP, and normal scope-boundary continuation cases. JavaScript syntax and live asset/API checks passed. No model inference was submitted by this UI change and no experiment process was stopped or restarted.

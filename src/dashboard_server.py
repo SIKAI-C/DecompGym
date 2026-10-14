@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
+import fcntl
 import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
@@ -163,6 +164,32 @@ class Dashboard:
         if not isinstance(result, dict):
             raise ValueError("Campaign manifest is not available")
         return result
+
+    def automatic_continuation(self, manifest, scope_ids):
+        """Show the later AGY models as queued only while their private helper is live."""
+        record = self.cache.read(self.root / "operations/private_launch.json", {})
+        pause = self.cache.read(self.root / "pause_request.json", {})
+        watchdog = self.cache.read(self.root / "watchdog.json", {})
+        inactive = {"armed": False, "models": []}
+        expected_scope = [item["model"] for item in model_queue(manifest) if item["backend"] != "agy-cli"]
+        user_paused = (self.root / "STOP").exists() or (pause.get("resume_requires_explicit_user_request") and pause.get("reason") != "launch_scope_complete")
+        if (user_paused or record.get("state") != "waiting_for_GPT_Claude_scope"
+                or not record.get("credential_verified") or not record.get("all_models")
+                or record.get("protocol_id") != manifest.get("protocol_id")
+                or record.get("preceding_watchdog_pid") != watchdog.get("pid")
+                or scope_ids != expected_scope or process_alive(record.get("helper_pid")) is not True):
+            return inactive
+        try:
+            with (self.root / "operations/private_launch.lock").open("r") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    models = [item["model"] for item in model_queue(manifest) if item["backend"] == "agy-cli" and not model_exclusion(item["model"], manifest)]
+                    return {"armed": bool(models), "models": models, "helper_pid": record["helper_pid"]}
+                fcntl.flock(lock, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        return inactive
 
     def case_directory(self, model, instance):
         manifest = self.manifest()
@@ -400,6 +427,12 @@ class Dashboard:
                     model["in_current_scope"] = model["id"] in scope_ids
                     if not model["in_current_scope"] and model["state"] == "queued":
                         model["state"] = "later"
+            continuation = self.automatic_continuation(manifest, scope_ids)
+            snapshot["automatic_continuation"] = continuation
+            if continuation["armed"]:
+                for model in models:
+                    if model["id"] in continuation["models"] and model["state"] == "later":
+                        model.update(state="queued", queue_note="After Claude · automatic")
             snapshot["reporting_manifest"] = manifest
             snapshot["reporting_exclusions"] = [dict(value) for model, value in MODEL_EXCLUSIONS.items() if model in [item["model"] for item in queue] and model_exclusion(model, manifest)]
             snapshot["latest_report"] = self.latest_report()

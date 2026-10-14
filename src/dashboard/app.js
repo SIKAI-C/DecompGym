@@ -70,6 +70,7 @@ function renderModels(data) {
     const loginNote = model.backend === "AGY" && model.state === "awaiting_setup" ? " · Login verified" : "";
     first.append(button, node("div", `${model.backend} · ${model.effort}${loginNote}`, "model-setting"));
     const status = cell(); status.append(badge(labels[model.state] || model.state, model.state));
+    if (model.queue_note) status.append(node("div", model.queue_note, "model-setting"));
     const terminalFailures = Object.values(model.policy_terminal_failures || {}).reduce((sum, value) => sum + value, 0);
     if (terminalFailures) status.append(node("div", `${terminalFailures} policy ended as failure`, "model-setting"));
     if (model.state === "awaiting_setup") status.title = "Google sign-in and the model catalog were verified. Connecting AGY to benchmark execution and isolation is still pending.";
@@ -78,7 +79,7 @@ function renderModels(data) {
   }
   $("models").replaceChildren(fragment);
   $("model-count").textContent = `${data.models.length + (history ? 1 : 0)} configurations`;
-  $("model-note").textContent = "Progress counts completed plain + reflection pairs. Pass rate uses the shared first attempt." + (history ? " Historical Luna remains separate." : "") + (data.execution_scope ? " Later-run models are outside the current execution scope." : "");
+  $("model-note").textContent = "Progress counts completed plain + reflection pairs. Pass rate uses the shared first attempt." + (history ? " Historical Luna remains separate." : "") + (data.automatic_continuation?.armed ? " Gemini starts automatically after Claude." : data.execution_scope && data.execution_scope.planned < data.totals.planned ? " Later-run models are outside the current execution scope." : "");
   if (data.reporting_exclusions?.length) $("model-note").textContent += " Only included models are shown and counted.";
 }
 
@@ -180,9 +181,11 @@ function render(data) {
   latest = data;
   $("run-state").replaceWith(Object.assign(badge(labels[data.state] || data.state, data.state), {id: "run-state"}));
   $("subtitle").textContent = `${data.protocol.instances} fixed instances · ${data.protocol.families} problem families · ${data.models.length} new model configurations`;
-  const scope = data.execution_scope || data.totals;
-  $("progress-label").textContent = data.execution_scope ? "Current run · completed pairs" : "Completed policy pairs";
-  $("remaining-label").textContent = data.execution_scope ? "Remaining in this run" : "Remaining";
+  const automatic = Boolean(data.automatic_continuation?.armed);
+  const allSelected = data.execution_scope?.planned === data.totals.planned;
+  const scope = automatic ? data.totals : data.execution_scope || data.totals;
+  $("progress-label").textContent = automatic || allSelected ? "Full queue · completed pairs" : data.execution_scope ? "Current run · completed pairs" : "Completed policy pairs";
+  $("remaining-label").textContent = automatic || allSelected ? "Remaining in queue" : data.execution_scope ? "Remaining in this run" : "Remaining";
   $("completed").textContent = num(scope.completed); $("planned").textContent = `/ ${num(scope.planned)}`;
   $("remaining").textContent = num(scope.remaining); $("pass-rate").textContent = pct(data.totals.pass_rate);
   $("pass-caption").textContent = `${num(data.totals.passed)} passed · ${num(data.totals.failed)} not passed, on the shared first attempt`;
@@ -191,8 +194,8 @@ function render(data) {
   $("total-progress").max = scope.planned; $("total-progress").value = scope.completed;
   const codex = data.models.filter((model) => model.backend === "Codex").reduce((sum, model) => sum + (model.remaining_pairs ?? model.remaining), 0);
   const agy = data.models.filter((model) => model.backend === "AGY").reduce((sum, model) => sum + (model.remaining_pairs ?? model.remaining), 0);
-  $("remaining-caption").textContent = data.execution_scope ? `${data.execution_scope.models.length} selected models · pauses at scope completion` : `${num(codex)} Codex · ${num(agy)} AGY`;
-  $("progress-caption").textContent = data.execution_scope ? `Full cohort: ${num(data.totals.completed)} / ${num(data.totals.planned)} pairs` : `${pct(data.totals.completed / data.totals.planned)} of policy pairs complete`;
+  $("remaining-caption").textContent = automatic ? `${data.models.length} models · continues automatically` : allSelected ? `${data.models.length} models in this queue` : data.execution_scope ? `${data.execution_scope.models.length} selected models · pauses at scope completion` : `${num(codex)} Codex · ${num(agy)} AGY`;
+  $("progress-caption").textContent = automatic ? "Gemini starts automatically after Claude." : allSelected ? "All scheduled models are included." : data.execution_scope ? `Full cohort: ${num(data.totals.completed)} / ${num(data.totals.planned)} pairs` : `${pct(data.totals.completed / data.totals.planned)} of policy pairs complete`;
   $("report-link").hidden = !data.latest_report;
   if (data.latest_report) $("report-link").title = `Saved report snapshot: ${new Date(data.latest_report.saved_at).toLocaleString()}`;
   $("alerts").replaceChildren(...data.alerts.map((item) => node("div", item.text, `alert ${item.kind}`)));

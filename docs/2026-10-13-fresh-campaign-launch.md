@@ -1,5 +1,7 @@
 # Fresh strict-decomposition campaign, October 13
 
+**October 14 automatic queue display:** Gemini Flash and Pro are now shown as Queued when the verified private handoff is live. The headline counter covers all 729 eligible pairs, and Gemini starts automatically after Claude. The running controller and handoff were not restarted. See [2026-10-14-automatic-gemini-queue.md](2026-10-14-automatic-gemini-queue.md).
+
 **October 14 reporting update:** the user excluded GPT-5.6 Sol from the experiments and dashboard while retaining all raw records. The reported cohort is now 9 models/729 pairs, with 7 included GPT/Claude models/567 pairs before Gemini. Sol had already finished all 81 pairs and will not rerun. The original 10-model/810-pair frozen identity remains unchanged. Read [2026-10-14-sol-exclusion.md](2026-10-14-sol-exclusion.md); this supersedes the fresh-Sol eligibility described below.
 
 The user explicitly authorized a new campaign from zero after reviewing the merged implementation, including GPT-6 Astra, GPT-6 Sol and GPT-5.6 Sol, with GPT first, Claude second, Gemini last. This authorization continues until completion or a later user stop; it also includes a localhost dashboard, continuous resource monitoring and hourly agent reviews. The old 31-pair campaign and every older campaign remain paused and excluded from this cohort.
