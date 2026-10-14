@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from src.utils.reference_runtime import ReferenceLimit
 from src.utils.base_cg_class import (
     BaseColumnGeneration,
     IntegerMasterSolution,
@@ -101,7 +102,7 @@ def test_gap_pricing_time_limit_is_not_reported_as_convergence():
         {"pi": [0.0] * len(inst.jobs), "sigma": [0.0] * len(inst.machines)},
     )
     try:
-        with pytest.raises(RuntimeError, match="GAP pricing problem not optimal"):
+        with pytest.raises(ReferenceLimit, match="pricing reached its time limit"):
             solver.solve_pricing(inst, master, [])
     except gp.GurobiError as exc:
         if exc.errno == gp.GRB.Error.NO_LICENSE:

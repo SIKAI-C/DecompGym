@@ -36,8 +36,9 @@ class KMedianBenders(BaseBenders[KMedianInstance, KMedianMasterState, None, KMed
         subproblem_params: dict[str, Any] | None = None,
         max_iters: int = 250,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.subproblem_params = subproblem_params or {}
 
@@ -58,8 +59,8 @@ class KMedianBenders(BaseBenders[KMedianInstance, KMedianMasterState, None, KMed
         return KMedianMasterState(model=model, y=y, z=z)
 
     def solve_master(self, inst: KMedianInstance, master: KMedianMasterState) -> MasterSolution[KMedianMasterState]:
-        master.model.optimize()
-        if master.model.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        self.runtime.optimize(master.model, role="master", allow_incumbent=False)
+        if master.model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master solve failed (status={master.model.Status})")
 
         y_val = np.asarray(master.y.X, dtype=float)
@@ -72,7 +73,9 @@ class KMedianBenders(BaseBenders[KMedianInstance, KMedianMasterState, None, KMed
             objective=float(master.model.ObjVal),
             vars=vars_dict,
             master_state=master,
+            bound=float(master.model.ObjBound),
         )
+
 
     def _solve_subproblem(
         self,
@@ -93,7 +96,7 @@ class KMedianBenders(BaseBenders[KMedianInstance, KMedianMasterState, None, KMed
         link_constr = model.addConstrs((x[i, j] <= float(y_vals[i]) for i in range(m) for j in range(n)), name="link")
 
         model.setObjective((inst.D * x).sum(), GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="recourse_lp", allow_incumbent=False)
 
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Subproblem not optimal (status={model.Status})")
@@ -106,6 +109,7 @@ class KMedianBenders(BaseBenders[KMedianInstance, KMedianMasterState, None, KMed
         beta_sum = np.minimum(beta.sum(axis=1), 0.0)
         x_val = np.asarray(x.X, dtype=float)
         return float(model.ObjVal), alpha, beta_sum, x_val
+
 
     def solve_subproblems(
         self,
@@ -148,7 +152,7 @@ class KMedianBenders(BaseBenders[KMedianInstance, KMedianMasterState, None, KMed
         sub_result: SubproblemResult[None, KMedianOptCut],
     ) -> tuple[float, float]:
         # Master objective is LB (z); UB from subproblem cost.
-        lb_candidate = master_solution.objective
+        lb_candidate = master_solution.bound if master_solution.bound is not None else master_solution.objective
         ub_candidate = sub_result.sub_bound if sub_result.sub_bound is not None else lb_candidate
 
         if math.isinf(self.global_lb):

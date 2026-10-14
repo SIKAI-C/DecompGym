@@ -36,8 +36,10 @@ class TSSOBenders(BaseBenders[TSSOInstance, TSSOMasterState, None, TSSOOptCut]):
         subproblem_params: dict[str, Any] | None = None,
         max_iters: int = 200,
         verbose: bool = False,
+        time_limit: float = 60.0,
+        target_gap: float = 0.005,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit, target_gap=target_gap)
         self.master_params = master_params or {}
         self.subproblem_params = subproblem_params or {}
 
@@ -58,8 +60,8 @@ class TSSOBenders(BaseBenders[TSSOInstance, TSSOMasterState, None, TSSOOptCut]):
         return TSSOMasterState(model=model, y=y, theta=theta)
 
     def solve_master(self, inst: TSSOInstance, master: TSSOMasterState) -> MasterSolution[TSSOMasterState]:
-        master.model.optimize()
-        if master.model.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        self.runtime.optimize(master.model, role="master", allow_incumbent=False)
+        if master.model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master solve failed (status={master.model.Status})")
 
         y_val = np.asarray(master.y.X, dtype=float)
@@ -74,7 +76,9 @@ class TSSOBenders(BaseBenders[TSSOInstance, TSSOMasterState, None, TSSOOptCut]):
             objective=float(master.model.ObjVal),
             vars=vars_dict,
             master_state=master,
+            bound=float(master.model.ObjBound),
         )
+
 
     def _solve_subproblem(
         self,
@@ -112,7 +116,7 @@ class TSSOBenders(BaseBenders[TSSOInstance, TSSOMasterState, None, TSSOOptCut]):
             (inst.c_reg * x_reg).sum() + (inst.c_ot * x_ot).sum() + (inst.h * inv).sum() + (inst.b * back).sum(),
             sense=GRB.MINIMIZE,
         )
-        model.optimize()
+        self.runtime.optimize(model, role="recourse_lp", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Subproblem not optimal (status={model.Status})")
 
@@ -134,6 +138,7 @@ class TSSOBenders(BaseBenders[TSSOInstance, TSSOMasterState, None, TSSOOptCut]):
             "back": np.asarray(back.X, dtype=float),
         }
         return float(model.ObjVal), alpha, grad, primals
+
 
     def solve_subproblems(
         self,
@@ -190,7 +195,7 @@ class TSSOBenders(BaseBenders[TSSOInstance, TSSOMasterState, None, TSSOOptCut]):
         sub_result: SubproblemResult[None, TSSOOptCut],
     ) -> tuple[float, float]:
         # Master objective is LB; UB from first-stage cost + expected recourse.
-        lb_candidate = master_solution.objective
+        lb_candidate = master_solution.bound if master_solution.bound is not None else master_solution.objective
         y_vals = np.array(
             [master_solution.vars[f"y_{i}_{t}"] for i in range(inst.n_products) for t in range(inst.n_periods)],
             dtype=float,

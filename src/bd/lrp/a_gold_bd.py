@@ -43,8 +43,9 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
         integer_params: dict[str, Any] | None = None,
         max_iters: int = 250,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.subproblem_params = subproblem_params or {}
         self.integer_params = integer_params or {}
@@ -66,8 +67,8 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
         return LRPMasterState(model=model, y=y, z=z)
 
     def solve_master(self, inst: LRPInstance, master: LRPMasterState) -> MasterSolution[LRPMasterState]:
-        master.model.optimize()
-        if master.model.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        self.runtime.optimize(master.model, role="master", allow_incumbent=False)
+        if master.model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Master solve failed (status={master.model.Status})")
 
         y_val = np.asarray(master.y.X, dtype=float)
@@ -79,7 +80,9 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
             objective=float(master.model.ObjVal),
             vars=vars_dict,
             master_state=master,
+            bound=float(master.model.ObjBound),
         )
+
 
     def _solve_subproblem(
         self,
@@ -111,11 +114,11 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
                 )
 
         model.setObjective(inst.route_cost @ lam, GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="recourse_lp", allow_incumbent=False)
 
         if model.Status == GRB.INF_OR_UNBD:
             model.setParam(GRB.Param.DualReductions, 0)
-            model.optimize()
+            self.runtime.optimize(model, role="recourse_lp", allow_incumbent=False)
 
         if model.Status == GRB.INFEASIBLE:
             alpha = -np.array([cover_constr[i].FarkasDual for i in range(n)], dtype=float)
@@ -124,7 +127,7 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
                 beta[j] = -constr.FarkasDual
             return None, alpha, beta, None, False
 
-        if model.Status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Subproblem not solved (status={model.Status})")
 
         alpha = np.array([cover_constr[i].Pi for i in range(n)], dtype=float)
@@ -133,6 +136,7 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
             beta[j] = constr.Pi
         lam_val = np.asarray(lam.X, dtype=float)
         return float(model.ObjVal), alpha, beta, lam_val, True
+
 
     def _solve_integer_recourse(
         self, inst: LRPInstance, y_vals: np.ndarray
@@ -157,14 +161,15 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
                 model.addConstr(gp.quicksum(lam[r] for r in routes_j) <= inst.max_vehicles[j] * y_vals[j])
 
         model.setObjective(inst.route_cost @ lam, GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="integer_recourse", allow_incumbent=True)
 
         status = model.Status
-        if status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL) or model.SolCount == 0:
+        if model.SolCount == 0:
             return None, None, status
 
         lam_val = np.asarray(lam.X, dtype=float)
         return float(model.ObjVal), lam_val, status
+
 
     def solve_subproblems(
         self,
@@ -250,7 +255,7 @@ class LRPBenders(BaseBenders[LRPInstance, LRPMasterState, LRPFeasCut, LRPOptCut]
         if not sub_result.all_feasible or sub_result.sub_bound is None:
             return self.global_lb, self.global_ub
 
-        lb_candidate = master_solution.objective
+        lb_candidate = master_solution.bound if master_solution.bound is not None else master_solution.objective
         depot_term = float(sum(inst.depot_cost[j] * master_solution.vars[f"y_{j}"] for j in range(inst.m)))
         int_cost = sub_result.metadata.get("int_route_cost") if sub_result.metadata else None
         ub_candidate = depot_term + int_cost if int_cost is not None else math.inf

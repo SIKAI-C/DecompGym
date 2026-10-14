@@ -36,8 +36,9 @@ class ShiftColumnGeneration(BaseColumnGeneration[ShiftInstance, tuple[int, int]]
         max_iters: int = 200,
         rc_tol: float = 1e-6,
         verbose: bool = False,
+        time_limit: float = 60.0,
     ) -> None:
-        super().__init__(max_iters=max_iters, verbose=verbose)
+        super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
         self.master_params = master_params or {}
         self.rc_tolerance = rc_tol
         self._all_patterns: list[tuple[int, int]] | None = None
@@ -78,12 +79,13 @@ class ShiftColumnGeneration(BaseColumnGeneration[ShiftInstance, tuple[int, int]]
             demand_constrs.append(cstr)
 
         model.setObjective(gp.quicksum(lam[p] for p in P), GRB.MINIMIZE)
-        model.optimize()
+        self.runtime.optimize(model, role="restricted_master", allow_incumbent=False)
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Shift master LP not optimal (status={model.Status})")
 
         duals = [c.Pi for c in demand_constrs]
         return MasterLPSolution(objective=float(model.ObjVal), duals=duals)
+
 
     def solve_pricing(
         self,
@@ -105,7 +107,7 @@ class ShiftColumnGeneration(BaseColumnGeneration[ShiftInstance, tuple[int, int]]
                 best_rc = rc
                 best_pat = pat
 
-        return PricingResult(pattern=best_pat, reduced_cost=best_rc)
+        return PricingResult(pattern=best_pat, reduced_cost=best_rc, metadata={"lp_bound": master_solution.objective / max(1.0, 1.0 - best_rc)})
 
     def solve_integer_master(
         self,
@@ -118,6 +120,8 @@ class ShiftColumnGeneration(BaseColumnGeneration[ShiftInstance, tuple[int, int]]
 
         model = gp.Model("shift_master_int")
         model.Params.OutputFlag = 1 if self.verbose else 0
+        for k, v in self.master_params.items():
+            model.setParam(k, v)
 
         x = model.addVars(P, vtype=GRB.INTEGER, lb=0, name="x")
         for t in slots:
@@ -127,8 +131,8 @@ class ShiftColumnGeneration(BaseColumnGeneration[ShiftInstance, tuple[int, int]]
             )
 
         model.setObjective(gp.quicksum(x[p] for p in P), GRB.MINIMIZE)
-        model.optimize()
-        if model.Status != GRB.OPTIMAL:
+        self.runtime.optimize(model, role="integer_master", allow_incumbent=True)
+        if model.SolCount == 0:
             raise RuntimeError(f"Shift integer master not optimal (status={model.Status})")
 
         usage: dict[int, float] = {}
