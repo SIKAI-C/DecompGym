@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 
 VARIABLE = "DECOMPBENCH_AGY_KEYRING_PASSPHRASE"
@@ -49,6 +50,26 @@ def authorize_handoff(root, manifest):
     save(root / "pause_request.json", pause)
 
 
+def verify_private_credential(root, manifest):
+    """Verify the existing encrypted login offline, without submitting inference."""
+    from src.hybrid_runtime import runtime
+    from src.agent.docker_client import AUTH_VOLUMES
+    engine = runtime()
+    engine.bind_environment(manifest["execution_environment"])
+    # Keep this small, bounded authentication check outside the experiment sampler.
+    engine.LABEL = "io.decompbench.private-auth-check"
+    volume = AUTH_VOLUMES["agy-cli"]
+    engine.ensure_volume(volume, "agy-native-auth", label="io.decompbench.purpose", create=False)
+    directory = root / "operations/private_auth_checks" / uuid.uuid4().hex
+    result = engine.run(manifest["execution_environment"]["image_id"], ["auth-check", "agy-cli"], payload={"credential": {"keyring_passphrase": os.environ[VARIABLE]}}, state_path=directory / "container.json", timeout=60, network="none", cpus=0.25, memory="256m", volumes={volume: "/auth/keyrings"})
+    observed = json.loads(result.stdout) if result.returncode == 0 else {}
+    if not observed.get("credential_loaded") or not result.metadata.get("cleanup_verified"):
+        raise RuntimeError("AGY keyring unlock failed; recheck the hidden passphrase in your local Terminal")
+    report = {"checked_at": datetime.now(timezone.utc).isoformat(), "credential_verified": True, "inference_submitted": False, "cleanup_verified": True, "passphrase_persisted": False}
+    save(directory / "report.json", report)
+    return str(directory / "report.json")
+
+
 def background_launch(root):
     sys.path.insert(0, str(root / "controller"))
     from src.native_campaign import validate, ensure_execution_allowed
@@ -59,6 +80,15 @@ def background_launch(root):
         if gate.get("protocol_id") != manifest["protocol_id"] or not os.environ.get(VARIABLE):
             raise RuntimeError("Private launch does not match the reviewed cohort")
         receipt = {"requested_at": datetime.now(timezone.utc).isoformat(), "helper_pid": os.getpid(), "protocol_id": manifest["protocol_id"], "all_models": True, "passphrase_persisted": False}
+        receipt.update(state="checking_private_credential", credential_verified=False)
+        save(root / "operations/private_launch.json", receipt)
+        try:
+            proof = verify_private_credential(root, manifest)
+        except Exception as error:
+            receipt.update(state="credential_verification_failed", error_type=type(error).__name__)
+            save(root / "operations/private_launch.json", receipt)
+            raise SystemExit("Private AGY unlock check failed; no experiment was interrupted. Recheck the hidden passphrase or the nonsecret diagnostic.") from None
+        receipt.update(credential_verified=True, credential_verification_report=proof)
         prior = read(root / "watchdog.json")
         if alive(prior.get("pid")):
             expected = [item["model"] for item in manifest["model_queue"] if item["backend"] != "agy-cli"]
@@ -107,7 +137,20 @@ def main():
     with (root / "operations/private_launch.log").open("a") as log:
         helper = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--root", str(root), "--private-background"], env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     environment.pop(VARIABLE, None)
-    print(f"Private launcher started (PID {helper.pid}); no passphrase saved. It will preserve any active GPT/Claude instances and continue with Gemini when ready. Monitor: http://localhost:8769")
+    print("Checking the saved AGY login with your hidden passphrase; no model call is being made.", flush=True)
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        receipt = read(root / "operations/private_launch.json")
+        if receipt.get("helper_pid") == helper.pid:
+            if receipt.get("credential_verified") and receipt.get("state") in ("waiting_for_GPT_Claude_scope", "launched"):
+                print(f"Gemini keyring verified. Background continuation is armed (PID {helper.pid}); you can close this Terminal. No passphrase was saved. Monitor: http://localhost:8769")
+                return
+            if receipt.get("state") == "credential_verification_failed":
+                raise SystemExit("AGY unlock verification failed; no running instance was interrupted. Recheck the benchmark keyring passphrase.")
+        if helper.poll() is not None:
+            raise SystemExit("Private launcher exited before arming the handoff. Inspect operations/private_launch.log for its nonsecret status.")
+        time.sleep(0.25)
+    raise SystemExit("Private verification is still pending. Check operations/private_launch.json before assuming Gemini is ready.")
 
 
 if __name__ == "__main__":
