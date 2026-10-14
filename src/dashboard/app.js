@@ -8,6 +8,8 @@ let detailRequest = 0;
 const labels = {running: "Running", recovering: "Recovering", draining_for_recovery: "Saving before recovery", complete: "Complete", queued: "Queued", in_progress: "In progress", awaiting_setup: "Runner pending", cooling: "Cooling", stopped: "Stopped", infrastructure_stopped: "Needs attention", resource_stopped: "Resource stop", supervisor_offline: "Supervisor offline", heartbeat_stale: "Heartbeat stale", gpt_complete_waiting_for_agy: "GPT complete · AGY pending", not_started: "Not started"};
 labels.draining_for_pause = "Finishing current cases";
 labels.paused = "Paused";
+labels.later = "Later run";
+labels.repair_required = "Needs repair";
 const outcomeLabels = {ok: "Passed", timeout: "Timed out", agent_failed: "Generation failed", exec_failed: "Execution failed", verify_failed: "Check failed", feasible_not_optimal: "Gap above limit", objective_not_available: "No objective", reference_unavailable: "No reference"};
 const num = (value, digits = 6) => value === null || value === undefined ? "—" : new Intl.NumberFormat(undefined, {maximumFractionDigits: digits}).format(value);
 const pct = (value, digits = 1) => value === null || value === undefined ? "—" : `${num(value * 100, digits)}%`;
@@ -76,8 +78,8 @@ function renderModels(data) {
   }
   $("models").replaceChildren(fragment);
   $("model-count").textContent = `${data.models.length + (history ? 1 : 0)} configurations`;
-  $("model-note").textContent = "Progress counts completed plain + reflection pairs. Pass rate uses the shared first attempt. Historical Luna remains separate." + (data.models.some((model) => model.state === "awaiting_setup") ? " AGY login is verified; the benchmark runner is not yet connected." : "");
-  if (data.reporting_exclusions?.length) $("model-note").textContent += ` ${data.reporting_exclusions.map((entry) => entry.name).join(", ")} excluded pending reproducibility review.`;
+  $("model-note").textContent = "Progress counts completed plain + reflection pairs. Pass rate uses the shared first attempt." + (history ? " Historical Luna remains separate." : "") + (data.execution_scope ? " Later-run models are outside the current execution scope." : "");
+  if (data.reporting_exclusions?.length) $("model-note").textContent += ` Historical ${data.reporting_exclusions.map((entry) => entry.name).join(", ")} results are excluded.`;
 }
 
 function renderWorkers(data) {
@@ -89,13 +91,15 @@ function renderWorkers(data) {
     card.append(top, node("h3", worker.model_name), node("div", worker.instance, "worker-instance"), node("div", worker.supervisor_active ? worker.phase : `Last checkpoint: ${worker.phase}`, "worker-phase"));
     fragment.append(card);
   }
-  for (let index = data.active_workers.length; index < data.protocol.workers; index++) {
+  for (let index = 0; index < data.protocol.workers; index++) {
+    if (data.active_workers.some((worker) => worker.worker === `experiment_${index}`)) continue;
     const card = node("article", null, "worker-card idle");
     card.append(node("div", `WORKER ${index + 1}`, "worker-top"), node("p", data.state === "running" ? "Ready for the next case" : "No active case"));
     fragment.append(card);
   }
   $("workers").replaceChildren(fragment);
-  $("worker-live").className = `live-dot${data.state === "running" ? " live" : ""}`;
+  $("worker-live").className = `live-dot${data.totals.active ? " live" : ""}`;
+  $("worker-note").textContent = `${data.protocol.workers} workers · up to ${data.protocol.codex_concurrency} simultaneous Codex calls. Case elapsed time includes earlier rounds and waits.`;
 }
 
 function renderHealth(data) {
@@ -110,12 +114,13 @@ function renderHealth(data) {
   const warnings = monitor.thermal_warnings || [];
   $("thermal").textContent = data.heartbeat_age_seconds === null ? "Unknown" : warnings.length ? warnings.join(", ") : "None reported";
   $("wls-limit").textContent = "Local academic license";
+  $("experiment-memory").textContent = monitor.rss_mib == null ? "—" : `${num(monitor.rss_mib, 0)} MiB / 2,048 MiB`;
   $("resource-age").textContent = monitor.sampled_at ? `Sampled ${localTime(monitor.sampled_at)} · ${paused ? "monitoring paused" : "every ~5s"}` : "Waiting for a monitor sample";
   const stale = data.heartbeat_age_seconds === null || data.heartbeat_age_seconds > 90;
   const state = paused ? "paused" : stale ? "warning" : monitor.state === "running" ? "success" : "warning";
   const value = paused ? "Paused" : stale ? "Stale / unavailable" : monitor.state === "running" ? "Healthy" : labels[monitor.state] || monitor.state;
   $("health-badge").replaceWith(Object.assign(badge(value, state), {id: "health-badge"}));
-  $("resource-note").textContent = monitor.reason || "One solver thread per worker; 250% CPU and 2 GiB total experiment guard. Heat or resource pressure stops computation, then the watchdog waits for recovery.";
+  $("resource-note").textContent = paused ? "The experiment is paused. Resource values are the last saved sample; execution resumes only after an explicit request." : monitor.reason || "One solver thread per worker; 250% CPU and 2 GiB total experiment guard. Heat or resource pressure stops computation, then the watchdog waits for recovery.";
 }
 
 function initializeFilters(data) {
@@ -155,27 +160,43 @@ function renderRunDetails(data) {
   const elapsed = (Date.now() - new Date(data.started_at).getTime()) / 1000;
   fragment.append(group("Protocol", [`${data.protocol.instances} fixed instances · ${data.protocol.families} problem families · up to 10 attempts per policy, stopping after success. Plain and reflection share the first attempt.`, `Judge: ${data.protocol.judge} ${data.protocol.judge_effort}. Solver deadline: ${data.protocol.solver_timeout}s.`, `Elapsed since campaign creation: ${duration(elapsed)} (includes pauses).`, `Campaign: ${data.campaign}`]));
   const usage = data.usage;
-  fragment.append(group("Recorded token usage", [`Generation: ${shortNum(usage.generation.input_tokens)} input · ${shortNum(usage.generation.output_tokens)} output.`, `Judge: ${shortNum(usage.judge.input_tokens)} input · ${shortNum(usage.judge.output_tokens)} output.`, `Reflection: ${shortNum(usage.reflection?.input_tokens)} input · ${shortNum(usage.reflection?.output_tokens)} output.`, `Cached input: ${shortNum(usage.generation.cached_input_tokens + usage.judge.cached_input_tokens)} (already included in input totals).`, data.usage_note || "Committed calls only. In-flight and failed infrastructure calls are excluded."]));
+  fragment.append(group("Recorded token usage", [`Generation: ${shortNum(usage.generation.input_tokens)} input · ${shortNum(usage.generation.output_tokens)} output.`, `Judge: ${shortNum(usage.judge.input_tokens)} input · ${shortNum(usage.judge.output_tokens)} output.`, `Reflection: ${shortNum(usage.reflection?.input_tokens)} input · ${shortNum(usage.reflection?.output_tokens)} output.`, "Raw input/output fields are shown here. See the audited report for provider-specific cache and reasoning fields.", data.usage_note || "Committed calls only. In-flight and failed infrastructure calls are excluded."]));
   fragment.append(group("Scheduling & recovery", [`${data.protocol.workers} experiment workers · at most ${data.protocol.codex_concurrency} active Codex invocation for the shared login.`, "Native Gurobi uses the existing local license. Durable stages resume after infrastructure backoff.", `Resource revision ${data.protocol.resource_revision} · controller revision ${data.protocol.controller_revision}.`, `${data.protocol.recovery_generation_allowance} recorded infrastructure-recovery generation allowance. Earlier completed results are preserved.`]));
   $("run-details").replaceChildren(fragment);
+}
+
+function renderCalls(data) {
+  const rows = (data.recent_calls || []).map((call) => {
+    const row = node("tr"), first = cell();
+    first.append(node("div", call.instance), node("div", call.model_name, "model-setting"));
+    row.append(first, cell(`${call.mode} · ${call.attempt}`), cell(call.stage), cell(duration(call.elapsed_seconds), "numeric"), cell(num(call.usage.input_tokens), "numeric"), cell(num(call.usage.output_tokens), "numeric"));
+    return row;
+  });
+  if (!rows.length) { const row = node("tr"), message = cell("No committed call metrics yet.", "empty"); message.colSpan = 6; row.append(message); rows.push(row); }
+  $("recent-calls").replaceChildren(...rows);
 }
 
 function render(data) {
   latest = data;
   $("run-state").replaceWith(Object.assign(badge(labels[data.state] || data.state, data.state), {id: "run-state"}));
   $("subtitle").textContent = `${data.protocol.instances} fixed instances · ${data.protocol.families} problem families · ${data.models.length} new model configurations`;
-  $("completed").textContent = num(data.totals.completed); $("planned").textContent = `/ ${num(data.totals.planned)}`;
-  $("remaining").textContent = num(data.totals.remaining); $("pass-rate").textContent = pct(data.totals.pass_rate);
+  const scope = data.execution_scope || data.totals;
+  $("progress-label").textContent = data.execution_scope ? "Current run · completed pairs" : "Completed policy pairs";
+  $("remaining-label").textContent = data.execution_scope ? "Remaining in this run" : "Remaining";
+  $("completed").textContent = num(scope.completed); $("planned").textContent = `/ ${num(scope.planned)}`;
+  $("remaining").textContent = num(scope.remaining); $("pass-rate").textContent = pct(data.totals.pass_rate);
   $("pass-caption").textContent = `${num(data.totals.passed)} passed · ${num(data.totals.failed)} not passed, on the shared first attempt`;
   $("active-count").textContent = data.totals.active; $("worker-limit").textContent = `/ ${data.protocol.workers}`;
   $("worker-caption").textContent = `1 solver thread per worker · 2 GiB total guard`;
-  $("total-progress").max = data.totals.planned; $("total-progress").value = data.totals.completed;
+  $("total-progress").max = scope.planned; $("total-progress").value = scope.completed;
   const codex = data.models.filter((model) => model.backend === "Codex").reduce((sum, model) => sum + (model.remaining_pairs ?? model.remaining), 0);
   const agy = data.models.filter((model) => model.backend === "AGY").reduce((sum, model) => sum + (model.remaining_pairs ?? model.remaining), 0);
-  $("remaining-caption").textContent = `${num(codex)} Codex · ${num(agy)} AGY${data.models.some((model) => model.state === "awaiting_setup") ? " (runner pending)" : ""}`;
-  $("progress-caption").textContent = `${pct(data.totals.completed / data.totals.planned)} of policy pairs complete · success skips remaining attempts`;
+  $("remaining-caption").textContent = data.execution_scope ? `${data.execution_scope.models.length} selected models · pauses at scope completion` : `${num(codex)} Codex · ${num(agy)} AGY`;
+  $("progress-caption").textContent = data.execution_scope ? `Full cohort: ${num(data.totals.completed)} / ${num(data.totals.planned)} pairs` : `${pct(data.totals.completed / data.totals.planned)} of policy pairs complete`;
+  $("report-link").hidden = !data.latest_report;
+  if (data.latest_report) $("report-link").title = `Saved report snapshot: ${new Date(data.latest_report.saved_at).toLocaleString()}`;
   $("alerts").replaceChildren(...data.alerts.map((item) => node("div", item.text, `alert ${item.kind}`)));
-  renderModels(data); renderWorkers(data); renderHealth(data); initializeFilters(data); renderResults(); renderRunDetails(data);
+  renderModels(data); renderWorkers(data); renderHealth(data); initializeFilters(data); renderResults(); renderCalls(data); renderRunDetails(data);
   $("last-updated").textContent = `Dashboard updated ${localTime(data.generated_at)}`;
 }
 
@@ -216,7 +237,7 @@ async function showCase(model, instance) {
     const checks = node("div", null, "checks");
     checks.append(badge(data.execution_ok ? "Execution passed" : "Execution failed", data.execution_ok ? "success" : "danger"), badge(data.feasibility_ok ? "Feasibility passed" : "Feasibility not passed", data.feasibility_ok ? "success" : "danger"), badge(data.algorithm_verdict === "pass" ? "Algorithm passed" : `Algorithm: ${data.algorithm_verdict || "unavailable"}`, data.algorithm_verdict === "pass" ? "success" : "danger")); body.append(checks);
     if (data.issues.length) { body.append(node("h3", "Recorded issues")); const list = node("ul"); for (const issue of data.issues) list.append(node("li", issue)); body.append(list); }
-    body.append(node("p", "Generation and judge wall times include queue/setup waiting. Solver execution excludes the WLS reservation wait.", "muted"));
+    body.append(node("p", "Client-call durations and solver execution time are recorded separately. The worker's case elapsed time also includes earlier rounds and waits.", "muted"));
     for (const [filename, label] of [["alg_verifier.md", "Algorithm judge notes"], ["solver.py", "Generated solver code"], ["exec.log", "Execution log"]]) {
       const details = node("details", null, "artifact"); details.open = filename === "alg_verifier.md";
       details.append(node("summary", label), node("pre", data.files[filename] || "No artifact available.")); body.append(details);

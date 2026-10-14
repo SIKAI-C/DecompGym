@@ -16,12 +16,12 @@
   <main>
     <section class="page-heading">
       <div><div class="eyebrow">EXPERIMENTS / LIVE OVERVIEW</div><h1>Experiment monitor <span id="run-state" class="badge neutral">Loading</span></h1><p id="subtitle">Reading the saved campaign…</p></div>
-      <div class="actions"><label class="live-toggle"><input id="auto-refresh" type="checkbox" checked> Auto-refresh</label><button id="refresh" type="button" class="button">↻ Refresh</button><a class="button primary" href="/api/results.csv" download>Export results ↓</a></div>
+      <div class="actions"><label class="live-toggle"><input id="auto-refresh" type="checkbox" checked> Auto-refresh</label><button id="refresh" type="button" class="button">↻ Refresh</button><a id="report-link" class="button" href="/report" target="_blank" rel="noopener" hidden>Audited report ↗</a><a class="button primary" href="/api/results.csv" download>Export results ↓</a></div>
     </section>
     <div id="alerts" aria-live="polite"></div>
     <section class="stats-grid" aria-label="Campaign totals">
-      <article class="stat-card"><div class="stat-label">Completed policy pairs</div><div class="stat-value"><span id="completed">—</span><small id="planned">/ —</small></div><progress id="total-progress" value="0" max="810" aria-label="Completed policy pairs"></progress><div class="stat-foot" id="progress-caption">New runs only · historical Luna is separate</div></article>
-      <article class="stat-card"><div class="stat-label">Remaining</div><div class="stat-value" id="remaining">—</div><div class="stat-foot" id="remaining-caption">Includes queued and pending models</div></article>
+      <article class="stat-card"><div class="stat-label" id="progress-label">Completed policy pairs</div><div class="stat-value"><span id="completed">—</span><small id="planned">/ —</small></div><progress id="total-progress" value="0" max="729" aria-label="Completed policy pairs"></progress><div class="stat-foot" id="progress-caption">Reading progress…</div></article>
+      <article class="stat-card"><div class="stat-label" id="remaining-label">Remaining</div><div class="stat-value" id="remaining">—</div><div class="stat-foot" id="remaining-caption">Includes queued and pending models</div></article>
       <article class="stat-card"><div class="stat-label">First-attempt pass rate</div><div class="stat-value accent" id="pass-rate">—</div><div class="stat-foot" id="pass-caption">Based on completed experiments</div></article>
       <article class="stat-card"><div class="stat-label">Active workers</div><div class="stat-value"><span id="active-count">—</span><small id="worker-limit">/ 2</small></div><div class="stat-foot" id="worker-caption">1 solver thread per worker · 2 GiB total guard</div></article>
     </section>
@@ -32,18 +32,19 @@
         <div class="panel-note"><span class="note-dot"></span><span id="model-note">Historical Luna results are reused. Queued models have not run yet.</span></div>
       </section>
       <aside class="side-stack">
-        <section class="panel"><div class="panel-heading"><div><h2>Working now</h2><p>Latest saved stage for each worker</p></div><span class="live-dot" id="worker-live" aria-hidden="true"></span></div><div id="workers" class="worker-list"><div class="empty">Waiting for worker status…</div></div><div class="panel-note compact">Two native workers. Codex calls share a login lock; solver work can overlap.</div></section>
+        <section class="panel"><div class="panel-heading"><div><h2>Working now</h2><p>Latest saved stage for each worker</p></div><span class="live-dot" id="worker-live" aria-hidden="true"></span></div><div id="workers" class="worker-list"><div class="empty">Waiting for worker status…</div></div><div class="panel-note compact" id="worker-note">Reading execution settings…</div></section>
         <section class="panel"><div class="panel-heading"><div><h2>Machine health</h2><p id="resource-age">Waiting for monitor</p></div><span id="health-badge" class="badge neutral">—</span></div><div class="health-body">
           <div class="meter"><div class="meter-heading"><span>Experiment CPU</span><strong id="cpu">—</strong></div><progress id="cpu-bar" value="0" max="250" aria-label="Experiment CPU"></progress><p>100% equals one logical CPU core.</p></div>
           <div class="meter"><div class="meter-heading"><span>System memory available</span><strong id="memory">—</strong></div><progress id="memory-bar" value="0" max="100" aria-label="System free memory"></progress></div>
           <div class="health-row"><span>macOS thermal warnings</span><strong id="thermal">—</strong></div>
+          <div class="health-row"><span>Experiment memory</span><strong id="experiment-memory">—</strong></div>
           <div class="health-row"><span>Gurobi license</span><strong id="wls-limit">Local academic</strong></div>
           <div class="resource-note" id="resource-note">The supervisor stops computation under pressure and resumes after cooling.</div>
         </div></section>
       </aside>
     </div>
     <section class="panel results-panel">
-      <div class="panel-heading"><div><h2>Results so far <span class="count-chip" id="result-count">0</span></h2><p>Pass requires successful execution, feasibility, the algorithm check, and an objective gap of at most 1%.</p></div><span class="subtle-label">Newest completed first</span></div>
+      <div class="panel-heading"><div><h2>Shared first-attempt results <span class="count-chip" id="result-count">0</span></h2><p>These are first-attempt outcomes. A failed first attempt may still be retrying; model progress above counts completed pairs.</p></div><span class="subtle-label">Click for solver and judge details</span></div>
       <div class="filters">
         <label><span>Model</span><select id="filter-model"><option value="">All new models</option></select></label>
         <label><span>Problem</span><select id="filter-problem"><option value="">All problems</option></select></label>
@@ -55,7 +56,8 @@
       <div class="table-scroll result-scroll"><table class="results-table"><thead><tr><th>Instance</th><th>Model</th><th>Outcome</th><th class="numeric">Objective</th><th class="numeric">Reference</th><th class="numeric">Gap</th><th class="numeric">Solver time</th><th class="numeric">Finished</th></tr></thead><tbody id="results"><tr><td colspan="8" class="empty">No completed results yet.</td></tr></tbody></table></div>
       <div class="results-footer"><span id="filter-count">0 results</span><span>Click an instance to inspect its checks, judge notes, and code.</span></div>
     </section>
-    <details class="panel run-details"><summary>Run details &amp; recorded usage <span>Dataset, budgets, token counts, and recovery notes</span></summary><div id="run-details" class="run-details-body"></div></details>
+    <section class="panel results-panel"><div class="panel-heading"><div><h2>Recent committed calls</h2><p>Generation, judge and reflection · shared calls appear once · durations and raw input/output tokens</p></div></div><div class="table-scroll"><table><thead><tr><th>Instance / model</th><th>Policy · round</th><th>Stage</th><th class="numeric">Call time</th><th class="numeric">Input tokens</th><th class="numeric">Output tokens</th></tr></thead><tbody id="recent-calls"><tr><td colspan="6" class="empty">Waiting for saved call metrics…</td></tr></tbody></table></div><div class="panel-note compact">This live table shows committed calls. The audited report separately includes failed and uncommitted calls, missing usage, and cache/reasoning fields.</div></section>
+    <details class="panel run-details" open><summary>Run details &amp; recorded usage <span>Dataset, budgets, token counts, and recovery notes</span></summary><div id="run-details" class="run-details-body"></div></details>
     <footer><span>Read-only view · updates every 5 seconds · no external services</span><span id="last-updated">Waiting for first update</span></footer>
   </main>
   <dialog id="detail-dialog"><div class="dialog-heading"><div><div class="eyebrow" id="detail-model">RESULT DETAILS</div><h2 id="detail-title">Case details</h2></div><button id="close-dialog" type="button" class="close-button" aria-label="Close details">×</button></div><div id="detail-body" class="detail-body"></div></dialog>

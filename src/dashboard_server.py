@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
+import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
@@ -105,13 +106,46 @@ def first_attempt(summary):
 
 
 class Dashboard:
-    def __init__(self, root: Path, historical_root: Path | None = None):
+    def __init__(self, root: Path, historical_root: Path | None = None, reports_root: Path | None = None):
         self.root = root.resolve()
         self.historical_root = historical_root
         self.cache = JsonCache()
         self.lock = threading.RLock()
         self.last_snapshot = None
         self.last_built = 0.0
+        self.reports_root = (reports_root or Path(__file__).resolve().parents[1] / "outputs/reports").resolve()
+        self.report_checked = 0.0
+        self.report_directory = None
+
+    def latest_report(self):
+        if time.monotonic() - self.report_checked > 30:
+            self.report_checked = time.monotonic()
+            self.report_directory = None
+            protocol = self.manifest().get("protocol_id")
+            candidates = sorted(self.reports_root.glob("*/report.md"), key=lambda path: path.stat().st_mtime, reverse=True)
+            for path in candidates:
+                if not path.resolve().is_relative_to(self.reports_root) or not protocol:
+                    continue
+                try:
+                    if f"Cohort protocol: `{protocol}`" in read_text(path, 2 * 1024 * 1024):
+                        self.report_directory = path.parent
+                        break
+                except (OSError, ValueError, UnicodeError):
+                    continue
+        if self.report_directory:
+            path = self.report_directory / "report.md"
+            return {"url": "/report", "name": self.report_directory.name, "saved_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()}
+        return None
+
+    def report_artifact(self, name):
+        allowed = {"report.md", "evaluation.json", "paired_curves.csv", "physical_calls.csv", "case_costs.csv", "paired_cost_differences.csv", "solver_executions.csv", "coverage_by_size.csv"}
+        with self.lock:
+            if name not in allowed or not self.latest_report():
+                raise ValueError("Report artifact unavailable")
+            path = self.report_directory / name
+            if not path.resolve().is_relative_to(self.reports_root):
+                raise ValueError("Invalid report path")
+            return read_text(path, 64 * 1024 * 1024)
 
     def historical(self):
         if self.historical_root is None:
@@ -131,8 +165,8 @@ class Dashboard:
         return result
 
     def case_directory(self, model, instance):
-        require_reportable_model(model)
         manifest = self.manifest()
+        require_reportable_model(model, manifest)
         if model not in [item["model"] for item in model_queue(manifest)]:
             raise ValueError("Unknown model")
         case = next((item for item in manifest["instances"] if item["instance"] == instance), None)
@@ -215,7 +249,7 @@ class Dashboard:
             queue = model_queue(manifest if "model_queue" in manifest else dict(manifest, agy_order=agy_order))
             for specification in queue:
                 model = specification["model"]
-                if model_exclusion(model):
+                if model_exclusion(model, manifest):
                     continue
                 backend = {"codex-cli": "Codex", "agy-cli": "AGY", "claude-code-cli": "Claude Code"}[specification["backend"]]
                 completed = []
@@ -280,7 +314,7 @@ class Dashboard:
             total = sum(row["expected"] for row in models)
             passed = sum(row["passed"] for row in results)
             alerts = []
-            if effective_state in {"infrastructure_stopped", "resource_stopped", "supervisor_offline", "heartbeat_stale"}:
+            if effective_state in {"infrastructure_stopped", "resource_stopped", "supervisor_offline", "heartbeat_stale", "repair_required"}:
                 alerts.append({"kind": "error", "text": redact(status.get("error") or "The supervisor is stopped or its heartbeat is stale. Saved results remain available.")})
             if monitor.get("reason"):
                 alerts.append({"kind": "warning", "text": str(monitor["reason"])})
@@ -294,6 +328,7 @@ class Dashboard:
                 result_index = {(row["model"], row["instance"]): row for row in results}
                 consumed = set()
                 totals_usage = {role: {key: 0 for key in ("input_tokens", "output_tokens", "cached_input_tokens")} for role in ("generation", "judge", "reflection")}
+                saved_calls = []
                 for model in models:
                     completed_pairs = 0
                     policy_finished = {"plain": 0, "reflection": 0}
@@ -325,6 +360,13 @@ class Dashboard:
                                     if not invocation or invocation in consumed:
                                         continue
                                     consumed.add(invocation)
+                                    step = {"generation": "agent", "judge": "llm_verifier", "reflection": "reflection"}[role]
+                                    call_path = directory / "attempts" / f"attempt_{attempt['attempt']:02d}" / "calls" / invocation / f"{step}_metrics.json"
+                                    try:
+                                        recorded = call_path.stat().st_mtime
+                                    except OSError:
+                                        recorded = 0
+                                    saved_calls.append({"invocation_id": invocation, "model": model["id"], "model_name": model["name"], "instance": case["instance"], "mode": "shared" if attempt["attempt"] == 1 and role != "reflection" else mode, "attempt": attempt["attempt"], "stage": role, "elapsed_seconds": number(metric.get("elapsed_seconds")), "usage": metric.get("usage", {}), "ok": metric.get("ok"), "recorded_at": datetime.fromtimestamp(recorded, timezone.utc).isoformat() if recorded else None, "recorded_timestamp": recorded})
                                     for field in totals_usage[role]:
                                         value = metric.get("usage", {}).get(field, 0)
                                         if isinstance(value, int):
@@ -341,13 +383,26 @@ class Dashboard:
                 snapshot["totals"].update(first_attempt_completed=len(results), completed=pairs, remaining=total - pairs)
                 snapshot["totals"]["terminal_policy_failures"] = sum(sum(model["policy_terminal_failures"].values()) for model in models)
                 snapshot["usage"] = totals_usage
+                snapshot["recent_calls"] = sorted(saved_calls, key=lambda item: item["recorded_timestamp"], reverse=True)[:20]
                 snapshot["usage_note"] = "Committed attempt metrics, deduplicated by physical invocation ID; uncommitted and failed infrastructure calls are excluded."
                 snapshot["protocol"].update(backend="native", shared_first_attempt=True, stop_after_success=True, wls_reservations=0, sample_interval=5, memory_scope="entire experiment", max_cpu_percent=250, max_rss_mib=2048)
                 snapshot["protocol"]["codex_concurrency"] = status.get("active_codex_invocation_limit", snapshot["protocol"]["codex_concurrency"])
                 snapshot["protocol"]["execution_phase_id"] = status.get("execution_phase_id")
                 if effective_state in {"recovering", "draining_for_recovery"}:
                     alerts.append({"kind": "warning", "text": redact(status.get("error", "Waiting to resume the saved stage after a recovery pause."))})
-            snapshot["reporting_exclusions"] = [dict(value) for model, value in MODEL_EXCLUSIONS.items() if model in [item["model"] for item in queue]]
+            scope_ids = status.get("execution_scope")
+            if isinstance(scope_ids, list) and scope_ids:
+                selected = [model for model in models if model["id"] in scope_ids]
+                scope_planned = sum(model["expected"] for model in selected)
+                scope_completed = sum(model.get("completed_pairs", model["completed"]) for model in selected)
+                snapshot["execution_scope"] = {"models": [model["id"] for model in selected], "planned": scope_planned, "completed": scope_completed, "remaining": scope_planned - scope_completed, "complete": status.get("scope_complete", False)}
+                for model in models:
+                    model["in_current_scope"] = model["id"] in scope_ids
+                    if not model["in_current_scope"] and model["state"] == "queued":
+                        model["state"] = "later"
+            snapshot["reporting_manifest"] = manifest
+            snapshot["reporting_exclusions"] = [dict(value) for model, value in MODEL_EXCLUSIONS.items() if model in [item["model"] for item in queue] and model_exclusion(model, manifest)]
+            snapshot["latest_report"] = self.latest_report()
             if manifest.get("schema_version") == 3:
                 snapshot["historical_reference"] = manifest.get("historical_reuse")
             self.last_snapshot, self.last_built = snapshot, time.monotonic()
@@ -360,7 +415,7 @@ def export_csv(snapshot):
     writer = csv.DictWriter(out, fieldnames=columns, extrasaction="ignore")
     writer.writeheader()
     for row in snapshot["results"]:
-        if model_exclusion(row.get("model")):
+        if model_exclusion(row.get("model"), snapshot.get("reporting_manifest")):
             continue
         clean = {key: ("'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")) else value) for key, value in row.items()}
         writer.writerow(clean)
@@ -403,12 +458,22 @@ def handler_for(dashboard):
                     name, mime = assets[url.path]
                     self.send_body(200, (ASSETS / name).read_bytes(), mime)
                 elif url.path == "/api/status":
-                    self.json_response(dashboard.snapshot())
+                    self.json_response({key: value for key, value in dashboard.snapshot().items() if key != "reporting_manifest"})
                 elif url.path == "/api/case":
                     query = parse_qs(url.query)
                     self.json_response(dashboard.details(query.get("model", [""])[0], query.get("instance", [""])[0]))
                 elif url.path == "/api/results.csv":
                     self.send_body(200, export_csv(dashboard.snapshot()), "text/csv; charset=utf-8", download=True)
+                elif url.path == "/report":
+                    contents = dashboard.report_artifact("report.md")
+                    links = " ".join(f'<a class="button" href="/api/report-artifact?name={name}">{name}</a>' for name in ("evaluation.json", "paired_curves.csv", "physical_calls.csv", "case_costs.csv", "paired_cost_differences.csv"))
+                    page = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DecompBench · Audited report</title><link rel="stylesheet" href="/style.css"><main><p><a href="/">← Live monitor</a></p><h1>Audited report snapshot</h1><p>This report has a fixed snapshot time. Live progress is on the monitor.</p><div class="report-downloads">' + links + '</div><pre class="report-text">' + html.escape(contents) + '</pre></main></html>'
+                    self.send_body(200, page.encode(), "text/html; charset=utf-8")
+                elif url.path == "/api/report-artifact":
+                    name = parse_qs(url.query).get("name", [""])[0]
+                    contents = dashboard.report_artifact(name)
+                    mime = "application/json" if name.endswith(".json") else "text/plain"
+                    self.send_body(200, contents.encode(), mime + "; charset=utf-8")
                 else:
                     self.json_response({"error": "Not found"}, 404)
             except (ValueError, OSError, KeyError) as error:
@@ -421,8 +486,9 @@ def main():
     parser.add_argument("--root", type=Path, default=Path("outputs/experiments/fixed81_20261007"))
     parser.add_argument("--historical-root", type=Path, default=Path(__file__).resolve().parents[2] / "DecompBench/results/luna_60s")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--no-historical", action="store_true", help="Show only the selected fresh campaign")
     args = parser.parse_args()
-    dashboard = Dashboard(args.root, args.historical_root)
+    dashboard = Dashboard(args.root, None if args.no_historical else args.historical_root)
     dashboard.snapshot()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(dashboard))
     print(json.dumps({"app_id": APP_ID, "url": f"http://localhost:{server.server_port}", "pid": os.getpid(), "campaign": str(args.root.resolve())}), flush=True)
