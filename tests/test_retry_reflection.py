@@ -22,6 +22,7 @@ def source_instance(tmp_path: Path) -> Path:
 
 def solver_code(objective: int) -> str:
     output = {"y": [0, 1], "x": [[0], [1]], "objective_value": 4} if objective == 4 else {"y": [1, 0], "x": [[1], [0]], "objective_value": 6}
+    output.update(status="feasible", method="benders_decomposition")
     return "import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps(" + repr(output) + "))\n"
 
 
@@ -83,6 +84,7 @@ def test_maximum_attempts_is_a_hard_limit(tmp_path):
     client = AlwaysFails()
     summary = ExperimentRunner(client=client, reflection=True, max_attempts=3).run_instance(source_instance(tmp_path), tmp_path / "run", "ufl")
     assert client.generations == 3
+    assert client.reflections == 2
     assert len(summary["attempts"]) == 3
     assert all(not attempt["exec_ok"] and not attempt["reused_from_previous"] for attempt in summary["attempts"])
     assert not (Path(summary["output_dir"]) / "attempts" / "attempt_04").exists()

@@ -20,6 +20,7 @@ from src.agent.files_manager import ArtifactManager, InstanceManager
 from src.agent.output_verifier import OutputVerifier
 from src.agent.prompt_builder import PromptBuilder
 from src.agent.resource_monitor import CleanupError, stop_owned_tree
+from src.agent.solver_errors import SolverLaunchError
 from src.runtime_environment import require_runtime_environment
 from src.utils.json_utils import safe_load_json
 
@@ -128,7 +129,7 @@ class ExperimentRunner:
                     raise CleanupError("Solver pipes remained open after owned process cleanup") from error
                 return False, stdout[-12000:], stderr[-12000:] + f"\n[framework] solver execution timed out after {timeout} seconds", None
         except OSError as error:
-            return False, "", str(error), None
+            raise SolverLaunchError("Python process launch failed", {"phase": "launch", "error_type": type(error).__name__, "errno": error.errno, "executable": sys.executable, "message": str(error)}) from error
         stdout, stderr = stdout[-12000:], stderr[-12000:]
         if process.returncode:
             return False, stdout, stderr or f"returncode={process.returncode}", None
@@ -190,7 +191,7 @@ class ExperimentRunner:
             verifier_metrics = safe_load_json(attempt_dir / "llm_verifier_metrics.json")
             if verifier_metrics:
                 metrics["algorithm_verification"] = verifier_metrics
-        if self.reflection and result.status != "ok":
+        if self.reflection and result.status != "ok" and idx < self.max_attempts:
             reflection_prompt = PromptBuilder.build_reflection_prompt(prompt, objective_quality_failed=self.objective_quality_failed(result))
             reflection_prompt += "\nKeep the reflection concise and actionable."
             paths = [instance_root / "data.json"] + [attempt_dir / name for name in ["solver.py", "exec.log", "alg_verifier.md", "output.json"]]

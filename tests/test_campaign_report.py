@@ -110,7 +110,7 @@ def write_pair(campaign, case_index=0, *, plain_success=1, reflection_success=1,
                 generation = write_call(a, "agent", spec["backend"], spec["model"], f"{case_index}-{mode}-{k}-agent", usage=backend_usage, transport=transport)
                 judge = write_call(a, "llm_verifier", "codex-cli", manifest["judge_model"], f"{case_index}-{mode}-{k}-judge", transport=transport)
                 passed = solved_at is not None and k >= solved_at
-                output = {"y": [0, 1] if passed else [1, 0], "x": [[0], [1]] if passed else [[1], [0]], "objective_value": 4 if passed else 6}
+                output = {"status": "feasible", "method": "benders_decomposition", "y": [0, 1] if passed else [1, 0], "x": [[0], [1]] if passed else [[1], [0]], "objective_value": 4 if passed else 6}
                 save(a / "output.json", output)
                 save(a / "execution.json", {"execution_seconds": 0.5, "solver_sha256": digest(a / "solver.py"), "output_sha256": digest(a / "output.json"), "exec_ok": True})
                 attempt = {"attempt": k, "status": "ok" if passed else "feasible_not_optimal", "exec_ok": True, "verify_ok": True, "objective": output["objective_value"], "gold_objective": 4, "gap_to_gold": 0 if passed else 0.5, "llm_verdict": "pass", "reused_from_previous": False, "metrics": {"generation": generation, "algorithm_verification": judge, "execution_seconds": 0.5, "total_seconds": 4.5}}

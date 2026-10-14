@@ -6,6 +6,8 @@ import signal
 import subprocess
 import sys
 
+import pytest
+
 from src.agent import resource_monitor as monitor
 
 
@@ -72,7 +74,8 @@ def test_cleanup_does_not_signal_reused_child_pid(monkeypatch):
     assert not any(group == 99 for group, _ in calls)
 
 
-def test_supervisor_stops_owned_process_on_resource_alarm(tmp_path, monkeypatch):
+@pytest.mark.parametrize("container_memory", [False, True])
+def test_supervisor_stops_owned_process_on_resource_alarm(tmp_path, monkeypatch, container_memory):
     call = 0
     real_popen = subprocess.Popen
     processes = []
@@ -87,7 +90,8 @@ def test_supervisor_stops_owned_process_on_resource_alarm(tmp_path, monkeypatch)
         if call == 1:
             return {}, '', 40
         process = processes[0]
-        return {process.pid: monitor.ProcessSample(process.pid, 1, process.pid, 0, 5000 * 1024, 'same start', 'python')}, '', 40
+        host_memory = 200 if container_memory else 5000
+        return {process.pid: monitor.ProcessSample(process.pid, 1, process.pid, 0, host_memory * 1024, 'same start', 'python')}, '', 40
     monkeypatch.setattr(monitor.subprocess, 'Popen', popen)
     monkeypatch.setattr(monitor, 'sample_host', sample)
     def current_processes():
@@ -101,10 +105,15 @@ def test_supervisor_stops_owned_process_on_resource_alarm(tmp_path, monkeypatch)
             processes[0].terminate()
             processes[0].wait(timeout=5)
     monkeypatch.setattr(monitor.os, 'killpg', kill_group)
-    result = monitor.supervise([sys.executable, '-c', 'import time;time.sleep(10)'], tmp_path, interval=0.01)
+    sampler = (lambda: [{'name': 'fixture-worker', 'cpu_percent': 75, 'rss_mib': 4800}]) if container_memory else None
+    result = monitor.supervise([sys.executable, '-c', 'import time;time.sleep(10)'], tmp_path, interval=0.01, container_sampler=sampler)
     assert result == 75 and processes[0].poll() is not None
     assert signals == [(processes[0].pid, signal.SIGTERM)]
     status = json.loads((tmp_path / 'status.json').read_text())
     assert status['state'] == 'stopped_resource_guard'
     assert 'resident memory' in status['reason']
     assert (tmp_path / 'resources.jsonl').read_text()
+    snapshot = json.loads((tmp_path / 'resources.jsonl').read_text().splitlines()[0])
+    assert snapshot['rss_mib'] == 5000
+    assert snapshot['cpu_percent'] == (75 if container_memory else 0)
+    assert bool(snapshot['containers']) == container_memory

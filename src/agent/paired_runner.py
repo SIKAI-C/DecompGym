@@ -6,21 +6,21 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
-import re
 import shutil
 import time
 import uuid
 from datetime import datetime, timezone
 
 from src.agent.codex_client import CodexClient
+from src.agent.algorithm_verifier import algorithm_review_prompt
 from src.agent.exec_logger import ExecLogger
 from src.agent.experiment_runner import AttemptResult, ExperimentRunner
 from src.agent.files_manager import ArtifactManager
 from src.agent.output_verifier import OutputVerifier
-from src.agent.algorithm_verifier import algorithm_review_prompt
 from src.agent.prompt_builder import PromptBuilder
-from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.agent.runtime_state import runtime_lock
+from src.agent.solver_errors import SolverLaunchError
 
 
 class InfrastructureError(RuntimeError):
@@ -58,44 +58,24 @@ def identity(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def solver_infrastructure_error(attempt_dir, stderr):
-    """Separate a generated solver's bad path from a failed Python launch."""
-    text = stderr.lower()
-    if any(marker in text for marker in ("license", "failed to connect", "network is unreachable")):
-        return True
-    if "no such file or directory: '" not in text:
-        return False
-    lines = stderr.strip().splitlines()
-    frames = re.findall(r'^  File "([^"]+)", line \d+', stderr, re.MULTILINE)
-    solver = attempt_dir / "solver.py"
-    if not lines or not lines[-1].startswith("FileNotFoundError: [Errno 2] No such file or directory:") or not frames or Path(frames[-1]).resolve() != solver.resolve() or "Traceback (most recent call last):" not in stderr:
-        return True
-    instance = attempt_dir.parent.parent
-    case = read(instance / "identity.json") or {}
-    generation = read(attempt_dir / "agent_receipt.json") or {}
-    for name in ("data.json", "prompt.txt"):
-        path = instance / name
-        if not path.is_file() or digest(path) != case.get("inputs", {}).get(name):
-            return True
-    return not solver.is_file() or digest(solver) != generation.get("result", {}).get("artifact_sha256")
-
-
 class PairedRunner(ExperimentRunner):
-    reflection_retry_delays = (5, 10)
-
-    def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, **kwargs):
+    def __init__(self, *, client, judge_client, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None, solver_executor=None, **kwargs):
+        if client.protocol().get("transport") == "docker" and solver_executor is None:
+            raise ProtocolError("Docker editing requires an explicitly configured restricted solver executor")
         super().__init__(client=client, **kwargs)
         self.judge_client = judge_client
         self.reflection_client = reflection_client or client
         self.protocol_id = protocol_id
         self.on_stage = on_stage or (lambda **kwargs: None)
         self.call_lock = call_lock
+        if solver_executor is not None:
+            self.run_solver = solver_executor
         self.mode = "plain"
 
     def edit(self, client, target, prompt, context, step):
         """Commit each physical call once; retain all failed-call evidence."""
         directory = target.parent
-        request = {"protocol": self.protocol_id, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
+        request = {"protocol": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
         fingerprint = identity(request)
         receipt_path = directory / f"{step}_receipt.json"
         cached = read(receipt_path)
@@ -105,7 +85,7 @@ class PairedRunner(ExperimentRunner):
             if cached["result"]["ok"] and (not target.exists() or digest(target) != cached["result"]["artifact_sha256"]):
                 raise ProtocolError("A committed CLI artifact changed")
             if cached["result"].get("file_delivery_failure"):
-                self.commit_delivery_failure(directory / "calls" / cached["result"]["invocation_id"], target, step, fingerprint, cached["result"])
+                self.validate_reflection_omission(directory / "calls" / cached["result"]["invocation_id"], target, cached["result"])
             return cached["result"]
         calls = directory / "calls"
         calls.mkdir(exist_ok=True)
@@ -113,11 +93,16 @@ class PairedRunner(ExperimentRunner):
         for call in sorted(calls.iterdir()):
             prior = read(call / "request.json")
             metrics = read(call / f"{step}_metrics.json")
+            if prior and prior.get("request_sha256") == fingerprint and not metrics and hasattr(client, "recover_file"):
+                recovered = client.recover_file(target, log_dir=call, step=step)
+                if recovered is not None:
+                    metrics = asdict(recovered)
             if not prior or prior.get("request_sha256") != fingerprint or not metrics or (call / "rejected.json").exists():
                 continue
-            self.commit_delivery_failure(call, target, step, fingerprint, metrics)
-            if metrics.get("ok"):
-                if not target.exists() or digest(target) != metrics.get("artifact_sha256"):
+            metrics = self.record_reflection_omission(call, target, step, metrics)
+            completed_generation_failure = step == "agent" and metrics.get("terminal_state") == "completed" and metrics.get("returncode") == 0 and not metrics.get("ok")
+            if metrics.get("ok") or metrics.get("file_delivery_failure") or completed_generation_failure:
+                if not completed_generation_failure and (not target.exists() or digest(target) != metrics.get("artifact_sha256")):
                     raise ProtocolError("Completed CLI call lost its committed artifact")
                 metrics["invocation_id"] = call.name
                 save(receipt_path, {"request_sha256": fingerprint, "result": metrics})
@@ -135,18 +120,45 @@ class PairedRunner(ExperimentRunner):
         if result.ok and not metrics.get("artifact_sha256"):
             metrics["artifact_sha256"] = digest(target)
         metrics["invocation_id"] = call.name
+        metrics = self.record_reflection_omission(call, target, step, metrics)
         save(call / f"{step}_metrics.json", metrics)
         self.publish_call(call, directory, step)
-        self.commit_delivery_failure(call, target, step, fingerprint, metrics)
-        if not result.ok and not (step == "agent" and result.terminal_state == "completed" and result.returncode == 0):
-            if step == "reflection" and client.protocol().get("backend") == "agy-cli" and result.terminal_state == "completed" and result.returncode == 0 and (result.error or "").startswith("AGY did not complete an edit (exit 0)"):
-                diagnostics = "\n".join([result.error or "", *result.warnings, *(p.read_text(errors="replace") for p in (call / f"{step}_stderr.log", call / f"{step}_events.jsonl") if p.exists())]).lower()
-                access_markers = ("unauthorized", "authentication", "not logged in", "access token", "refresh token", "refresh_token", "rate limit", "rate_limit", "quota", "resource_exhausted", "http 429", "status code 429")
-                if not any(marker in diagnostics for marker in access_markers) and (not target.exists() or not target.read_text().strip()):
-                    raise ReflectionArtifactError(f"{self.model} {step}: {result.error}")
+        if not result.ok and not metrics.get("file_delivery_failure") and not (step == "agent" and result.terminal_state == "completed" and result.returncode == 0):
             raise InfrastructureError(f"{self.model} {step}: {result.error}")
         save(receipt_path, {"request_sha256": fingerprint, "result": metrics})
         return metrics
+
+    def record_reflection_omission(self, call, target, step, metrics):
+        if step != "reflection":
+            return metrics
+        if metrics.get("file_delivery_failure"):
+            self.validate_reflection_omission(call, target, metrics)
+            return metrics
+        if metrics.get("terminal_state") != "completed" or metrics.get("returncode") != 0 or metrics.get("ok"):
+            return metrics
+        diagnostics = "\n".join([metrics.get("error") or "", *metrics.get("warnings", []), *(p.read_text(errors="replace") for p in (call / "reflection_stderr.log",) if p.exists())]).lower()
+        infrastructure_markers = ("unauthorized", "authentication", "not logged in", "access token", "refresh token", "refresh_token", "rate limit", "rate_limit", "quota", "resource_exhausted", "http 429", "status code 429", "permission denied", "operation not permitted", "failed to spawn", "failed to initialize", "connection refused", "network is unreachable", "timed out")
+        if any(marker in diagnostics for marker in infrastructure_markers):
+            return metrics
+        if not target.exists() and not target.is_symlink():
+            target.write_text("")
+        if not target.is_file() or target.is_symlink() or target.read_bytes().strip():
+            return metrics
+        # A completed omission has one durable outcome, including misplaced-file evidence.
+        evidence = [p for p in call.glob("reflection_*") if p.is_file() and p.suffix != ".jsonl" and not p.name.endswith("metrics.json")]
+        evidence += [p for p in (call / "unexpected_outputs").rglob("*") if p.is_file() and not p.is_symlink()]
+        metrics = dict(metrics, invocation_id=call.name, file_delivery_failure=True, reflection_policy=REFLECTION_POLICY, artifact_sha256=digest(target), delivery_evidence_sha256={str(p.relative_to(call)): digest(p) for p in evidence})
+        save(call / "reflection_metrics.json", metrics)
+        return metrics
+
+    @staticmethod
+    def validate_reflection_omission(call, target, metrics):
+        if metrics.get("reflection_policy") != REFLECTION_POLICY or not target.is_file() or target.is_symlink() or target.read_bytes().strip() or digest(target) != metrics.get("artifact_sha256"):
+            raise ProtocolError("Committed reflection delivery outcome changed")
+        for name, expected in metrics.get("delivery_evidence_sha256", {}).items():
+            path = call / name
+            if not path.is_file() or path.is_symlink() or digest(path) != expected:
+                raise ProtocolError("Committed reflection delivery evidence changed")
 
     def commit_delivery_failure(self, call, target, step, fingerprint, metrics):
         if step != "reflection" or not (call / "reflection_delivery_failure.json").exists():
@@ -184,6 +196,10 @@ class PairedRunner(ExperimentRunner):
             return AttemptResult(**saved["result"])
         started = time.perf_counter()
         instance = attempt_dir.parent.parent
+        case_identity = read(instance / "identity.json") or {}
+        canonical = Path(case_identity.get("canonical_source", instance)) / "data.json"
+        if not canonical.is_file() or digest(canonical) != case_identity.get("inputs", {}).get("data.json"):
+            raise ProtocolError("Canonical scoring input differs from the frozen case identity")
         context = [instance / "data.json"]
         if self.mode == "reflection" and idx > 1:
             context += [Path(p) for p in ArtifactManager.collect_previous_attempt_files(attempt_dir.parent, idx)]
@@ -203,14 +219,28 @@ class PairedRunner(ExperimentRunner):
             else:
                 self.on_stage(mode=self.mode, attempt=idx, phase="solver")
                 execution_started = time.perf_counter()
-                exec_ok, stdout, stderr, output = self.run_solver(attempt_dir, self.solver_timeout, self.solver_threads)
+                try:
+                    exec_ok, stdout, stderr, output = self.run_solver(attempt_dir, self.solver_timeout, self.solver_threads)
+                except SolverLaunchError as error:
+                    save(attempt_dir / f"solver_infrastructure_{uuid.uuid4().hex}.json", error.evidence | {"solver_sha256": code_hash})
+                    raise InfrastructureError("Solver launcher unavailable; see structured execution diagnostics") from error
                 elapsed = time.perf_counter() - execution_started
-                if not exec_ok and solver_infrastructure_error(attempt_dir, stderr):
-                    save(attempt_dir / f"solver_infrastructure_{uuid.uuid4().hex}.json", {"stdout": stdout, "stderr": stderr, "solver_sha256": code_hash})
-                    raise InfrastructureError("Native solver infrastructure unavailable; see saved execution diagnostics")
-                execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": elapsed, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
+                native_receipt = read(attempt_dir / "native_solver_receipt.json")
+                scored_seconds = native_receipt["result"]["execution_seconds"] if native_receipt else elapsed
+                if digest(canonical) != case_identity["inputs"]["data.json"]:
+                    raise ProtocolError("Canonical scoring input changed during execution")
+                runtime_input = instance / "data.json"
+                if not runtime_input.is_file() or runtime_input.is_symlink() or digest(runtime_input) != case_identity["inputs"]["data.json"]:
+                    save(attempt_dir / "input_integrity_failure.json", {"expected_sha256": case_identity["inputs"]["data.json"], "observed_sha256": digest(runtime_input) if runtime_input.is_file() and not runtime_input.is_symlink() else None})
+                    if runtime_input.exists() or runtime_input.is_symlink():
+                        runtime_input.rename(attempt_dir / f"altered_input_{uuid.uuid4().hex}")
+                    shutil.copyfile(canonical, runtime_input)
+                    exec_ok, output = False, None
+                    stderr += "\n[framework] execution input changed; the candidate failed and the canonical input was restored"
+                execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": scored_seconds, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
                 save(execution_path, execution)
-                save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": self.solver_timeout, "threads": self.solver_threads, "solver_sha256": code_hash})
+                if not (attempt_dir / "solver_invocation.json").exists():
+                    save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": self.solver_timeout, "threads": self.solver_threads, "solver_sha256": code_hash})
                 if elapsed >= 5 and self.solver_cooldown_seconds:
                     self.on_stage(mode=self.mode, attempt=idx, phase="solver cooldown")
                     time.sleep(self.solver_cooldown_seconds)
@@ -221,10 +251,7 @@ class PairedRunner(ExperimentRunner):
             objective, issues, message = OutputVerifier.extract_objective(output)
             verification = {"ok": False, "issues": []}
             if exec_ok:
-                if self.suite == "cg" and problem in {"csp", "gap", "shift"} and isinstance(output, dict) and "solution" in output and output["solution"] is None:
-                    verification = {"ok": False, "issues": ["solution is null; no candidate solution supplied"]}
-                else:
-                    verification = OutputVerifier.verify_output(self.suite, problem, instance / "data.json", attempt_dir / "output.json", self.tol)
+                verification = OutputVerifier.verify_output(self.suite, problem, canonical, attempt_dir / "output.json", self.tol)
                 issues.extend(verification.get("issues", []))
                 if verification.get("objective_value") is not None:
                     objective = float(verification["objective_value"])
@@ -262,7 +289,7 @@ class PairedRunner(ExperimentRunner):
         # Let edit() recover and validate a successful physical call unchanged.
         for metrics_path in (attempt_dir / "calls").glob("*/reflection_metrics.json"):
             metrics = read(metrics_path)
-            if metrics and metrics.get("ok") and not (metrics_path.parent / "rejected.json").exists():
+            if metrics and (metrics.get("ok") or metrics.get("file_delivery_failure")) and not (metrics_path.parent / "rejected.json").exists():
                 return
         log_path = attempt_dir / "exec.log"
         provenance_path = attempt_dir / "generation_failure_context.json"
@@ -310,26 +337,21 @@ class PairedRunner(ExperimentRunner):
         prompt = PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=self.objective_quality_failed(result))
         prompt += "\nKeep the reflection concise and actionable."
         context = [instance / "data.json"] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
-        for retry in range(len(self.reflection_retry_delays) + 1):
-            try:
-                reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection")
-                break
-            except ReflectionArtifactError:
-                if retry == len(self.reflection_retry_delays):
-                    raise
-                delay = self.reflection_retry_delays[retry]
-                failed = read(attempt_dir / "reflection_metrics.json")
-                request = read(attempt_dir / "calls" / failed["invocation_id"] / "request.json")
-                save(attempt_dir / f"reflection_retry_{uuid.uuid4().hex}.json", {"reason": "AGY completed without saving debug.md in the task workspace", "failed_invocation_id": failed["invocation_id"], "request_sha256": request["request_sha256"], "local_retry": retry + 1, "delay_seconds": delay, "recorded_at_unix": time.time()})
-                self.on_stage(mode=self.mode, attempt=result.attempt, phase=f"reflection retry in {delay}s: missing debug.md")
-                time.sleep(delay)
+        reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection")
+        if reflected.get("file_delivery_failure"):
+            feedback = attempt_dir / "reflection_feedback.md"
+            contents = reflection_delivery_feedback(result.attempt) + "\n"
+            if feedback.exists() and feedback.read_text() != contents:
+                raise ProtocolError("Framework reflection feedback changed")
+            feedback.write_text(contents)
         result.metrics["reflection"] = reflected
         return result
 
     def prepare(self, source, root, mode):
         destination = root / mode / self.suite / self.problems[0] / source.name
         destination.mkdir(parents=True, exist_ok=True)
-        expected = {"protocol_id": self.protocol_id, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
+        expected = {"protocol_id": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
+        expected["canonical_source"] = str(source.resolve())
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")
@@ -398,7 +420,7 @@ class PairedRunner(ExperimentRunner):
                     result = deepcopy(first) if idx == 1 else self.run_attempt(idx, directory, self.problems[0], gold)
                     if self.can_early_stop(result, self.gap_threshold):
                         successful, first_success = result, idx
-                    elif mode == "reflection":
+                    elif mode == "reflection" and idx < self.max_attempts:
                         # Scoring is already durable even when this separate stage fails.
                         try:
                             result = self.ensure_reflection(directory, result)

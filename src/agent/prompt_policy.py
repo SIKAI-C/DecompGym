@@ -9,7 +9,12 @@ import shutil
 
 FEEDBACK_POLICY = "qualitative-objective-feedback-v1"
 WORKSPACE_POLICY = "existing-target-cwd-v2"
+REFLECTION_POLICY = "consume-reflection-opportunity-and-continue-v1"
 OBJECTIVE_RETRY = "The current solution is feasible, but its objective value does not meet the required target. Please try again."
+
+
+def reflection_delivery_feedback(attempt: int) -> str:
+    return f"[framework reflection delivery status] The reflection call after attempt {attempt} completed, but the required debug.md is empty; no usable reflection was delivered for that attempt. This is framework feedback, not a model-generated reflection."
 
 
 def edit_instruction(filename: str) -> str:

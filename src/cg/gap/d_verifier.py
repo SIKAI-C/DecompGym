@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.agent.output_contract import integer_value
+
 
 def _load_gap_data(data: dict[str, Any]) -> tuple[list[list[int]], list[list[float]], list[int]]:
     machines = sorted(data["machines"], key=lambda m: m["id"])
@@ -67,6 +69,8 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
     n_jobs = len(a)
     n_machines = len(b)
     solution = output_dict.get("solution", {})
+    if not isinstance(solution, dict):
+        return _result(False, "solution must be an object")
     assignments = solution.get("assignments")
     if assignments is None:
         patterns = solution.get("patterns", [])
@@ -84,11 +88,9 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
             return _result(False, f"assignment {idx} not a dict")
         job_id = assign.get("job_id")
         machine_id = assign.get("machine_id")
-        try:
-            job_id = int(job_id)
-            machine_id = int(machine_id)
-        except (TypeError, ValueError):
-            return _result(False, f"assignment {idx} ids not int")
+        if not integer_value(job_id) or not integer_value(machine_id):
+            return _result(False, f"assignment {idx} ids must be finite integer JSON numbers")
+        job_id, machine_id = int(job_id), int(machine_id)
 
         if job_id < 0 or job_id >= n_jobs:
             return _result(False, f"job_id out of range: {job_id}")

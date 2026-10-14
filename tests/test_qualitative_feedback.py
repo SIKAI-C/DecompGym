@@ -47,7 +47,7 @@ class CaptureClient:
     def edit_file(self, target, prompt, *, context, log_dir, step):
         self.calls.append((step, prompt, [(p.parent.name + "/" + p.name, p.read_text()) for p in context if p.exists()]))
         if step == "agent":
-            target.write_text("import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'y':[1,0],'x':[[1],[0]],'objective_value':6}))\n")
+            target.write_text("import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'status':'feasible','method':'benders_decomposition','y':[1,0],'x':[[1],[0]],'objective_value':6}))\n")
         elif step == "llm_verifier":
             target.write_text("VERDICT: PASS\nNOTES: structural check passed\n")
         else:

@@ -3,18 +3,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-
-INT_TOL = 1e-6
+from src.agent.output_contract import integer_value
 
 
 def _coerce_int(value: Any, field: str) -> tuple[int | None, str | None]:
-    try:
-        val = float(value)
-    except (TypeError, ValueError):
-        return None, f"{field} is not numeric"
-    if abs(val - round(val)) > INT_TOL:
-        return None, f"{field} is not an integer: {value}"
-    return round(val), None
+    if not integer_value(value):
+        return None, f"{field} must be a finite integer JSON number: {value!r}"
+    return int(value), None
 
 
 def _load_csp_data(data: dict[str, Any]) -> tuple[int, list[int], list[int]]:
@@ -51,6 +46,8 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         return _result(False, f"data load error: {exc}")
 
     solution = output_dict.get("solution", {})
+    if not isinstance(solution, dict):
+        return _result(False, "solution must be an object")
     patterns = solution.get("patterns")
     if not isinstance(patterns, list):
         return _result(False, "solution.patterns missing or not a list")
@@ -83,10 +80,9 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
             item_id = cut.get("item_id")
             if item_id is None:
                 return _result(False, f"patterns[{idx}].cuts missing item_id")
-            try:
-                item_id = int(item_id)
-            except (TypeError, ValueError):
-                return _result(False, f"patterns[{idx}].cuts item_id not int")
+            if not integer_value(item_id):
+                return _result(False, f"patterns[{idx}].cuts item_id must be a finite integer JSON number")
+            item_id = int(item_id)
             if item_id < 0 or item_id >= n_items:
                 return _result(False, f"item_id out of range: {item_id}")
 

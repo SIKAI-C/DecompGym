@@ -58,13 +58,13 @@ def solve(suite: str, problem: str, data_path: str | Path, *, method: str = "dec
 
 
 def verify(suite: str, problem: str, data_path: str | Path, output: dict[str, Any]) -> dict[str, Any]:
-    """Apply the same independent checks used by the experiment harness."""
+    """Apply the harness's numerical checks to a reference solution, including baselines."""
     from src.agent.output_verifier import OutputVerifier
 
     with tempfile.TemporaryDirectory(prefix="decompbench-verify-") as temporary:
         path = Path(temporary) / "output.json"
         path.write_text(json.dumps(output))
-        return OutputVerifier.verify_output(suite, problem, Path(data_path), path, 1e-6)
+        return OutputVerifier.verify_reference_output(suite, problem, Path(data_path), path, 1e-6)
 
 
 def _jsonable(value: Any) -> Any:

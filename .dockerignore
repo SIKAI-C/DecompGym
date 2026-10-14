@@ -1,0 +1,11 @@
+**
+!docker/
+!docker/agents/
+!docker/agents/Dockerfile
+!docker/agents/worker.py
+!docker/agents/agy_credentials.py
+!docker/agents/seccomp-userns.json
+!src/
+!src/agent/
+!src/agent/safe_artifacts.py
+!src/agent/cli_events.py

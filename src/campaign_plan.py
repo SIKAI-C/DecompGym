@@ -6,13 +6,18 @@ import json
 from pathlib import Path
 
 from src.agent.paired_runner import ProtocolError, identity
-from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
+from src.prompt_snapshot import PROMPT_PROTOCOL
 
 
 def load_plan(path: Path) -> dict:
     plan = json.loads(path.read_text())
     if plan.get("schema_version") != 1 or plan.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Plan prompt policy differs from the current harness")
+    if plan.get("prompt_protocol") != PROMPT_PROTOCOL:
+        raise ProtocolError("Plan must freeze the reviewed problem, judge, and output contracts")
+    if not plan.get("runtime_manifest") or not plan.get("runtime_manifest_sha256"):
+        raise ProtocolError("The fresh Docker workflow requires a prepared runtime manifest")
     queue = plan.get("model_queue", [])
     optional = plan.get("optional_queue", [])
     all_models = queue + optional
@@ -42,8 +47,8 @@ def load_plan(path: Path) -> dict:
         raise ProtocolError("Execution settings differ from the reviewed paired protocol")
     if not plan.get("dataset_inventory_sha256") or plan.get("reuse_generated_context") is not False:
         raise ProtocolError("A fresh cohort and pinned fixed dataset are required")
-    if plan.get("wrong_target_reflection_failure") != "fail_future_verified_wrong_target_reflections_without_synthetic_attempts":
-        raise ProtocolError("Wrong-path delivery must remain a recorded failure")
+    if plan.get("reflection_policy") != REFLECTION_POLICY or plan.get("wrong_target_reflection_failure") != REFLECTION_POLICY:
+        raise ProtocolError("Completed reflection omissions must consume their opportunity and advance")
     return plan
 
 

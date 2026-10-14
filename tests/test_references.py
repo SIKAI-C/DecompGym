@@ -33,8 +33,23 @@ def test_saved_reference_is_feasible_and_objective_consistent(path, tmp_path):
     result = json.loads(path.read_text())
     output = tmp_path / "output.json"
     output.write_text(json.dumps(reference_output(suite, problem, data, result)))
-    verified = OutputVerifier.verify_output(suite, problem, path.parent / "data.json", output, 1e-6)
+    verified = OutputVerifier.verify_reference_output(suite, problem, path.parent / "data.json", output, 1e-6)
     assert verified["ok"], verified["issues"]
+
+
+def test_reference_validation_does_not_relax_the_agent_contract(tmp_path):
+    from src.api import verify
+
+    data_path = tmp_path / "data.json"
+    data_path.write_text(json.dumps({"m": 1, "n": 1, "f": [2], "D": [[3]]}))
+    output = {"objective_value": 5, "y": [1], "x": [[1]]}
+    output_path = tmp_path / "output.json"
+    output_path.write_text(json.dumps(output))
+    assert verify("bd", "ufl", data_path, output)["ok"]
+    strict = OutputVerifier.verify_output("bd", "ufl", data_path, output_path, 1e-6)
+    assert not strict["ok"] and strict["failure_kind"] == "output_contract"
+    output["objective_value"] = 4
+    assert not verify("bd", "ufl", data_path, output)["ok"]
 
 
 @pytest.mark.parametrize("final_state", ["worse", "infeasible", "no_integer_recourse"])

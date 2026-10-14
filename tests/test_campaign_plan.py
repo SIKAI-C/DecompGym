@@ -11,9 +11,17 @@ from src.native_campaign import FAMILIES, ensure_execution_allowed, initialize, 
 from src.reporting_policy import model_exclusion
 from src import native_campaign, runtime_environment
 from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
+from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes
 
 
-PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-12-experiment-plan.json"
+PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-13-strict-decomposition-experiment-plan.json"
+
+
+@pytest.fixture(autouse=True)
+def synthetic_execution_environment(monkeypatch):
+    # Environment validation has its own tests; campaign layout tests need no local Docker daemon.
+    monkeypatch.setattr(native_campaign, "load_execution_environment", lambda *_: {"image_id": "sha256:fixture", "native_environment": {}, "evidence_root": "fixture"})
+    monkeypatch.setattr(native_campaign, "validate_execution_environment", lambda *_: None)
 
 
 def fixture_plan(tmp_path):
@@ -58,16 +66,34 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path, optional
     assert manifest["maximum_unique_generated_candidates"] == 81 * len(queue) * 19
     assert not (root / "runs").exists()
     assert (root / "controller/src/agent/claude_client.py").exists()
+    assert (root / "controller/docker/agents/worker.py").exists()
+    assert manifest["agent_execution"] == "docker"
+    assert manifest["solver_execution"] == "native-macos-seatbelt"
     assert manifest["runtime_environment"] == require_runtime_environment()
     assert {"pyproject.toml", ".python-version"} <= manifest["controller_sha256"].keys()
     assert native_campaign.require_campaign_environment(manifest) == manifest["runtime_environment"]
+    assert manifest["prompt_protocol"] == PROMPT_PROTOCOL
+    assert manifest["algorithm_judge_prompt_sha256"] == judge_prompt_hashes()
+    for case in manifest["instances"]:
+        relative = Path(case["suite"]) / case["problem"] / case["instance"]
+        original = data / relative / "prompt.txt"
+        frozen = root / "dataset" / relative
+        assert original.read_text() == "TASK"
+        assert (frozen / "prompt.original.txt").read_bytes() == original.read_bytes()
+        assert case["source_sha256"]["prompt.txt"] == case["prompt_snapshot"]["original_sha256"]
+        assert case["sha256"]["prompt.txt"] == case["prompt_snapshot"]["effective_sha256"]
+        assert (frozen / "prompt.txt").read_text() != "TASK"
+        if case["problem"] == "ufl":
+            assert "current directory" not in (frozen / "prompt.txt").read_text()
+        if case["problem"] == "lrp":
+            assert "1 means open and 0 means closed" in (frozen / "prompt.txt").read_text()
     assert read(root / "pause_request.json")["resume_requires_explicit_user_request"]
     with pytest.raises(ProtocolError, match="paused"):
         ensure_execution_allowed(root, manifest)
     dashboard = Dashboard(root).snapshot()
     assert [m["id"] for m in dashboard["models"]] == [item["model"] for item in queue if not model_exclusion(item["model"])]
     claude = next(m for m in dashboard["models"] if m["id"] == "claude-sonnet-5-5")
-    assert claude["backend"] == "Claude Code" and claude["effort"] == "High"
+    assert claude["backend"] == "Claude Code" and claude["effort"] == "Medium"
     assert dashboard["totals"]["planned"] == 81 * (len(queue) - 1)
     assert dashboard["historical_reference"]["model"] == "gpt-6-astra"
     with pytest.raises(ProtocolError, match="existing experiments are preserved"):
@@ -85,10 +111,10 @@ def test_wrong_runtime_stops_before_creating_campaign(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("command", ["run", "watch"])
 def test_runtime_failure_has_nonretryable_exit_code(tmp_path, monkeypatch, command):
-    def wrong_runtime(_):
+    def wrong_runtime(_, models=None):
         raise RuntimeEnvironmentError("version changed")
     monkeypatch.setattr(native_campaign, command, wrong_runtime)
-    monkeypatch.setattr(native_campaign.sys, "argv", ["native_campaign", command, "--root", str(tmp_path)])
+    monkeypatch.setattr(native_campaign.sys, "argv", ["native_campaign", command, "--root", str(tmp_path), "--all-models"])
     with pytest.raises(SystemExit) as stopped:
         native_campaign.main()
     assert stopped.value.code == 64
@@ -116,3 +142,9 @@ def test_plan_rejects_silent_protocol_changes(tmp_path, field, value):
     save(path, plan)
     with pytest.raises(ProtocolError):
         load_plan(path)
+
+
+def test_strict_controller_rejects_predecessor_prompt_plan():
+    old = PLAN.with_name("2026-10-12-experiment-plan.json")
+    with pytest.raises(ProtocolError, match="prompt and output contracts|problem, judge, and output contracts"):
+        load_plan(old)

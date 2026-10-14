@@ -101,7 +101,17 @@ print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'writ
             return result
 
     client = Annotated(MODEL, executable=str(executable), role='reflection')
-    runner = PairedRunner(client=client, judge_client=client, reflection_client=client, protocol_id='base', model=MODEL, suite='bd', problem=['ufl'], max_attempts=10)
+    class HistoricalDeliveryRunner(PairedRunner):
+        # Exercise the preserved historical closure validator explicitly. New campaigns consume an omission and continue.
+        def record_reflection_omission(self, call, target, step, metrics):
+            request = json.loads((call / 'request.json').read_text())
+            self.commit_delivery_failure(call, target, step, request['request_sha256'], metrics)
+            return metrics
+
+        def validate_reflection_omission(self, call, target, metrics):
+            self.record_reflection_omission(call, target, 'reflection', metrics)
+
+    runner = HistoricalDeliveryRunner(client=client, judge_client=client, reflection_client=client, protocol_id='base', model=MODEL, suite='bd', problem=['ufl'], max_attempts=10)
     target = attempt / 'debug.md'
     return root, source, directory, attempt, target, client, runner, phase_dir
 

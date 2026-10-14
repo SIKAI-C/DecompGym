@@ -78,7 +78,7 @@ class ArtifactManager:
         ro: list[str] = []
         for idx in range(1, current_idx):
             a_dir = attempts_root / f"attempt_{idx:02d}"
-            for name in ("solver.py", "debug.md"):
+            for name in ("solver.py", "debug.md", "reflection_feedback.md"):
                 p = a_dir / name
                 if p.exists():
                     ro.append(str(p.resolve()))

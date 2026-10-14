@@ -12,16 +12,16 @@ import signal
 import sys
 import threading
 import time
+import traceback
 
-from src.agent.agy_client import AgyClient
-from src.agent.claude_client import ClaudeClient
-from src.agent.codex_client import CodexClient
 from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, identity, read, save
 from src.agent.resource_monitor import ResourceGuard, sample_host, supervise, thermal_warnings
 from src.agent.runtime_state import runtime_lock, state_root
-from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
+from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.campaign_plan import load_plan, model_queue
 from src.runtime_environment import RuntimeEnvironmentError, require_runtime_environment
+from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes, snapshot_prompt
+from src.execution_environment import load_execution_environment, validate_execution_environment, require_backend_readiness
 
 
 FAMILIES = ["ufl", "fctp", "km", "lrp", "tsso", "bp", "csp", "gap", "shift"]
@@ -38,6 +38,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     if root.exists():
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
     environment = require_runtime_environment()
+    execution_environment = load_execution_environment(plan, plan_path)
     paths = list(data.glob("*/*/*/data.json"))
     if len(paths) != 81:
         raise ProtocolError("Exactly 81 existing fixed instances are required")
@@ -56,6 +57,7 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
     if identity(cases) != plan["dataset_inventory_sha256"]:
         raise ProtocolError("Dataset differs from the fixed-81 inventory pinned in the plan")
     for case in cases:
+        case["source_sha256"] = dict(case["sha256"])
         relative = Path(case["suite"]) / case["problem"] / case["instance"]
         destination = root / "dataset" / relative
         destination.mkdir(parents=True)
@@ -63,10 +65,15 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
             shutil.copyfile(data / relative / filename, destination / filename)
             if digest(destination / filename) != expected_hash:
                 raise ProtocolError("Dataset copy differs")
+        case["prompt_snapshot"] = snapshot_prompt(destination, case["suite"], case["problem"])
+        case["sha256"]["prompt.txt"] = digest(destination / "prompt.txt")
+        case["sha256"]["prompt.original.txt"] = digest(destination / "prompt.original.txt")
+        for filename in case["sha256"]:
             (destination / filename).chmod(0o444)
     source = Path(__file__).resolve().parent
     frozen = root / "controller"
     shutil.copytree(source, frozen / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(source.parent / "docker", frozen / "docker", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     for filename in ("pyproject.toml", ".python-version"):
         shutil.copyfile(source.parent / filename, frozen / filename)
     hashes = {str(p.relative_to(frozen)): digest(p) for p in frozen.rglob("*") if p.is_file()}
@@ -74,12 +81,15 @@ def initialize(root, data, plan_path=None, *, include_optional=False):
                 "data_regenerated": False, "original_data_root": str(data), "modes": ["plain", "reflection"],
                 "resource_guard": {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3},
                 "license_route": "existing host local license", "python": sys.version, "runtime_environment": environment, "controller_sha256": hashes, "instances": cases,
-                "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh workspace and conversation, native user settings retained, slash expansion disabled"}
+                "retry_delays_seconds": [60, 120, 300, 600, 900], "agy_isolation": "fresh Docker workspace and conversation; only dedicated authentication state retained; slash expansion disabled",
+                "agent_execution": "docker", "solver_execution": "native-macos-seatbelt", "execution_environment": execution_environment}
     queue = plan["model_queue"] + (plan["optional_queue"] if include_optional else [])
     manifest.update(plan["execution"])
     manifest.update(schema_version=3, experiment_plan=plan, experiment_plan_id=identity(plan),
                     prompt_policies=plan["prompt_policies"], model_queue=queue, historical_reuse=plan["historical_reference"],
                     wrong_target_reflection_failure=plan["wrong_target_reflection_failure"],
+                    reflection_policy=plan["reflection_policy"],
+                    prompt_protocol=PROMPT_PROTOCOL, algorithm_judge_prompt_sha256=judge_prompt_hashes(),
                     gpt_order=[item["model"] for item in queue if item["backend"] == "codex-cli"],
                     agy_order=[item["model"] for item in queue if item["backend"] == "agy-cli"],
                     claude_order=[item["model"] for item in queue if item["backend"] == "claude-code-cli"],
@@ -131,17 +141,47 @@ def pair_complete(root, model, case, protocol):
     return True
 
 
-def run(root):
+def execution_queue(manifest, models=None):
+    """Resolve an operational launch scope without changing the frozen cohort."""
+    queue = model_queue(manifest)
+    if models is None:
+        return queue
+    if not models or len(models) != len(set(models)):
+        raise ProtocolError("Execution scope must contain distinct model IDs")
+    unknown = set(models) - {item["model"] for item in queue}
+    if unknown:
+        raise ProtocolError(f"Execution scope contains models outside the frozen cohort: {sorted(unknown)}")
+    selected = set(models)
+    return [item for item in queue if item["model"] in selected]
+
+
+def run(root, models=None):
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    queue = execution_queue(manifest, models)
     require_campaign_environment(manifest)
+    environment = manifest["execution_environment"]
+    readiness = require_backend_readiness(environment, [item["backend"] for item in queue] + ["codex-cli"])
     if Path(__file__).resolve().parents[1] != root / "controller":
         raise ProtocolError("Run from the frozen native controller")
-    state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "native_adapter_ready", "models": {}}
+    selected_models = [item["model"] for item in queue]
+    state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "docker_adapter_ready", "models": {}, "readiness": readiness,
+             "execution_scope": selected_models, "scope_expected_pairs": len(queue) * len(manifest["instances"]), "scope_complete": False}
+    save(root / "launches" / f"{time.time_ns()}.json", {"started_at": state["started_at"], "controller_pid": os.getpid(), "protocol_id": manifest["protocol_id"], "execution_scope": selected_models, "scope_expected_pairs": state["scope_expected_pairs"]})
     mutex = threading.RLock()
     from src.native_execution_phase import NativeCallGate, auth_failure_marker
     gate = NativeCallGate(state_root(), root)
-    class CampaignCodexClient(CodexClient):
+    from src.agent.docker_client import DockerCliClient, AuthenticationRequired
+    from src.agent.native_solver import NativeSandboxExecutor
+    from src.hybrid_runtime import runtime
+    engine = runtime()
+    engine.bind_environment(environment)
+    if engine.image_id(environment["image_id"]) != environment["image_id"]:
+        raise RuntimeEnvironmentError("The frozen Docker image is unavailable")
+    if any(item["backend"] == "agy-cli" for item in queue) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
+        raise AuthenticationRequired("Supply the benchmark AGY keyring passphrase privately in the local launch environment")
+    solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"])
+    class CampaignCodexClient(DockerCliClient):
         def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
             result = super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
             stderr_path = (log_dir or target.parent) / f"{step}_stderr.log"
@@ -152,14 +192,12 @@ def run(root):
     def call_lock(client):
         backend = client.protocol()["backend"]
         return gate.enter() if backend == "codex-cli" else runtime_lock("native-agy-auth" if backend == "agy-cli" else "native-claude-auth")
-    specifications = {item["model"]: item for item in model_queue(manifest)}
+    specifications = {item["model"]: item for item in queue}
     def make_client(model, role):
-        specification = specifications[model]
+        specification = {"backend": "codex-cli", "effort": manifest["judge_effort"]} if role == "algorithm_judge" else specifications[model]
         backend = specification["backend"]
-        if backend == "agy-cli":
-            return AgyClient(model, role=role, timeout=manifest["agent_timeout"])
-        cls = CampaignCodexClient if backend == "codex-cli" else ClaudeClient
-        return cls(model, role=role, effort=specification["effort"], timeout=manifest["agent_timeout"])
+        cls = CampaignCodexClient if backend == "codex-cli" else DockerCliClient
+        return cls(model, backend=backend, image_id=environment["image_id"], runtime=engine, evidence_root=root / "diagnostics/runtime", role=role, effort=specification["effort"], timeout=manifest["agent_timeout"])
     def checkpoint():
         with mutex:
             state["updated_at"] = now()
@@ -177,8 +215,8 @@ def run(root):
         try:
             client = make_client(model, "generation")
             reflection_client = make_client(model, "reflection")
-            judge = CampaignCodexClient(manifest["judge_model"], effort=manifest["judge_effort"], role="algorithm_judge")
-            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock)
+            judge = make_client(manifest["judge_model"], "algorithm_judge")
+            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor)
             source = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
             return runner.run_pair(source, root / "runs" / model)
         finally:
@@ -224,7 +262,12 @@ def run(root):
                                 submit()
                 if error:
                     raise error
-            state["state"] = "complete"
+            remaining_models = [item["model"] for item in model_queue(manifest) if item["model"] not in specifications and any(not pair_complete(root, item["model"], case, manifest["protocol_id"]) for case in manifest["instances"])]
+            state.update(state="paused" if remaining_models else "complete", active_model=None, scope_complete=True, campaign_complete=not remaining_models, remaining_models=remaining_models)
+            if remaining_models:
+                pause = read(root / "pause_request.json") or {}
+                pause.update(recorded_at=now(), state="paused", resume_requires_explicit_user_request=True, reason="launch_scope_complete", completed_execution_scope=selected_models, remaining_models=remaining_models)
+                save(root / "pause_request.json", pause)
             checkpoint()
             return 0
         except KeyboardInterrupt:
@@ -232,17 +275,23 @@ def run(root):
             checkpoint()
             return 130
         except Exception as error:
-            state.update(state="infrastructure_stopped", error=f"{type(error).__name__}: {error}")
+            retryable = isinstance(error, InfrastructureError)
+            state.update(state="infrastructure_stopped" if retryable else "repair_required", error=f"{type(error).__name__}: {error}")
             checkpoint()
+            save(root / "controller_failures" / f"{time.time_ns()}.json", {"recorded_at": now(), "retryable": retryable, "error_type": type(error).__name__, "error": str(error), "traceback": traceback.format_exc()})
             print(state["error"], flush=True)
-            return 64 if isinstance(error, (ProtocolError, RuntimeEnvironmentError)) else 75
+            return 75 if retryable else 64
 
 
-def watch(root):
+def watch(root, models=None):
     """Keep monitoring and resume durable stages after backoff or a cooling stop."""
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    selected_models = [item["model"] for item in execution_queue(manifest, models)]
     require_campaign_environment(manifest)
+    from src.hybrid_runtime import runtime
+    engine = runtime()
+    engine.bind_environment(manifest["execution_environment"])
     monitor_root = root / "monitor"
     monitor_root.mkdir(exist_ok=True)
     attempts = 0
@@ -252,19 +301,21 @@ def watch(root):
     signal.signal(signal.SIGINT, stop)
     guard_options = {k: v for k, v in manifest["resource_guard"].items() if k != "sample_interval"}
     command = [sys.executable, "-u", "-m", "src.native_campaign", "run", "--root", str(root)]
-    save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "continuous_resource_monitor": True})
+    for model in selected_models:
+        command.extend(["--model", model])
+    save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "execution_scope": selected_models, "continuous_resource_monitor": True})
     try:
         with runtime_lock("fixed81-native-watchdog"):
             while True:
                 ensure_execution_allowed(root, manifest)
                 try:
-                    result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options))
+                    result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options), container_sampler=engine.resource_samples)
                 except (RuntimeError, OSError) as error:
-                    if type(error).__name__ == "CleanupError":
+                    if isinstance(error, RuntimeEnvironmentError) or type(error).__name__ == "CleanupError":
                         raise
                     result = 75
                     print(f"Monitoring startup failed: {type(error).__name__}: {error}", flush=True)
-                if result in (0, 64, 130):
+                if result != 75:
                     return result
                 delay = manifest["retry_delays_seconds"][min(attempts, len(manifest["retry_delays_seconds"]) - 1)]
                 attempts += 1
@@ -293,6 +344,10 @@ def watch(root):
 def ensure_execution_allowed(root, manifest):
     if manifest.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Use the original frozen controller for legacy data; this controller requires a fresh cohort")
+    if manifest.get("reflection_policy") != REFLECTION_POLICY:
+        raise ProtocolError("This controller requires the new reflection delivery policy; preserve the legacy controller")
+    if manifest.get("prompt_protocol") != PROMPT_PROTOCOL:
+        raise ProtocolError("This controller requires the reviewed prompt and output contracts")
     pause = read(root / "pause_request.json") or {}
     if pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists():
         raise ProtocolError("Campaign is paused; explicit user resumption is required")
@@ -302,6 +357,9 @@ def require_campaign_environment(manifest):
     environment = manifest.get("runtime_environment")
     if not isinstance(environment, dict):
         raise ProtocolError("Campaign has no frozen runtime environment; use its original frozen controller")
+    if manifest.get("agent_execution") != "docker" or manifest.get("solver_execution") != "native-macos-seatbelt":
+        raise ProtocolError("The new cohort requires Docker editing and restricted native execution")
+    validate_execution_environment(manifest["execution_environment"])
     return require_runtime_environment(environment)
 
 
@@ -312,14 +370,29 @@ def main():
     parser.add_argument("--data", type=Path, default=Path("data"))
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--include-optional", action="store_true", help="Include the optional last-priority model in a new frozen plan")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--model", action="append", dest="models", help="Execute only this frozen model; repeat to select more, retaining frozen queue order")
+    scope.add_argument("--all-models", action="store_true", help="Explicitly authorize dispatch of the complete frozen model queue")
     args = parser.parse_args()
+    if args.command == "init" and (args.models or args.all_models):
+        parser.error("Initialize the full plan first; execution scope applies only to run/watch")
+    if args.command != "init" and args.models is None and not args.all_models:
+        parser.error("run/watch requires an explicit --model selection or --all-models")
     root = args.root.resolve()
     try:
         if args.command == "init":
             initialize(root, args.data.resolve(), args.plan, include_optional=args.include_optional)
             return
-        raise SystemExit(run(root) if args.command == "run" else watch(root))
+        raise SystemExit(run(root, models=args.models) if args.command == "run" else watch(root, models=args.models))
     except (ProtocolError, RuntimeEnvironmentError) as error:
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(64) from error
+    except InfrastructureError as error:
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(75) from error
+    except Exception as error:
+        if root.is_dir():
+            save(root / "controller_failures" / f"{time.time_ns()}.json", {"recorded_at": now(), "retryable": False, "error_type": type(error).__name__, "error": str(error), "traceback": traceback.format_exc()})
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(64) from error
 

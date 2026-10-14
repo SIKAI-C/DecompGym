@@ -44,7 +44,7 @@ def write_case(matrix, mode="plain", complete=True):
     (directory / "solver.py").write_text("# synthetic fixture\n")
     (directory / "agent_invocation.json").write_text(json.dumps({"ephemeral": True, "ignore_user_config": True, "project_doc_max_bytes": 0}))
     (directory / "alg_verifier.md").write_text("VERDICT: PASS\nNOTES: synthetic review\n")
-    (directory / "output.json").write_text(json.dumps({"y": [0, 1], "x": [[0], [1]], "objective_value": 4}))
+    (directory / "output.json").write_text(json.dumps({"status": "feasible", "method": "benders_decomposition", "y": [0, 1], "x": [[0], [1]], "objective_value": 4}))
     return destination
 
 

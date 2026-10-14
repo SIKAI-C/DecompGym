@@ -135,7 +135,7 @@ def ufl_files(directory: Path, output: dict):
     data = directory / "data.json"
     result = directory / "output.json"
     data.write_text(json.dumps({"m": 2, "n": 1, "f": [2, 3], "D": [[4], [1]]}))
-    result.write_text(json.dumps(output))
+    result.write_text(json.dumps({"status": "feasible", "method": "benders_decomposition", **output}))
     return data, result
 
 
@@ -285,7 +285,7 @@ def test_early_stop_records_reuse_without_extra_calls(tmp_path):
             self.calls.append(step)
             assert all(path.name not in {"meta.json", "gold_monolithic.json"} for path in context or [])
             if step == "agent":
-                target.write_text("import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'y':[0,1],'x':[[0],[1]],'objective_value':4}))\n")
+                target.write_text("import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'status':'feasible','method':'benders_decomposition','y':[0,1],'x':[[0],[1]],'objective_value':4}))\n")
             else:
                 target.write_text("VERDICT: PASS\nNOTES: mocked algorithm review\n")
             return CodexResult(True, 0, 0.01, {})

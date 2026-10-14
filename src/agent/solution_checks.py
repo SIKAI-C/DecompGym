@@ -24,6 +24,8 @@ def check_bd_solution(problem: str, data: dict, output: dict, tol: float) -> dic
         values = list(numbers(output[name]))
         if any(not math.isfinite(v) or v < -tol for v in values):
             issues.append(f"{name} must contain finite nonnegative values")
+        if problem == "ufl" and name == "x" and any(not math.isfinite(v) or min(abs(v), abs(v - 1)) > tol for v in values):
+            issues.append("x must contain finite binary assignments")
         if name == "lambda" and any(abs(v - round(v)) > tol or v > 1 + tol for v in values):
             issues.append("lambda must contain binary route selections")
     if issues:
