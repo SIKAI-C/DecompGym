@@ -51,12 +51,12 @@
     {
       "model": "claude-opus-5-5",
       "backend": "claude-code-cli",
-      "effort": "high"
+      "effort": "medium"
     },
     {
       "model": "claude-sonnet-5-5",
       "backend": "claude-code-cli",
-      "effort": "high"
+      "effort": "medium"
     }
   ],
   "optional_queue": [
