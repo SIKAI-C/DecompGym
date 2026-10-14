@@ -15,6 +15,33 @@ from src.prompt_snapshot import PROMPT_PROTOCOL, judge_prompt_hashes
 
 
 PLAN = Path(__file__).resolve().parents[1] / "docs/2026-10-13-strict-decomposition-experiment-plan.json"
+FRESH_PLAN = PLAN.with_name("2026-10-13-fresh-all-models-plan.json")
+
+
+def test_authorized_all_fresh_queue_includes_astra_and_changes_family_order():
+    plan = load_plan(FRESH_PLAN)
+    assert len(plan["model_queue"]) == 10
+    assert [item["backend"] for item in plan["model_queue"]] == ["codex-cli"] * 6 + ["claude-code-cli"] * 2 + ["agy-cli"] * 2
+    assert plan["model_queue"][0]["model"] == "gpt-6-astra"
+    assert plan["historical_reference"] is None
+    assert plan["reporting"]["fresh_execution_pairs"] == 810
+
+
+@pytest.mark.parametrize("change", ["historical_astra", "old_order", "wrong_effort", "unapproved_model"])
+def test_fresh_queue_rejects_mixed_configuration(tmp_path, change):
+    plan = load_plan(FRESH_PLAN)
+    if change == "historical_astra":
+        plan["historical_reference"] = load_plan(PLAN)["historical_reference"]
+    elif change == "old_order":
+        plan["model_queue"][6], plan["model_queue"][8] = plan["model_queue"][8], plan["model_queue"][6]
+    elif change == "wrong_effort":
+        plan["model_queue"][6]["effort"] = "high"
+    else:
+        plan["model_queue"][0]["model"] = "unapproved"
+    path = tmp_path / "bad-plan.json"
+    save(path, plan)
+    with pytest.raises(ProtocolError):
+        load_plan(path)
 
 
 @pytest.fixture(autouse=True)

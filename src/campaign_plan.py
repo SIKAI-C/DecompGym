@@ -10,6 +10,10 @@ from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTIO
 from src.prompt_snapshot import PROMPT_PROTOCOL
 
 
+FRESH_QUEUE_POLICY = "fresh-gpt-claude-gemini-20261013-v2"
+FRESH_CODEX_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"}
+
+
 def load_plan(path: Path) -> dict:
     plan = json.loads(path.read_text())
     if plan.get("schema_version") != 1 or plan.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
@@ -23,20 +27,32 @@ def load_plan(path: Path) -> dict:
     all_models = queue + optional
     if not queue or len({item["model"] for item in all_models}) != len(all_models):
         raise ProtocolError("Model queue is empty or contains duplicates")
-    ranks = {"codex-cli": 0, "agy-cli": 1, "claude-code-cli": 2}
+    policy = plan.get("queue_policy", "historical-astra-gpt-gemini-claude-v1")
+    if policy not in ("historical-astra-gpt-gemini-claude-v1", FRESH_QUEUE_POLICY):
+        raise ProtocolError("Unknown model queue policy")
+    fresh = policy == FRESH_QUEUE_POLICY
+    ranks = {"codex-cli": 0, "claude-code-cli": 1, "agy-cli": 2} if fresh else {"codex-cli": 0, "agy-cli": 1, "claude-code-cli": 2}
     previous = -1
     for item in queue:
         rank = ranks.get(item.get("backend"), -1)
         if rank < previous or rank < 0:
-            raise ProtocolError("Required queue must be GPT, Gemini, then Claude Code")
+            raise ProtocolError("Required queue must be GPT, Claude Code, then Gemini" if fresh else "Required queue must be GPT, Gemini, then Claude Code")
         previous = rank
         if item["backend"] == "agy-cli" and not item["model"].startswith("gemini-"):
             raise ProtocolError("The required AGY queue is reserved for Gemini")
         if item["backend"] == "claude-code-cli" and item["model"] not in ("claude-opus-5-5", "claude-sonnet-5-5"):
             raise ProtocolError("Claude must use an explicitly pinned approved model ID")
+        if fresh and item["backend"] in ("codex-cli", "claude-code-cli") and item.get("effort") != "medium":
+            raise ProtocolError("Fresh GPT and Claude generation/reflection must use medium effort")
+    if fresh:
+        expected_models = FRESH_CODEX_MODELS | {"claude-opus-5-5", "claude-sonnet-5-5", "gemini-3.8-flash-medium", "gemini-3.1-pro-high"}
+        if {item["model"] for item in queue} != expected_models or {item["model"] for item in queue if item["backend"] == "codex-cli"} != FRESH_CODEX_MODELS:
+            raise ProtocolError("Fresh required queue must contain the ten explicitly approved models")
+        if plan.get("historical_reference") is not None:
+            raise ProtocolError("The all-fresh cohort cannot substitute a historical Astra result")
     if any(item.get("model") != "gpt-oss-120b-medium" or item.get("backend") != "agy-cli" for item in optional):
         raise ProtocolError("Only GPT-OSS 120B is the optional last priority")
-    if any(item["model"] == "gpt-6-astra" for item in all_models):
+    if not fresh and any(item["model"] == "gpt-6-astra" for item in all_models):
         raise ProtocolError("Astra is a historical reference, not a rerun")
     expected = {"workers": 2, "max_attempts": 10, "solver_timeout": 60, "solver_threads": 1,
                 "solver_cooldown_seconds": 10, "agent_timeout": 900, "active_codex_invocation_limit": 2,
