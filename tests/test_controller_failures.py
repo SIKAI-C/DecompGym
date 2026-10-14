@@ -94,7 +94,7 @@ def test_watchdog_does_not_retry_an_unclassified_exit(tmp_path, monkeypatch, ret
     from types import SimpleNamespace
     from src import hybrid_runtime
 
-    manifest = {"execution_environment": {}, "resource_guard": {}, "retry_delays_seconds": [0]}
+    manifest = {"execution_environment": {}, "resource_guard": {}, "retry_delays_seconds": [0], "model_queue": [{"model": "fixture", "backend": "codex-cli", "effort": "medium"}]}
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
     monkeypatch.setattr(campaign, "ensure_execution_allowed", lambda *_: None)
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
@@ -110,11 +110,11 @@ def test_watchdog_does_not_retry_an_unclassified_exit(tmp_path, monkeypatch, ret
 
 
 def test_unexpected_startup_failure_is_recorded_as_nonretryable(tmp_path, monkeypatch):
-    def malformed_evidence(_):
+    def malformed_evidence(_, models=None):
         raise KeyError("missing readiness field")
 
     monkeypatch.setattr(campaign, "run", malformed_evidence)
-    monkeypatch.setattr(campaign.sys, "argv", ["native_campaign", "run", "--root", str(tmp_path)])
+    monkeypatch.setattr(campaign.sys, "argv", ["native_campaign", "run", "--root", str(tmp_path), "--all-models"])
     with pytest.raises(SystemExit) as stopped:
         campaign.main()
     assert stopped.value.code == 64

@@ -141,15 +141,33 @@ def pair_complete(root, model, case, protocol):
     return True
 
 
-def run(root):
+def execution_queue(manifest, models=None):
+    """Resolve an operational launch scope without changing the frozen cohort."""
+    queue = model_queue(manifest)
+    if models is None:
+        return queue
+    if not models or len(models) != len(set(models)):
+        raise ProtocolError("Execution scope must contain distinct model IDs")
+    unknown = set(models) - {item["model"] for item in queue}
+    if unknown:
+        raise ProtocolError(f"Execution scope contains models outside the frozen cohort: {sorted(unknown)}")
+    selected = set(models)
+    return [item for item in queue if item["model"] in selected]
+
+
+def run(root, models=None):
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    queue = execution_queue(manifest, models)
     require_campaign_environment(manifest)
     environment = manifest["execution_environment"]
-    readiness = require_backend_readiness(environment, [item["backend"] for item in model_queue(manifest)] + ["codex-cli"])
+    readiness = require_backend_readiness(environment, [item["backend"] for item in queue] + ["codex-cli"])
     if Path(__file__).resolve().parents[1] != root / "controller":
         raise ProtocolError("Run from the frozen native controller")
-    state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "docker_adapter_ready", "models": {}, "readiness": readiness}
+    selected_models = [item["model"] for item in queue]
+    state = {"state": "running", "pid": os.getpid(), "started_at": now(), "active_model": None, "active_instances": {}, "workers": 2, "agy_state": "docker_adapter_ready", "models": {}, "readiness": readiness,
+             "execution_scope": selected_models, "scope_expected_pairs": len(queue) * len(manifest["instances"]), "scope_complete": False}
+    save(root / "launches" / f"{time.time_ns()}.json", {"started_at": state["started_at"], "controller_pid": os.getpid(), "protocol_id": manifest["protocol_id"], "execution_scope": selected_models, "scope_expected_pairs": state["scope_expected_pairs"]})
     mutex = threading.RLock()
     from src.native_execution_phase import NativeCallGate, auth_failure_marker
     gate = NativeCallGate(state_root(), root)
@@ -160,7 +178,7 @@ def run(root):
     engine.bind_environment(environment)
     if engine.image_id(environment["image_id"]) != environment["image_id"]:
         raise RuntimeEnvironmentError("The frozen Docker image is unavailable")
-    if any(item["backend"] == "agy-cli" for item in model_queue(manifest)) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
+    if any(item["backend"] == "agy-cli" for item in queue) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
         raise AuthenticationRequired("Supply the benchmark AGY keyring passphrase privately in the local launch environment")
     solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"])
     class CampaignCodexClient(DockerCliClient):
@@ -174,7 +192,7 @@ def run(root):
     def call_lock(client):
         backend = client.protocol()["backend"]
         return gate.enter() if backend == "codex-cli" else runtime_lock("native-agy-auth" if backend == "agy-cli" else "native-claude-auth")
-    specifications = {item["model"]: item for item in model_queue(manifest)}
+    specifications = {item["model"]: item for item in queue}
     def make_client(model, role):
         specification = {"backend": "codex-cli", "effort": manifest["judge_effort"]} if role == "algorithm_judge" else specifications[model]
         backend = specification["backend"]
@@ -244,7 +262,12 @@ def run(root):
                                 submit()
                 if error:
                     raise error
-            state["state"] = "complete"
+            remaining_models = [item["model"] for item in model_queue(manifest) if item["model"] not in specifications and any(not pair_complete(root, item["model"], case, manifest["protocol_id"]) for case in manifest["instances"])]
+            state.update(state="paused" if remaining_models else "complete", active_model=None, scope_complete=True, campaign_complete=not remaining_models, remaining_models=remaining_models)
+            if remaining_models:
+                pause = read(root / "pause_request.json") or {}
+                pause.update(recorded_at=now(), state="paused", resume_requires_explicit_user_request=True, reason="launch_scope_complete", completed_execution_scope=selected_models, remaining_models=remaining_models)
+                save(root / "pause_request.json", pause)
             checkpoint()
             return 0
         except KeyboardInterrupt:
@@ -260,10 +283,11 @@ def run(root):
             return 75 if retryable else 64
 
 
-def watch(root):
+def watch(root, models=None):
     """Keep monitoring and resume durable stages after backoff or a cooling stop."""
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    selected_models = [item["model"] for item in execution_queue(manifest, models)]
     require_campaign_environment(manifest)
     from src.hybrid_runtime import runtime
     engine = runtime()
@@ -277,7 +301,9 @@ def watch(root):
     signal.signal(signal.SIGINT, stop)
     guard_options = {k: v for k, v in manifest["resource_guard"].items() if k != "sample_interval"}
     command = [sys.executable, "-u", "-m", "src.native_campaign", "run", "--root", str(root)]
-    save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "continuous_resource_monitor": True})
+    for model in selected_models:
+        command.extend(["--model", model])
+    save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "execution_scope": selected_models, "continuous_resource_monitor": True})
     try:
         with runtime_lock("fixed81-native-watchdog"):
             while True:
@@ -344,13 +370,20 @@ def main():
     parser.add_argument("--data", type=Path, default=Path("data"))
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--include-optional", action="store_true", help="Include the optional last-priority model in a new frozen plan")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--model", action="append", dest="models", help="Execute only this frozen model; repeat to select more, retaining frozen queue order")
+    scope.add_argument("--all-models", action="store_true", help="Explicitly authorize dispatch of the complete frozen model queue")
     args = parser.parse_args()
+    if args.command == "init" and (args.models or args.all_models):
+        parser.error("Initialize the full plan first; execution scope applies only to run/watch")
+    if args.command != "init" and args.models is None and not args.all_models:
+        parser.error("run/watch requires an explicit --model selection or --all-models")
     root = args.root.resolve()
     try:
         if args.command == "init":
             initialize(root, args.data.resolve(), args.plan, include_optional=args.include_optional)
             return
-        raise SystemExit(run(root) if args.command == "run" else watch(root))
+        raise SystemExit(run(root, models=args.models) if args.command == "run" else watch(root, models=args.models))
     except (ProtocolError, RuntimeEnvironmentError) as error:
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(64) from error

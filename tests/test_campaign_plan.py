@@ -111,10 +111,10 @@ def test_wrong_runtime_stops_before_creating_campaign(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("command", ["run", "watch"])
 def test_runtime_failure_has_nonretryable_exit_code(tmp_path, monkeypatch, command):
-    def wrong_runtime(_):
+    def wrong_runtime(_, models=None):
         raise RuntimeEnvironmentError("version changed")
     monkeypatch.setattr(native_campaign, command, wrong_runtime)
-    monkeypatch.setattr(native_campaign.sys, "argv", ["native_campaign", command, "--root", str(tmp_path)])
+    monkeypatch.setattr(native_campaign.sys, "argv", ["native_campaign", command, "--root", str(tmp_path), "--all-models"])
     with pytest.raises(SystemExit) as stopped:
         native_campaign.main()
     assert stopped.value.code == 64
