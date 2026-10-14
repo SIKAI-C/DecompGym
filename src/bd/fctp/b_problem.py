@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 BASE_PROMPT_FCTP = """You are an expert operations research engineer and Python programmer.
 
@@ -34,19 +36,19 @@ Unit costs:
 {unit_cost}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) Loads data.json.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes output.json with at least:
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
     {{
       "status": "optimal | feasible | infeasible | error",
-      "method": "benders_decomposition", # or "monolithic"
+      "method": "benders_decomposition",
       "objective_value": <float>,
       "y": [[...]],  # m x n
-      "x": [[...]]   # m x n representing the last subproblem solution
+      "x": [[...]]   # m x n corresponding to the reported incumbent y and objective_value
     }}
+
+{method_requirements}
 """
 
 
@@ -75,4 +77,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         demand=_fmt_vector("demand", data.get("demand", [])),
         fixed_cost=_fmt_matrix("fixed_cost", data.get("fixed_cost", [])),
         unit_cost=_fmt_matrix("unit_cost", data.get("unit_cost", [])),
+        method_requirements=method_requirements("bd"),
     )

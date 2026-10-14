@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 BASE_PROMPT_UFL = """You are an expert operations research engineer and Python programmer.
 
@@ -23,15 +25,13 @@ decide which facilities to open and how to assign each customer so total open-pl
 - Shipping cost matrix (D): each line is for one facility i, listing cost to each customer j (i -> j):
 {D}
 
-All data are stored in a JSON file named data.json in the current directory.
+All input data are stored in a JSON file named data.json.
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
-1) Reads data.json from the current directory.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes a JSON file output.json with at least:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads the input data.json file.
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes a JSON file output.json with at least:
    {{
      "status": "optimal | feasible | infeasible | error",
      "method": "benders_decomposition",
@@ -39,6 +39,8 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
      "y": [0/1 list of length m indicating open facilities],
      "x": [[0/1 matrix of shape (m, n) indicating assignments]]
    }}
+
+{method_requirements}
 """
 
 
@@ -99,4 +101,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         Xf=Xf_block,
         f=f_block,
         D=D_block,
+        method_requirements=method_requirements("bd"),
     )

@@ -17,6 +17,7 @@ from src.agent.exec_logger import ExecLogger
 from src.agent.experiment_runner import AttemptResult, ExperimentRunner
 from src.agent.files_manager import ArtifactManager
 from src.agent.output_verifier import OutputVerifier
+from src.agent.algorithm_verifier import algorithm_review_prompt
 from src.agent.prompt_builder import PromptBuilder
 from src.agent.prompt_policy import FEEDBACK_POLICY, WORKSPACE_POLICY
 from src.agent.runtime_state import runtime_lock
@@ -169,7 +170,7 @@ class PairedRunner(ExperimentRunner):
 
     def generation_prompt(self, instance):
         prompt = PromptBuilder.ensure_location_prompt((instance / "prompt.txt").read_text())
-        prompt += "\n\nImplement a standalone solver.py using gurobipy and standard Python libraries. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
+        prompt += "\n\nImplement a standalone solver.py using gurobipy, NumPy, and the Python standard library. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
         prompt += f"\nThe harness limits the entire solver.py execution to {self.solver_timeout} seconds and numerical solvers to {self.solver_threads} thread(s). Design your algorithm and termination handling within this budget."
         return prompt
 
@@ -229,8 +230,7 @@ class PairedRunner(ExperimentRunner):
                     objective = float(verification["objective_value"])
             else:
                 issues.append(stderr or "solver execution failed")
-            method = "Benders decomposition" if self.suite == "bd" else "column generation"
-            prompt = f"Inspect the supplied solver.py and determine whether it implements {method}. Check the master/subproblem split, dual or reduced-cost information, and iterative cut/column updates. A monolithic optimization model alone does not pass. Do not execute or modify solver.py. Write alg_verifier.md with exactly a first line VERDICT: PASS or VERDICT: FAIL, followed by NOTES: and concise evidence. Feasibility is checked separately."
+            prompt = algorithm_review_prompt(self.suite)
             judged = self.edit(self.judge_client, attempt_dir / "alg_verifier.md", prompt, [attempt_dir / "solver.py"], "llm_verifier")
             notes = (attempt_dir / "alg_verifier.md").read_text().strip()
             verdict = {"VERDICT: PASS": "pass", "VERDICT: FAIL": "fail"}.get(notes.splitlines()[0].strip().upper() if notes else "")

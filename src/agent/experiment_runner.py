@@ -144,7 +144,7 @@ class ExperimentRunner:
         context = [instance_root / "data.json"]
         if self.reflection and idx > 1:
             context += [Path(path) for path in ArtifactManager.collect_previous_attempt_files(attempt_dir.parent, idx)]
-        prompt += "\n\nImplement a standalone solver.py using gurobipy and standard Python libraries. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
+        prompt += "\n\nImplement a standalone solver.py using gurobipy, NumPy, and the Python standard library. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
         prompt += f"\nThe harness limits the entire solver.py execution to {self.solver_timeout} seconds and numerical solvers to {self.solver_threads} thread(s). Design your algorithm and termination handling within this budget."
         (attempt_dir / "solver.py").write_text("")
         generation = self.client.edit_file(attempt_dir / "solver.py", prompt, context=context, log_dir=attempt_dir, step="agent")

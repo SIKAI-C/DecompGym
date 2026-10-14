@@ -54,9 +54,8 @@ class PromptBuilder:
         Ensure the prompt includes the location note for data/prompt/output files.
         """
         location_note = (
-            "IMPORTANT: data.json and prompt.txt are located two levels up (../../). "
-            "Read data from ../../data.json and ../../prompt.txt, and write output.json in the current folder. "
-            "Do NOT read from ../data.json or attempts/data.json.\n\n"
+            "The data below are provided as read-only context for this editing call.\n"
+            "The generated solver.py will be executed later in a separate runtime directory, where it must read ../../data.json and write output.json in that runtime directory."
         )
         if location_note in base_prompt:
             return base_prompt

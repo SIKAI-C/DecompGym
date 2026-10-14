@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agent.decomposition_policy import method_requirements
+
 
 SIZE_FLAVOR = "an operation assigning jobs to limited resources under capacity"
 
@@ -27,7 +29,7 @@ Sample assignments:
 {sample_lines}
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) loads data.json,
 2) Implements a Column Generation to solve the GAP,
 3) writes output.json with at least:
@@ -36,10 +38,18 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
   "method": "column_generation",
   "objective_value": <float>,
   "solution": {{
-     "assignments": [{{"job_id": i, "machine_id": j}}, ...]
+    "assignments": [
+      {{
+        "job_id": i,
+        "machine_id": j
+      }},
+      ...
+    ]
   }}
 }}
 All jobs must be assigned exactly once and no machine capacity may be exceeded.
+
+{method_requirements}
 """
 
 
@@ -67,4 +77,5 @@ def render_prompt(data: dict[str, Any]) -> str:
     return BASE_PROMPT_GAP.format(
         scenario=_scenario(data.get("instance_size", "medium")),
         sample_lines=_fmt_assignments(data.get("jobs", [])),
+        method_requirements=method_requirements("cg"),
     )
