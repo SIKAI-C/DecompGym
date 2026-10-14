@@ -28,7 +28,7 @@ def save(path, value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--controller", type=Path, required=True)
+    parser.add_argument("--controller", type=Path, default=REPO, help="Source checkout to inspect; defaults to this repository")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     controller, root = args.controller.resolve(), args.output.resolve()
