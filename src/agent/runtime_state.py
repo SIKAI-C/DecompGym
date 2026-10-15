@@ -18,10 +18,10 @@ def state_root() -> Path:
 
 
 @contextmanager
-def runtime_lock(name: str):
+def runtime_lock(name: str, *, blocking=True):
     descriptor = os.open(state_root() / f"{name}.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
         yield
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)

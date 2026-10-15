@@ -119,6 +119,8 @@ def validate(root):
     protocol = check.pop("protocol_id")
     if identity(check) != protocol:
         raise ProtocolError("Campaign protocol changed")
+    from src.campaign_extension import validate_lineage
+    validate_lineage(root, manifest)
     return manifest
 
 
@@ -300,10 +302,18 @@ def run(root, models=None):
             return 75 if retryable else 64
 
 
-def watch(root, models=None):
+def watch(root, models=None, coordinator_token=None):
     """Keep monitoring and resume durable stages after backoff or a cooling stop."""
     manifest = validate(root)
     ensure_execution_allowed(root, manifest)
+    from src.campaign_extension import extension_parent
+    parent = extension_parent(manifest)
+    if parent is not None:
+        coordination = read(Path(parent["coordinator_state"])) or {}
+        if not coordinator_token or coordination.get("token") != coordinator_token:
+            raise ProtocolError("Extension watcher needs its coordinator launch token")
+    elif coordinator_token is not None:
+        raise ProtocolError("Coordinator tokens apply only to linked extensions")
     selected_models = [item["model"] for item in execution_queue(manifest, models)]
     require_campaign_environment(manifest)
     from src.hybrid_runtime import runtime
@@ -320,9 +330,12 @@ def watch(root, models=None):
     command = [sys.executable, "-u", "-m", "src.native_campaign", "run", "--root", str(root)]
     for model in selected_models:
         command.extend(["--model", model])
-    save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "execution_scope": selected_models, "continuous_resource_monitor": True})
+    from src.campaign_extension import watcher_lock
+    lock_name, blocking = watcher_lock(root, manifest)
     try:
-        with runtime_lock("fixed81-native-watchdog"):
+        lock = runtime_lock(lock_name) if blocking else runtime_lock(lock_name, blocking=False)
+        with lock:
+            save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "execution_scope": selected_models, "continuous_resource_monitor": True, **({"coordinator_token": coordinator_token} if coordinator_token else {})})
             while True:
                 ensure_execution_allowed(root, manifest)
                 try:
@@ -367,10 +380,13 @@ def watch(root, models=None):
 
 def pause_requested(root):
     pause = read(root / "pause_request.json") or {}
-    return bool(pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists())
+    from src.campaign_extension import parent_paused
+    return bool(pause.get("resume_requires_explicit_user_request") or (root / "STOP").exists() or parent_paused(root))
 
 
 def ensure_execution_allowed(root, manifest):
+    from src.campaign_extension import require_parked_parent
+    require_parked_parent(root, manifest)
     if manifest.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Use the original frozen controller for legacy data; this controller requires a fresh cohort")
     if manifest.get("reflection_policy") != REFLECTION_POLICY:
@@ -397,6 +413,7 @@ def main():
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--data", type=Path, default=Path("data"))
     parser.add_argument("--plan", type=Path)
+    parser.add_argument("--coordinator-token", help="Nonsecret ownership token for the approved linked extension watchdog")
     parser.add_argument("--include-optional", action="store_true", help="Include the optional last-priority model in a new frozen plan")
     scope = parser.add_mutually_exclusive_group()
     scope.add_argument("--model", action="append", dest="models", help="Execute only this frozen model; repeat to select more, retaining frozen queue order")
@@ -411,7 +428,7 @@ def main():
         if args.command == "init":
             initialize(root, args.data.resolve(), args.plan, include_optional=args.include_optional)
             return
-        raise SystemExit(run(root, models=args.models) if args.command == "run" else watch(root, models=args.models))
+        raise SystemExit(run(root, models=args.models) if args.command == "run" else watch(root, models=args.models, coordinator_token=args.coordinator_token))
     except (ProtocolError, RuntimeEnvironmentError) as error:
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(64) from error

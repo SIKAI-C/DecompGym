@@ -12,6 +12,9 @@ from src.prompt_snapshot import PROMPT_PROTOCOL
 
 FRESH_QUEUE_POLICY = "fresh-gpt-claude-gemini-20261013-v2"
 FRESH_CODEX_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"}
+CLAUDE_EXTENSION_POLICY = "strict-claude-extension-20261014-v1"
+CLAUDE_EXTENSION_MODELS = ("claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5")
+CLAUDE_EXTENSION_PARENT = "ac9ff895ad775edc40ca785a82d2055add0188e2cd20653ea9e916273711ca1a"
 
 
 def load_plan(path: Path) -> dict:
@@ -28,9 +31,18 @@ def load_plan(path: Path) -> dict:
     if not queue or len({item["model"] for item in all_models}) != len(all_models):
         raise ProtocolError("Model queue is empty or contains duplicates")
     policy = plan.get("queue_policy", "historical-astra-gpt-gemini-claude-v1")
-    if policy not in ("historical-astra-gpt-gemini-claude-v1", FRESH_QUEUE_POLICY):
+    if policy not in ("historical-astra-gpt-gemini-claude-v1", FRESH_QUEUE_POLICY, CLAUDE_EXTENSION_POLICY):
         raise ProtocolError("Unknown model queue policy")
     fresh = policy == FRESH_QUEUE_POLICY
+    extension = policy == CLAUDE_EXTENSION_POLICY
+    if extension:
+        parent = plan.get("extension_parent", {})
+        if (tuple(item.get("model") for item in queue) != CLAUDE_EXTENSION_MODELS or optional
+                or any(item.get("backend") != "claude-code-cli" or item.get("effort") != "medium" for item in queue)
+                or plan.get("historical_reference") is not None
+                or parent.get("protocol_id") != CLAUDE_EXTENSION_PARENT or not parent.get("root")
+                or not parent.get("coordinator_state")):
+            raise ProtocolError("Claude extension must preserve the approved parent and exact four-model order at medium effort")
     ranks = {"codex-cli": 0, "claude-code-cli": 1, "agy-cli": 2} if fresh else {"codex-cli": 0, "agy-cli": 1, "claude-code-cli": 2}
     previous = -1
     for item in queue:
@@ -40,7 +52,8 @@ def load_plan(path: Path) -> dict:
         previous = rank
         if item["backend"] == "agy-cli" and not item["model"].startswith("gemini-"):
             raise ProtocolError("The required AGY queue is reserved for Gemini")
-        if item["backend"] == "claude-code-cli" and item["model"] not in ("claude-opus-5-5", "claude-sonnet-5-5"):
+        approved_claude = CLAUDE_EXTENSION_MODELS if extension else ("claude-opus-5-5", "claude-sonnet-5-5")
+        if item["backend"] == "claude-code-cli" and item["model"] not in approved_claude:
             raise ProtocolError("Claude must use an explicitly pinned approved model ID")
         if fresh and item["backend"] in ("codex-cli", "claude-code-cli") and item.get("effort") != "medium":
             raise ProtocolError("Fresh GPT and Claude generation/reflection must use medium effort")
