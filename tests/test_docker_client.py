@@ -64,6 +64,24 @@ def test_fresh_edit_exports_one_target_and_preserves_backend_metrics(tmp_path, b
     assert invocation["usage_available"] and invocation["observed_models"] == ["fixture"]
 
 
+@pytest.mark.parametrize("requested,observed,allowed", [("claude-opus-5", "claude-opus-5-5", False), ("claude-sonnet-5", "claude-sonnet-5-5", False), ("claude-fable-5", "claude-fable-5-1", False), ("claude-opus-5", "claude-opus-5-20260601", True), ("claude-haiku-5-5", "claude-haiku-5-5", True)])
+def test_claude_minor_version_is_not_a_dated_snapshot(tmp_path, requested, observed, allowed):
+    runtime = Runtime(tmp_path, "claude-code-cli")
+    client = DockerCliClient(requested, backend="claude-code-cli", image_id="sha256:fixture", runtime=runtime, evidence_root=tmp_path / "preflight")
+    target = tmp_path / "solver.py"
+    target.write_text("")
+    log = tmp_path / "call"
+    log.mkdir()
+    worker = {"cli_version": CLI_VERSIONS["claude-code-cli"], "requested_model": requested, "target": "solver.py", "returncode": 0, "terminal_state": "completed", "error": None, "usage": {"input_tokens": 10}, "usage_available": True, "warnings": [], "observed_models": [observed]}
+    result = ContainerResult(0, "", "", 1, artifacts={"solver.py": "candidate", "worker.json": json.dumps(worker)}, metadata={"cleanup_verified": True})
+    recorded = client._record(target, log, "agent", result)
+    assert recorded.ok is allowed
+    assert target.read_text() == ("candidate" if allowed else "")
+    if not allowed:
+        assert recorded.terminal_state == "infrastructure_failed"
+        assert "identity" in recorded.error
+
+
 def test_completed_wrong_target_preserves_evidence_without_promoting_it(tmp_path):
     runtime = Runtime(tmp_path, "agy-cli", contents="", misplaced={"nested/debug.md": "misplaced reflection"})
     target = tmp_path / "debug.md"

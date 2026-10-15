@@ -5,6 +5,7 @@ from dataclasses import asdict
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import threading
 
@@ -126,6 +127,10 @@ class DockerCliClient:
                 raise RuntimeEnvironmentError("Docker worker identity differs from the frozen invocation")
             parsed.update({key: worker[key] for key in ("terminal_state", "error", "usage", "usage_available", "warnings", "observed_models") if key in worker})
         error, terminal = parsed["error"], parsed["terminal_state"]
+        if self.backend == "claude-code-cli" and terminal == "completed":
+            observed = parsed["observed_models"]
+            if not observed or any(model != self.model and re.fullmatch(re.escape(self.model) + r"-\d{8}", model) is None for model in observed):
+                error, terminal = f"Claude Code model identity unavailable or mismatched: requested {self.model}, observed {observed}", "infrastructure_failed"
         if result.timed_out or result.output_limited or result.oom_killed:
             error, terminal = "Docker invocation interrupted by its resource or time limit", "infrastructure_failed"
         diagnostics = result.artifacts.get("stderr.log", "").lower()
