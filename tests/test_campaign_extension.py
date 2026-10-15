@@ -149,6 +149,26 @@ def test_owned_hold_intent_can_recover_without_second_signal(tmp_path, monkeypat
     assert record["phase"] == "parked" and not signals
 
 
+def test_startup_identity_is_read_only_after_watchdog_ack(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    receipts = iter([None, {"pid": 123, "coordinator_token": "ownership"}])
+    monkeypatch.setattr(coordinator, "read", lambda p: next(receipts))
+    observed = []
+    stable = {"pid": 123, "started": "start", "command": "Resources/Python --coordinator-token ownership", "state": "S"}
+    monkeypatch.setattr(coordinator, "process_identity", lambda pid: observed.append(pid) or stable)
+    monkeypatch.setattr(coordinator, "cwd", lambda pid: str(tmp_path / "controller"))
+    monkeypatch.setattr(coordinator.time, "sleep", lambda _: None)
+    result = coordinator.await_watcher_receipt(tmp_path, SimpleNamespace(pid=123, poll=lambda: None), "ownership")
+    assert result == stable and observed == [123]
+
+
+def test_failed_startup_is_not_mistaken_for_ready_watchdog(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(coordinator, "read", lambda p: None)
+    with pytest.raises(RuntimeError, match="before publishing"):
+        coordinator.await_watcher_receipt(tmp_path, SimpleNamespace(pid=123, poll=lambda: 64), "ownership")
+
+
 @pytest.mark.parametrize("phase", ["extension_running", "release_intent"])
 def test_coordinator_recovery_does_not_spawn_or_resignal(tmp_path, monkeypatch, phase):
     parent, extension = tmp_path / "base", tmp_path / "extension"

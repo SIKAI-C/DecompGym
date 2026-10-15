@@ -125,6 +125,22 @@ def find_extension_watchers(extension_root, token):
     return found
 
 
+def await_watcher_receipt(root, process, token, timeout=30):
+    """Wait past macOS Python's initial executable handoff before pinning identity."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        receipt = read(root / "watchdog.json") or {}
+        if receipt.get("pid") == process.pid and receipt.get("coordinator_token") == token:
+            actual = process_identity(process.pid)
+            if (actual and f"--coordinator-token {token}" in actual["command"]
+                    and cwd(process.pid) == str(root / "controller")):
+                return actual
+        if process.poll() is not None:
+            raise RuntimeError("Extension watcher exited before publishing its startup receipt")
+        time.sleep(0.1)
+    raise RuntimeError("Extension watcher startup acknowledgement timed out")
+
+
 def extension_complete(root, manifest):
     state = read(root / "status.json") or {}
     expected = list(CLAUDE_EXTENSION_MODELS)
@@ -242,9 +258,7 @@ def coordinate(group_path):
                 command = [sys.executable, "-u", "-m", "src.native_campaign", "watch", "--root", str(extension_root), "--all-models", "--coordinator-token", record["token"]]
                 with (extension_root / "watchdog.log").open("a") as log:
                     process = subprocess.Popen(command, cwd=extension_root / "controller", stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-                actual = process_identity(process.pid)
-                if not actual:
-                    raise RuntimeError("Extension watcher exited before identity could be saved")
+                actual = await_watcher_receipt(extension_root, process, record["token"])
                 record.update(extension_watchdog=actual, phase="extension_running")
                 persist()
             while True:
