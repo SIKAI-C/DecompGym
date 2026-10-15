@@ -28,6 +28,7 @@ APP_ID = "decompbench-dashboard-v1"
 ASSETS = Path(__file__).resolve().parent / "dashboard"
 MODEL_NAMES = {"gpt-5.6-luna": "GPT-5.6 Luna", "gpt-5.6-sol": "GPT-5.6 Sol", "gpt-6-luna": "GPT-6 Luna", "gpt-6-sol": "GPT-6 Sol", "gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6-astra": "GPT-6 Astra", "gpt-oss-120b-medium": "GPT-OSS 120B", "gemini-3.8-flash-medium": "Gemini 3.8 Flash", "gemini-3.1-pro-high": "Gemini 3.1 Pro", "claude-sonnet-4-6": "Claude Sonnet 4.6", "claude-opus-4-6-thinking": "Claude Opus 4.6"}
 MODEL_NAMES.update({"claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5"})
+MODEL_NAMES.update({"claude-haiku-5-5": "Claude Haiku 5.5", "claude-opus-5": "Claude Opus 5", "claude-sonnet-5": "Claude Sonnet 5", "claude-fable-5": "Claude Fable 5"})
 FAMILIES = {"ufl": "Facility location", "fctp": "Fixed-charge transportation", "km": "K-median", "lrp": "Location routing", "tsso": "Two-stage stochastic optimization", "bp": "Bin packing", "csp": "Cutting stock", "gap": "Generalized assignment", "shift": "Shift scheduling"}
 
 
@@ -455,6 +456,84 @@ def export_csv(snapshot):
     return out.getvalue().encode("utf-8")
 
 
+class GroupDashboard:
+    """Combine disjoint model queues while keeping each cohort's real identity."""
+
+    def __init__(self, group_path):
+        from src.campaign_extension import validate_group
+        self.group_path = Path(group_path).resolve()
+        self.config = json.loads(self.group_path.read_text())
+        self.manifests = validate_group(self.config)
+        self.children = [Dashboard(Path(item["root"]), None) for item in self.config["members"]]
+        self.root = self.children[0].root
+        self.owners = {}
+        for child, manifest in zip(self.children, self.manifests):
+            for item in model_queue(manifest):
+                if model_exclusion(item["model"], manifest):
+                    continue
+                if item["model"] in self.owners:
+                    raise ValueError("Group members contain duplicate model configurations")
+                self.owners[item["model"]] = child
+
+    def details(self, model, instance):
+        if model not in self.owners:
+            raise ValueError("Unknown or excluded model")
+        return self.owners[model].details(model, instance)
+
+    def report_artifact(self, name):
+        raise ValueError("A combined audited report has not been generated; live results remain exportable as CSV")
+
+    def snapshot(self, force=False):
+        from copy import deepcopy
+        from src.campaign_extension import process_identity, same_process, validate_group
+        config = json.loads(self.group_path.read_text())
+        validate_group(config)
+        if config["members"] != self.config["members"]:
+            raise ValueError("Group membership changed; reload the dashboard after review")
+        snapshots = [child.snapshot(force=force) for child in self.children]
+        active_index = next(i for i, item in enumerate(config["members"]) if item["root"] == config["active_root"])
+        combined = deepcopy(snapshots[active_index])
+        combined.update(campaign=config["name"], historical=None, historical_reference=None, latest_report=None)
+        record_path = config.get("coordinator_state")
+        record = json.loads(Path(record_path).read_text()) if record_path and Path(record_path).exists() else {}
+        phase = record.get("phase", "preparing")
+        combined["coordinator"] = {key: record.get(key) for key in ("phase", "coordinator_pid", "updated_at", "error", "completed_pairs", "resumed_at")}
+        combined["models"] = [deepcopy(model) for snapshot in snapshots for model in snapshot["models"]]
+        ordering = config["display_order"]
+        if set(ordering) != set(self.owners) or len(ordering) != len(self.owners):
+            raise ValueError("Group display order differs from eligible model queues")
+        combined["models"].sort(key=lambda model: ordering.index(model["id"]))
+        combined["results"] = sorted([dict(row, cohort=member["root"], protocol_id=member["protocol_id"]) for member, snapshot in zip(config["members"], snapshots) for row in snapshot["results"]], key=lambda row: row["finished_at"], reverse=True)
+        combined["recent_calls"] = sorted([dict(row, protocol_id=member["protocol_id"]) for member, snapshot in zip(config["members"], snapshots) for row in snapshot.get("recent_calls", [])], key=lambda row: row["recorded_timestamp"], reverse=True)[:20]
+        totals = {key: sum(snapshot["totals"].get(key, 0) for snapshot in snapshots) for key in ("planned", "completed", "remaining", "passed", "failed", "first_attempt_completed", "terminal_policy_failures")}
+        totals.update(active=snapshots[active_index]["totals"]["active"], pass_rate=totals["passed"] / totals["first_attempt_completed"] if totals["first_attempt_completed"] else None)
+        combined["totals"] = totals
+        combined["current_execution_scope"] = combined.get("execution_scope")
+        combined["execution_scope"] = {"models": ordering, "planned": totals["planned"], "completed": totals["completed"], "remaining": totals["remaining"], "complete": totals["remaining"] == 0}
+        combined["cohorts"] = [{"root": item["root"], "protocol_id": item["protocol_id"], "planned": snapshot["totals"]["planned"], "completed": snapshot["totals"]["completed"]} for item, snapshot in zip(config["members"], snapshots)]
+        combined["usage"] = {role: {key: sum(snapshot.get("usage", {}).get(role, {}).get(key, 0) for snapshot in snapshots) for key in ("input_tokens", "output_tokens", "cached_input_tokens")} for role in ("generation", "judge", "reflection")}
+        combined["reporting_exclusions"] = list({item["model"]: item for snapshot in snapshots for item in snapshot.get("reporting_exclusions", [])}.values())
+        combined["reporting_manifest"] = self.manifests[0]
+        holding = phase in {"hold_intent", "parked", "launch_intent", "extension_running"}
+        held = record.get("parent_watchdog", {})
+        actual = process_identity(held.get("pid", 0)) if held else None
+        parked = same_process(held, actual) and "T" in actual["state"]
+        coordinator_live = process_alive(record.get("coordinator_pid")) is True
+        armed = holding and parked and coordinator_live and not any((Path(item["root"]) / "STOP").exists() for item in config["members"])
+        combined["automatic_continuation"] = {"armed": bool(armed), "models": [model["id"] for model in combined["models"] if model["backend"] == "AGY"]}
+        if active_index == 1 and phase != "base_resumed":
+            for model in combined["models"]:
+                if model["backend"] == "AGY" and model["state"] != "complete":
+                    model.update(state="queued", queue_note="After added Claude models · quota waiting", in_current_scope=False)
+        if phase in {"repair_required", "user_paused"}:
+            combined["state"] = "repair_required" if phase == "repair_required" else "paused"
+            combined["alerts"].append({"kind": "warning", "text": record.get("error") or "Automatic continuation is on hold."})
+        elif holding and not coordinator_live:
+            combined["alerts"].append({"kind": "error", "text": "The extension coordinator is offline. Gemini remains held; inspect the saved handoff before continuing."})
+        combined["group_id"] = config["name"]
+        return combined
+
+
 def handler_for(dashboard):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -520,8 +599,9 @@ def main():
     parser.add_argument("--historical-root", type=Path, default=Path(__file__).resolve().parents[2] / "DecompBench/results/luna_60s")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-historical", action="store_true", help="Show only the selected fresh campaign")
+    parser.add_argument("--group", type=Path, help="Additive view of an approved parent cohort and linked extension")
     args = parser.parse_args()
-    dashboard = Dashboard(args.root, None if args.no_historical else args.historical_root)
+    dashboard = GroupDashboard(args.group) if args.group else Dashboard(args.root, None if args.no_historical else args.historical_root)
     dashboard.snapshot()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(dashboard))
     print(json.dumps({"app_id": APP_ID, "url": f"http://localhost:{server.server_port}", "pid": os.getpid(), "campaign": str(args.root.resolve())}), flush=True)
