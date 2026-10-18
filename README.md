@@ -731,7 +731,7 @@ The probabilities turn scenario operating costs into expected operating cost. Th
 
 #### 7. Iteration and stopping rule
 
-Choose capacity, solve all scenario LPs, add a violated expected-cost cut, and repeat. Activation cost plus actual expected operating cost gives a feasible upper bound. When it meets the master lower bound, the two-stage stochastic optimum is certified. Mathematical periods start at one here; Python arrays use zero-based period indices.
+Choose capacity, solve all scenario LPs, add a violated expected-cost cut, and repeat. Activation cost plus actual expected operating cost gives a feasible upper bound. When it meets the master lower bound, the two-stage stochastic optimum is certified. The reference stops once the relative gap between these bounds is at most 0.5%, or at the time budget, and returns its best complete incumbent; it reports `optimal` only when the bounds meet within numerical tolerance and `feasible` otherwise. Mathematical periods start at one here; Python arrays use zero-based period indices.
 
 ![Stochastic production reference bounds and expected-cost cuts](assets/formulations/bd_tsso_progress.png)
 
@@ -799,7 +799,7 @@ $`\displaystyle \begin{aligned} \min_a\quad &\bar c(a)=1-\sum_t\pi_ta_t\\ \text{
 
 </div>
 
-Equivalently, maximize $`\sum_t\pi_ta_t`$ and check whether it exceeds one. Counts can exceed the instance's type demand; bin capacity bounds them. This is the implemented unbounded type-knapsack pricing, rather than binary selection of individual item IDs.
+Equivalently, maximize $`\sum_t\pi_ta_t`$ and check whether it exceeds one. Counts can exceed the instance's type demand; bin capacity bounds them. This is the implemented unbounded type-knapsack pricing, rather than binary selection of individual item IDs. The best knapsack solution enters the master; the reference also keeps up to 64 alternative solutions from Gurobi's solution pool as additional columns for the final integer master.
 
 #### 6. Column returned to the master — one new packing pattern
 
@@ -929,7 +929,7 @@ $`\displaystyle \begin{aligned} \min_{\lambda\ge0}\quad &\sum_j\sum_{p\in P'_j}c
 
 </div>
 
-The second equality combines patterns into one plan per machine; it is called a convexity constraint. An empty pattern represents an idle machine. The implementation seeds empty and feasible single-job patterns and finds an initial feasible job partition with a compact feasibility model, so the first master can cover all jobs.
+The second equality combines patterns into one plan per machine; it is called a convexity constraint. An empty pattern represents an idle machine. The implementation seeds empty and feasible single-job patterns. It then runs a phase-I restricted master with one artificial variable per job-coverage constraint, priced by the same machine knapsacks, until the artificial variables reach zero. No assignment model of the full problem is solved, including for initialization.
 
 #### 5. Pricing problem — find a better subset of jobs for a machine
 
