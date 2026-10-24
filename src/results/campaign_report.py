@@ -15,6 +15,7 @@ import sys
 import numpy as np
 
 from src.experiments.verification import OutputVerifier
+from src.agent.prompts.judge import parse_verdict
 from src.experiments.completion import TerminalCompletionError, approved_receipts, is_terminal_failure, load_policy_summary, policy_is_complete
 from src.results.policy import default_models, reported, run_identity
 
@@ -300,7 +301,7 @@ def audit_policy(snapshot, manifest, specification, case, mode, approvals, outpu
             if not attempt.get("exec_ok") or attempt.get("llm_verdict") != "pass":
                 issues.append(f"Attempt {index}: verification lacks execution or accepted judgment")
             notes = snapshot.bytes(attempt_dir / "alg_verifier.md") or b""
-            if notes.decode(errors="replace").strip().splitlines()[:1] != ["VERDICT: PASS"]:
+            if parse_verdict(notes.decode(errors="replace")) != "pass":
                 issues.append(f"Attempt {index}: saved judge verdict differs")
             output_checks.append({"row": row, "attempt": index, "objective": attempt.get("objective"), "suite": case["suite"], "problem": case["problem"], "data": str(canonical / "data.json"), "output": str(attempt_dir / "output.json")})
         if finite(attempt.get("objective")) and attempt.get("gap_to_gold") is not None:

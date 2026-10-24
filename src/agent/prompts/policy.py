@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import shutil
 
 
 FEEDBACK_POLICY = "qualitative-objective-feedback-v1"
@@ -41,21 +40,3 @@ def record_workspace_prompt(workspace, filename, old_prompt, log_dir, step, *, o
               "effective_prompt_sha256": hashlib.sha256(effective.encode()).hexdigest()}
     (log_dir / f"{step}_workspace.json").write_text(json.dumps(record, indent=2) + "\n")
     return effective
-
-
-def record_wrong_target(workspace, filename, log_dir, step):
-    """Retain evidence of a completed wrong-path write; never promote that file."""
-    misplaced = []
-    staged = workspace / filename
-    for path in sorted(workspace.rglob(filename)):
-        if path == staged or path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(workspace) or not path.read_bytes().strip():
-            continue
-        relative = path.relative_to(workspace)
-        archive = log_dir / "unexpected_outputs" / relative
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, archive)
-        misplaced.append({"relative_path": str(relative), "archive": str(archive.relative_to(log_dir)), "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()})
-    if misplaced:
-        record = {"kind": "wrong_target_file", "workspace_note_version": WORKSPACE_POLICY, "target_name": filename,
-                  "required_target_empty": True, "workspace_record_sha256": hashlib.sha256((log_dir / f"{step}_workspace.json").read_bytes()).hexdigest(), "misplaced_files": misplaced}
-        (log_dir / f"{step}_delivery_failure.json").write_text(json.dumps(record, indent=2) + "\n")

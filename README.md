@@ -42,7 +42,7 @@ The paper evaluates 12 configurations, all at medium effort: five GPT models thr
 - the container runs as an unprivileged user with all capabilities dropped, a seccomp profile, a read-only file system, one CPU and 1 GiB of memory; it keeps network access for the model API, and only the target file is copied back;
 - the only state that persists between calls is the CLI login, stored in a private Docker volume per CLI.
 
-**Solvers run natively, in a sandbox.** The generated `solver.py` runs on the host (macOS on Apple silicon, Python 3.12.11, Gurobi 11.0.3 with the host's license) inside a macOS Seatbelt sandbox with no network access, which can read only the instance data and the solver and write only to a private working directory. Each run is limited to 60 seconds and one solver thread.
+**Solvers run natively, in a sandbox.** The generated `solver.py` runs on the host (macOS on Apple silicon, Python 3.12.11, Gurobi 11.0.3 with the host's license) inside a macOS Seatbelt sandbox with no network access, which can read only the instance data and the solver and write only to a private working directory. Each run is stopped after 60 seconds, and Gurobi and the numerical libraries are configured for one thread (the solver could still override this setting).
 
 **Protocol.** Each agent call may take up to 900 seconds. The method judge is GPT-6 Astra at high effort, called through Codex in the same container setup, and sees only the solver's source. Two instances run at a time, with at most two simultaneous Codex calls and one Claude Code or Antigravity call. A resource monitor pauses the run under sustained CPU, memory or thermal pressure; pauses are not counted in any reported time.
 
@@ -78,7 +78,7 @@ All tables, figures and the prompt examples of the paper are in [results/](resul
 
 ## Quick start
 
-Requirements: macOS on Apple silicon (the solver sandbox uses `sandbox-exec`), Python 3.12.11 and Gurobi 11.0.3 with a license. Docker is needed only to run agents.
+Requirements: macOS on Apple silicon (the solver sandbox uses `sandbox-exec`), Python 3.12.11 and Gurobi 11.0.3 with a license. Docker is needed only to run agents. To run agents, Python must be a macOS framework build (Homebrew `python@3.12` or the python.org installer), because the sandbox launches its `Python.app` runtime directly, and the Gurobi license is read from `GRB_LICENSE_FILE` or `~/gurobi.lic`.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
@@ -119,10 +119,10 @@ To test other models, copy [configs/paper.json](configs/paper.json) and edit `mo
 
 ## Reproducing the paper
 
-The paper's two campaign folders (the original run and a four-model Claude extension, 1.8 GB) are not in the repository. With them in `outputs/experiments/`:
+The paper's two campaign folders are not in the repository (1.8 GB): `fixed81_strict_decomposition_20261013_r1` (the original run, 8 configurations) and `fixed81_strict_claude_extension_20261014_r1` (four more Claude models, run a day later under the same instances, prompts, scoring and limits). With both in `outputs/experiments/`:
 
 ```bash
-python src/03_analysis.py --refresh                     # audit the raw records and rebuild everything
+python src/03_analysis.py                               # audit the raw records and rebuild everything
 python src/03_analysis.py --paper path/to/paper         # also compare with a paper folder
 DECOMPBENCH_PAPER=path/to/paper python -m pytest tests/test_paper_equivalence.py
 ```

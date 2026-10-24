@@ -26,6 +26,11 @@ READINESS_MODELS = {"codex-cli": "gpt-6.1-sol", "claude-code-cli": "claude-sonne
 SECCOMP_PROFILE = Path(__file__).resolve().parents[2] / "docker/agents/seccomp-userns.json"
 
 
+def license_file():
+    """The Gurobi license the solver sandbox may read: GRB_LICENSE_FILE if set, otherwise ~/gurobi.lic."""
+    return Path(os.environ.get("GRB_LICENSE_FILE") or Path.home() / "gurobi.lic")
+
+
 def runtime():
     return DockerRuntime(seccomp_profile=SECCOMP_PROFILE)
 
@@ -35,7 +40,7 @@ def prepare(evidence_root, *, image=IMAGE_TAG):
     image_id = engine.image_id(image)
     client = DockerCliClient("preflight", backend="codex-cli", image_id=image_id, runtime=engine, evidence_root=evidence_root)
     client.prepare()
-    native = NativeSandboxExecutor(license_file=Path.home() / "gurobi.lic")
+    native = NativeSandboxExecutor(license_file=license_file())
     version = engine.command("version", "--format", "{{json .}}")
     if version.returncode:
         raise RuntimeError("Docker version evidence is unavailable")
@@ -158,7 +163,7 @@ def verify_backend(backend, evidence_root, *, engine, image_id, credential):
               "execution_ok": False, "passed": False, "purpose": "synthetic Docker-to-native file handoff", "benchmark_score": False, "campaign_started": False}
     if result.ok:
         frozen = json.loads((evidence_root / "runtime.json").read_text()) if (evidence_root / "runtime.json").exists() else None
-        executor = NativeSandboxExecutor(license_file=Path.home() / "gurobi.lic", expected_environment=frozen["native_environment"] if frozen else None)
+        executor = NativeSandboxExecutor(license_file=license_file(), expected_environment=frozen["native_environment"] if frozen else None)
         ok, _, _, output = executor(attempt, 60, 1)
         report.update(execution_ok=ok, output=output, passed=ok and output == {"status": "optimal", "objective_value": 1.0, "threads": 1}, native_environment_sha256=hashlib.sha256(json.dumps(executor.environment, sort_keys=True).encode()).hexdigest())
     path = directory / "report.json"

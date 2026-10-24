@@ -96,7 +96,8 @@ def validate_instance(inst_dir: Path, validation_level: str = "strict") -> dict[
             result["status"] = "missing_required"
             result["issues"].append("missing: " + ", ".join(missing))
             return result
-        result["status"] = "pass_simple_test"
+        # A reference that exists but cannot be read is not a pass.
+        result["status"] = "invalid_reference" if result["issues"] else "pass_simple_test"
         return result
 
     if not result["has_mono"] or result["mono_obj"] is None:
@@ -355,19 +356,18 @@ def main() -> None:
         validate_root = validate_root / args.problem
 
     if not validate_root.exists():
-        print(f"Error: {validate_root} does not exist")
-        return
+        raise SystemExit(f"Error: {validate_root} does not exist")
 
     results = validate_all(validate_root, validation_level=args.validation_level)
     if not results:
-        print(f"No instances found in {validate_root}")
-        return
+        raise SystemExit(f"No instances found in {validate_root}")
 
     if args.json:
         print(json.dumps(results, indent=2))
-        return
-
-    print_summary(results, validate_root)
+    else:
+        print_summary(results, validate_root)
+    # Positive decomposition gaps are measured reference outcomes, not failures.
+    failed = [r for r in results if r["status"] not in ("pass_simple_test", "reference_gap")]
 
     remove_missing = args.remove_missing or args.remove_bad
     remove_mismatch = args.remove_mismatch or args.remove_bad
@@ -390,6 +390,8 @@ def main() -> None:
             pattern=args.remove_pattern,
         )
         print(f"\nRemoved {removed} instances.")
+    if failed:
+        raise SystemExit(f"{len(failed)} instance(s) failed validation: " + ", ".join(r["name"] for r in failed[:10]))
 
 
 if __name__ == "__main__":

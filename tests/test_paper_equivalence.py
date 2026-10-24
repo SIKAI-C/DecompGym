@@ -136,7 +136,7 @@ def test_every_recorded_output_is_rescored_identically():
 def test_every_paper_table_figure_and_prompt_example_is_reproduced(tmp_path):
     import importlib
     analysis = importlib.import_module("src.03_analysis")
-    analysis.main(["--experiments", str(EXPERIMENTS), "--output", str(tmp_path / "paper"), "--results", str(tmp_path / "results"), "--refresh"])
+    analysis.main(["--experiments", str(EXPERIMENTS), "--output", str(tmp_path / "paper"), "--results", str(tmp_path / "results")])
     comparison = analysis.compare(tmp_path / "paper", Path(os.environ["DECOMPBENCH_PAPER"]))
     assert len(comparison) == 32  # 12 figures, 12 tables, 8 prompt examples
     assert all(state == "same" or state == "same rendering" or state.startswith("rendering within anti-aliasing") for state in comparison.values()), comparison

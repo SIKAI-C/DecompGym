@@ -13,7 +13,7 @@ from typing import Any
 import uuid
 
 from src.agent.prompts.builder import PromptBuilder
-from src.agent.prompts.judge import algorithm_review_prompt
+from src.agent.prompts.judge import algorithm_review_prompt, parse_verdict
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.experiments.environment import require_runtime_environment
 from src.experiments.exec_log import ExecLogger
@@ -202,6 +202,12 @@ class PairedRunner:
             for name, expected in saved["artifact_sha256"].items():
                 if not (attempt_dir / name).exists() or digest(attempt_dir / name) != expected:
                     raise ProtocolError(f"Scored artifact changed: {name}")
+            # The score receipt is committed before summary.json; restore the summary after an interruption between them.
+            summary = read(attempt_dir / "summary.json")
+            if summary is None:
+                save(attempt_dir / "summary.json", saved["result"])
+            elif summary != saved["result"]:
+                raise ProtocolError("summary.json differs from the committed score receipt")
             return AttemptResult(**saved["result"])
         started = time.perf_counter()
         instance = attempt_dir.parent.parent
@@ -269,7 +275,7 @@ class PairedRunner:
             prompt = algorithm_review_prompt(self.suite)
             judged = self.edit(self.judge_client, attempt_dir / "alg_verifier.md", prompt, [attempt_dir / "solver.py"], "llm_verifier")
             notes = (attempt_dir / "alg_verifier.md").read_text().strip()
-            verdict = {"VERDICT: PASS": "pass", "VERDICT: FAIL": "fail"}.get(notes.splitlines()[0].strip().upper() if notes else "")
+            verdict = parse_verdict(notes)
             if verdict is None:
                 save(attempt_dir / "calls" / judged["invocation_id"] / "rejected.json", {"reason": "malformed algorithm verdict"})
                 (attempt_dir / "llm_verifier_receipt.json").unlink()

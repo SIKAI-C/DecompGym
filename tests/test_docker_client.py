@@ -64,7 +64,7 @@ def test_fresh_edit_exports_one_target_and_preserves_backend_metrics(tmp_path, b
     assert invocation["usage_available"] and invocation["observed_models"] == ["fixture"]
 
 
-@pytest.mark.parametrize("requested,observed,allowed", [("claude-opus-5", "claude-opus-5-5", False), ("claude-sonnet-5", "claude-sonnet-5-5", False), ("claude-fable-5", "claude-fable-5-1", False), ("claude-opus-5", "claude-opus-5-20260601", True), ("claude-haiku-5-5", "claude-haiku-5-5", True)])
+@pytest.mark.parametrize("requested,observed,allowed", [("claude-opus-5", "claude-opus-5-5", False), ("claude-sonnet-5", "claude-sonnet-5-5", False), ("claude-opus-5", "claude-opus-5-20260601", True), ("claude-haiku-5-5", "claude-haiku-5-5", True)])
 def test_claude_minor_version_is_not_a_dated_snapshot(tmp_path, requested, observed, allowed):
     runtime = Runtime(tmp_path, "claude-code-cli")
     client = DockerCliClient(requested, backend="claude-code-cli", image_id="sha256:fixture", runtime=runtime, evidence_root=tmp_path / "preflight")

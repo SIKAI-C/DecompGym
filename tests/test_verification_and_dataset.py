@@ -101,3 +101,16 @@ def test_objective_better_than_reference_is_flagged(tmp_path):
     complete_instance(directory)
     (directory / "gold_cg.json").write_text('{"best_objective":0}')
     assert importlib.import_module("src.01_gen").validate_instance(directory)["status"] == "objective_mismatch"
+
+
+def test_unreadable_reference_is_not_a_simple_pass(tmp_path):
+    directory = tmp_path / "cg" / "bp" / "bp_small_seed000"
+    complete_instance(directory)
+    (directory / "gold_monolithic.json").write_text("{not json")
+    assert importlib.import_module("src.01_gen").validate_instance(directory, "simple")["status"] == "invalid_reference"
+
+
+@pytest.mark.parametrize("notes,verdict", [("VERDICT: PASS\nNOTES: ok", "pass"), ("  verdict: pass  \n", "pass"), ("VERDICT: FAIL", "fail"), ("", None), ("PASS", None)])
+def test_one_verdict_parser_for_execution_and_audit(notes, verdict):
+    from src.agent.prompts.judge import parse_verdict
+    assert parse_verdict(notes) == verdict

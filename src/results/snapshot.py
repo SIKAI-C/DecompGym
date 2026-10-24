@@ -21,12 +21,12 @@ def check_cached(report, root):
     """A saved audit is reused only while the campaign manifest and its frozen dataset are unchanged."""
     manifest = json.loads((root / "campaign.json").read_text())
     if report["cohort_manifest"] != manifest:
-        raise ValueError(f"The saved audit of {root.name} no longer matches its campaign.json; rerun with --refresh")
+        raise ValueError(f"The saved audit of {root.name} no longer matches its campaign.json; rerun without --reuse-audit")
     for case in manifest["instances"]:
         directory = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
         for name, expected in case["sha256"].items():
             if hashlib.sha256((directory / name).read_bytes()).hexdigest() != expected:
-                raise ValueError(f"{directory / name} changed since the saved audit; rerun with --refresh")
+                raise ValueError(f"{directory / name} changed since the saved audit; rerun without --reuse-audit")
 
 
 def build_snapshot(experiments: Path, output: Path, *, refresh: bool):

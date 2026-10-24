@@ -317,3 +317,18 @@ def test_access_failures_bypass_local_reflection_retries(tmp_path, monkeypatch, 
         runner(client).run_pair(source_case(tmp_path), tmp_path / "runs")
     assert waits == []
     assert len([call for call in client.calls if call[0] == "reflection"]) == 1
+
+
+def test_resume_restores_a_summary_missing_after_the_score_receipt(tmp_path):
+    client = Client()
+    source = source_case(tmp_path)
+    runner(client).run_pair(source, tmp_path / "runs")
+    attempt = tmp_path / "runs/plain/bd/ufl/ufl_small_seed000/attempts/attempt_01"
+    summary = read(attempt / "summary.json")
+    (attempt / "summary.json").unlink()
+    calls = len(client.calls)
+    runner(client).run_pair(source, tmp_path / "runs")
+    assert read(attempt / "summary.json") == summary and len(client.calls) == calls
+    save(attempt / "summary.json", summary | {"status": "edited"})
+    with pytest.raises(ProtocolError, match="differs from the committed score receipt"):
+        runner(client).run_pair(source, tmp_path / "runs")

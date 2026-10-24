@@ -1,7 +1,7 @@
 """Reproduce every figure, table and prompt example of the paper from the saved experiment records.
 
-    python src/03_analysis.py --refresh                # re-audit the raw campaigns, then build everything
-    python src/03_analysis.py                          # rebuild from the saved audit snapshot
+    python src/03_analysis.py                          # audit the raw campaign records, then build everything
+    python src/03_analysis.py --reuse-audit            # quick rebuild from the last saved audit (not published)
     python src/03_analysis.py --paper ../paper         # also compare with (or, with --update, copy into) a paper folder
     python src/03_analysis.py --campaign outputs/experiments/my_run   # audit any one campaign and export its report
 
@@ -80,7 +80,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--experiments", type=Path, default=REPOSITORY / "outputs/experiments", help="folder containing the two paper campaign roots")
     parser.add_argument("--output", type=Path, help="defaults to outputs/reports/paper, or outputs/reports/<campaign> with --campaign")
-    parser.add_argument("--refresh", action="store_true", help="re-audit the raw campaign records instead of reusing the saved snapshot")
+    parser.add_argument("--reuse-audit", action="store_true", help="rebuild from the last saved audit instead of re-reading the raw records; for quick iteration only, never published to results/")
     parser.add_argument("--results", type=Path, default=REPOSITORY / "results", help="tracked folder for the published figures, tables and summary")
     parser.add_argument("--paper", type=Path, help="paper folder (with figures/, tables/, prompts/) to compare against")
     parser.add_argument("--update", action="store_true", help="with --paper, copy the generated artifacts into the paper folder")
@@ -94,7 +94,7 @@ def main(argv=None):
         print(destination / "report.md")
         return
     out = (args.output or REPOSITORY / "outputs/reports/paper").resolve()
-    build_snapshot(args.experiments.resolve(), out, refresh=args.refresh or not (out / "source_original/evaluation.json").exists())
+    build_snapshot(args.experiments.resolve(), out, refresh=not args.reuse_audit)
     manifest = paper_figures.build(out)
     failures.build(out)
     checks = verify.verify(out)
@@ -109,7 +109,10 @@ def main(argv=None):
                              "analysis_modules": {p.name: digest(p) for p in sorted((REPOSITORY / "src/results").iterdir()) if p.is_file()}, "artifacts": artifacts,
                              "generated_at": datetime.now(timezone.utc).isoformat()}
     (out / "results_provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    summary.publish(out, args.results.resolve())
+    if args.reuse_audit:
+        print("Built from a saved audit: results/ was not updated (run without --reuse-audit to publish)", flush=True)
+    else:
+        summary.publish(out, args.results.resolve())
     print(json.dumps({"output": str(out), "artifacts": len(artifacts), "verification": checks["status"]}, indent=2))
     if args.paper:
         paper = args.paper.resolve()

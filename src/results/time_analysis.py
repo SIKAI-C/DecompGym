@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import statistics
 
+from src.results.combine import SCIENTIFIC_FIELDS
 from src.results.policy import PAPER_MODELS, run_identity
 
 
@@ -22,7 +23,6 @@ TIME_MEASURES = ("generation_seconds", "reflection_seconds", "agent_seconds", "j
 QUALITY_TIME_MEASURES = ("time_to_quality_agent_seconds", "time_to_quality_active_work_seconds")
 DEFAULT_AGENT_BUDGETS = (0, 15, 30, 45, 60, 90, 120, 180, 240, 300, 450, 600, 900, 1200, 1800, 3600, 7200)
 COMMITTED_CLASSIFICATIONS = {"shared_first", "policy"}
-SCIENTIFIC_FIELDS = ("prompt_protocol", "prompt_policies", "algorithm_judge_prompt_sha256", "execution_environment", "workers", "max_attempts", "solver_timeout", "solver_threads", "agent_timeout", "solver_cooldown_seconds", "judge_model", "judge_effort", "gap_threshold", "shared_first_attempt", "stop_after_success", "reflection_policy", "resource_guard", "agent_execution", "solver_execution", "wrong_target_reflection_failure")
 
 
 def _finite_duration(value):

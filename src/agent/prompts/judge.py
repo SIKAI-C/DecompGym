@@ -12,3 +12,8 @@ def algorithm_review_prompt(suite: str) -> str:
         "Do not execute or modify solver.py. Do not claim to have observed runtime behavior when reviewing source only. Write alg_verifier.md with exactly a first line VERDICT: PASS or VERDICT: FAIL, followed by NOTES: and concise code evidence supporting the verdict.",
     ))
 
+
+def parse_verdict(notes: str):
+    """The judge's first line decides: "pass", "fail", or None for a malformed verdict (case and spacing ignored)."""
+    notes = notes.strip()
+    return {"VERDICT: PASS": "pass", "VERDICT: FAIL": "fail"}.get(notes.splitlines()[0].strip().upper() if notes else "")
