@@ -119,7 +119,7 @@ To test other models, copy [configs/paper.json](configs/paper.json) and edit `mo
 
 ## Reproducing the paper
 
-The paper's two campaign folders are not in the repository (1.8 GB): `fixed81_strict_decomposition_20261013_r1` (the original run, 8 configurations) and `fixed81_strict_claude_extension_20261014_r1` (four more Claude models, run a day later under the same instances, prompts, scoring and limits). With both in `outputs/experiments/`:
+The paper's two campaign folders are not in the repository (1.8 GB): `fixed81_strict_decomposition_20261013_r1` (the original run, 8 configurations) and `fixed81_strict_claude_extension_20261014_r1` (four more Claude models, run a day later under the same instances, prompts, scoring and limits). They are available from the authors on request. With both in `outputs/experiments/`:
 
 ```bash
 python src/03_analysis.py                               # audit the raw records and rebuild everything
@@ -872,10 +872,11 @@ src/
   01_gen.py           generate and validate the dataset              -> bd/, cg/, utils/
   02_experiment.py    Docker setup, campaigns, dashboard             -> experiments/
   03_analysis.py      every paper table and figure; campaign reports -> results/
-  agent/              Docker CLI client, container runtime, all prompt text (prompts/)
+  agent/              Docker CLI client, container runtime, agent-side prompts (prompts/: workspace rules,
+                      method contract, generation, reflection, judge)
   experiments/        campaign controller, paired runner, solver sandbox, verification, dashboard
   results/            audit snapshot, paper tables and figures, failure analysis, prompt examples
-  bd/, cg/            the nine families: generator, task prompt, references, verifier
+  bd/, cg/            the nine families: generator, task prompt template, references, verifier
   utils/              base classes, dataset helpers, Python API, shared records
 configs/paper.json    the paper's models and protocol
 data/                 the 81 instances
