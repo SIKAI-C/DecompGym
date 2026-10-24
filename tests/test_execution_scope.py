@@ -6,19 +6,19 @@ import threading
 
 import pytest
 
-from src import hybrid_runtime, native_campaign as campaign
-from src.agent import native_solver
+from src.experiments import campaign, docker_setup as hybrid_runtime
+from src.experiments import sandbox as native_solver
 from src.agent.docker_client import AuthenticationRequired
-from src.agent.paired_runner import ProtocolError, read, save
-from src.agent.prompt_policy import FEEDBACK_POLICY, REFLECTION_POLICY, WORKSPACE_POLICY
-from src.prompt_snapshot import PROMPT_PROTOCOL
+from src.experiments.paired_runner import ProtocolError, read, save
+from src.agent.prompts.policy import FEEDBACK_POLICY, REFLECTION_POLICY, WORKSPACE_POLICY
+from src.agent.prompts.snapshot import PROMPT_PROTOCOL
 
 
 @pytest.fixture
 def scoped_campaign(tmp_path, monkeypatch):
     root = tmp_path / "campaign"
     (root / "controller/src").mkdir(parents=True)
-    monkeypatch.setattr(campaign, "__file__", str(root / "controller/src/native_campaign.py"))
+    monkeypatch.setattr(campaign, "REPOSITORY", root / "controller")
     queue = [
         {"model": "gpt-a", "backend": "codex-cli", "effort": "medium"},
         {"model": "gpt-b", "backend": "codex-cli", "effort": "medium"},
@@ -57,7 +57,7 @@ def scoped_campaign(tmp_path, monkeypatch):
     return SimpleNamespace(root=root, manifest=manifest, before=before, readiness=readiness, completed=completed, calls=calls)
 
 
-@pytest.mark.parametrize("models", [[], ["gpt-a", "gpt-a"], ["unknown"], ["gpt-oss-120b-medium"]])
+@pytest.mark.parametrize("models", [[], ["gpt-a", "gpt-a"], ["unknown"], ["another-model"]])
 def test_invalid_scope_stops_before_runtime_checks(scoped_campaign, models):
     fixture = scoped_campaign
     with pytest.raises(ProtocolError, match="scope"):

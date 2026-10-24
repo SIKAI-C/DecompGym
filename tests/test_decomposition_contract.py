@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.algorithm_verifier import algorithm_review_prompt
-from src.agent.decomposition_policy import COMMON_REQUIREMENTS, METHOD_HEADER, METHOD_REQUIREMENTS
-from src.agent.output_contract import validate_output_contract
-from src.agent.paired_runner import PairedRunner
-from src.agent.prompt_builder import PromptBuilder
+from src.agent.prompts.judge import algorithm_review_prompt
+from src.agent.prompts.method import COMMON_REQUIREMENTS, METHOD_HEADER, METHOD_REQUIREMENTS
+from src.utils.output_contract import validate_output_contract
+from src.experiments.paired_runner import PairedRunner
+from src.agent.prompts.builder import PromptBuilder
 
 
 ROOT = Path(__file__).resolve().parents[1]

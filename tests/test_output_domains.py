@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from src.agent.output_verifier import OutputVerifier
+from src.experiments.verification import OutputVerifier
 from src.bd.lrp.b_problem import render_prompt
 
 

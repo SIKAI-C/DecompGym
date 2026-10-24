@@ -29,16 +29,24 @@ Unit costs:
   unit_cost[2] = [8.716638489288124, 1.3022701777491792, 7.566899017869496, 2.580900585423031]
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
 1) Loads data.json.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes output.json with at least:
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
     {
       "status": "optimal | feasible | infeasible | error",
-      "method": "benders_decomposition", # or "monolithic"
+      "method": "benders_decomposition",
       "objective_value": <float>,
       "y": [[...]],  # m x n
-      "x": [[...]]   # m x n representing the last subproblem solution
+      "x": [[...]]   # m x n corresponding to the reported incumbent y and objective_value
     }
+
+Decomposition method requirements:
+
+Use a master problem for the complicating decisions and recourse-cost estimates. Solve subproblems with the master decisions fixed, and use subproblem information to generate feasibility or optimality cuts and update subsequent master solves. Classical, integer, and logic-based Benders decomposition are allowed; LP duals are not required for integer or logic-based variants. Solving the master and fixed-decision subproblems as LPs or MIPs is allowed. Construct the reported solution from this decomposition, retaining a feasible incumbent when appropriate.
+
+Do not build and solve a separate monolithic optimization model of the full original problem, including for an initial incumbent, initialization, a warm start, a fallback, the reported solution, or an optimality certificate. This prohibition includes a full-original-model feasibility solve with a zero objective and applies to every reachable solution-producing path, including conditional fallback paths, even when decomposition also runs.
+
+Heuristic initialization, directly constructed seed columns, phase-I restricted masters with artificial variables and pricing, valid initial bounds or cuts, and warm-starting a legitimate decomposition master are allowed. A permitted initialization must not obtain its solution from a separate full-original-model solve. The restriction concerns that separate full model, not legitimate decomposition masters, fixed-decision subproblems, pricing problems, or integer restricted masters.
+
+Implement the information feedback required by the requested method. There is no minimum iteration count and no requirement that every instance add a cut or column, or improve the initial incumbent: legitimate immediate convergence or termination is allowed. Report mutually consistent decisions and objective values from the same incumbent. Use status feasible when returning an incumbent without a global optimality proof; optimality of an integer restricted master alone does not prove global optimality.

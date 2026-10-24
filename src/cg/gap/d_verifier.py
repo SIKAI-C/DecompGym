@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.agent.output_contract import integer_value
+from src.utils.output_contract import integer_value
 
 
 def _load_gap_data(data: dict[str, Any]) -> tuple[list[list[int]], list[list[float]], list[int]]:

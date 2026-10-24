@@ -52,7 +52,7 @@ def generate_suite(
             inst_dir.mkdir(parents=True, exist_ok=True)
 
             data = generate_bp_instance(seed=seed, size=size, output_dir=inst_dir)
-            (inst_dir / "prompt.txt").write_text(render_prompt(data))
+            (inst_dir / "prompt.txt").write_text(render_prompt(data).rstrip() + "\n")
 
             data_path = str(inst_dir / "data.json")
 

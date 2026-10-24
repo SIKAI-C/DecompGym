@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from src.agent import native_solver
-from src.runtime_environment import RuntimeEnvironmentError
+from src.experiments import sandbox as native_solver
+from src.experiments.environment import RuntimeEnvironmentError
 
 
 def fixture(tmp_path, monkeypatch):

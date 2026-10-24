@@ -34,15 +34,13 @@ decide which facilities to open and how to assign each customer so total open-pl
   i=4->cust 0: 3.579056664324458, i=4->cust 1: 9.73834803834147, i=4->cust 2: 6.88732138954264, i=4->cust 3: 7.540193810843202, i=4->cust 4: 7.168261978845589, i=4->cust 5: 2.9632948698358903, i=4->cust 6: 3.669285676960898, i=4->cust 7: 5.233956664719729, i=4->cust 8: 5.634072341449091, i=4->cust 9: 8.55573913520382, i=4->cust 10: 7.444408894291097, i=4->cust 11: 8.85968092401975, i=4->cust 12: 3.230566759018092, i=4->cust 13: 3.9017537599859446, i=4->cust 14: 1.6470032730672222, i=4->cust 15: 8.344906158925308, i=4->cust 16: 4.33167592165933, i=4->cust 17: 2.2563598606066013, i=4->cust 18: 6.885834081542712, i=4->cust 19: 10.742950434555055, i=4->cust 20: 7.455300195638005, i=4->cust 21: 4.715588451569971, i=4->cust 22: 4.945519995893774, i=4->cust 23: 2.841586788840986, i=4->cust 24: 2.427096343653658, i=4->cust 25: 4.007304674363284, i=4->cust 26: 8.301630701021491, i=4->cust 27: 5.018673169603773, i=4->cust 28: 5.64892981192186, i=4->cust 29: 7.261596087670982, i=4->cust 30: 3.607542423202405, i=4->cust 31: 6.877544140412355, i=4->cust 32: 5.4324608615214975, i=4->cust 33: 6.2716899637355095, i=4->cust 34: 4.659401460773289, i=4->cust 35: 6.129918517524857, i=4->cust 36: 4.574707839058593, i=4->cust 37: 2.684329979977546, i=4->cust 38: 6.572583979566716, i=4->cust 39: 8.445055256330221, i=4->cust 40: 6.596103049487107, i=4->cust 41: 6.129478218809762, i=4->cust 42: 10.13303988517035, i=4->cust 43: 6.078882165343145, i=4->cust 44: 9.638944358800437, i=4->cust 45: 4.675708231598826, i=4->cust 46: 2.8181752906790845, i=4->cust 47: 10.480643641675776, i=4->cust 48: 9.099383205428722, i=4->cust 49: 7.5065487563165165, i=4->cust 50: 5.490415371327295, i=4->cust 51: 4.801781546266595, i=4->cust 52: 8.565002521218343, i=4->cust 53: 7.828025832471294, i=4->cust 54: 6.287410011936801, i=4->cust 55: 5.545138922861006, i=4->cust 56: 2.6715701637599896, i=4->cust 57: 9.680969399707159, i=4->cust 58: 3.000169113478882, i=4->cust 59: 7.724597522904942, i=4->cust 60: 3.8428929311551565, i=4->cust 61: 6.6737446722540605, i=4->cust 62: 2.682823192683992, i=4->cust 63: 9.934177635034711, i=4->cust 64: 10.926776446508041, i=4->cust 65: 3.428656281829046, i=4->cust 66: 8.087639700436233, i=4->cust 67: 7.7810700790255725, i=4->cust 68: 5.1562118991253305, i=4->cust 69: 4.365274573360773, i=4->cust 70: 4.274922616715565, i=4->cust 71: 7.181944184246004, i=4->cust 72: 3.0520145204531124, i=4->cust 73: 9.956071115193044, i=4->cust 74: 1.8108923787114992
   ... you can find all the data in the data.json
 
-All data are stored in a JSON file named data.json in the current directory.
+All input data are stored in a JSON file named data.json.
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
-1) Reads data.json from the current directory.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes a JSON file output.json with at least:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads the input data.json file.
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes a JSON file output.json with at least:
    {
      "status": "optimal | feasible | infeasible | error",
      "method": "benders_decomposition",
@@ -50,3 +48,13 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
      "y": [0/1 list of length m indicating open facilities],
      "x": [[0/1 matrix of shape (m, n) indicating assignments]]
    }
+
+Decomposition method requirements:
+
+Use a master problem for the complicating decisions and recourse-cost estimates. Solve subproblems with the master decisions fixed, and use subproblem information to generate feasibility or optimality cuts and update subsequent master solves. Classical, integer, and logic-based Benders decomposition are allowed; LP duals are not required for integer or logic-based variants. Solving the master and fixed-decision subproblems as LPs or MIPs is allowed. Construct the reported solution from this decomposition, retaining a feasible incumbent when appropriate.
+
+Do not build and solve a separate monolithic optimization model of the full original problem, including for an initial incumbent, initialization, a warm start, a fallback, the reported solution, or an optimality certificate. This prohibition includes a full-original-model feasibility solve with a zero objective and applies to every reachable solution-producing path, including conditional fallback paths, even when decomposition also runs.
+
+Heuristic initialization, directly constructed seed columns, phase-I restricted masters with artificial variables and pricing, valid initial bounds or cuts, and warm-starting a legitimate decomposition master are allowed. A permitted initialization must not obtain its solution from a separate full-original-model solve. The restriction concerns that separate full model, not legitimate decomposition masters, fixed-decision subproblems, pricing problems, or integer restricted masters.
+
+Implement the information feedback required by the requested method. There is no minimum iteration count and no requirement that every instance add a cut or column, or improve the initial incumbent: legitimate immediate convergence or termination is allowed. Report mutually consistent decisions and objective values from the same incumbent. Use status feasible when returning an incumbent without a global optimality proof; optimality of an integer restricted master alone does not prove global optimality.

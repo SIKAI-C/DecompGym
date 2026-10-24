@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from src import execution_environment as environment
-from src.runtime_environment import RuntimeEnvironmentError
+from src.experiments import docker_setup as environment
+from src.experiments.environment import RuntimeEnvironmentError
 
 
 def write(path, value):
@@ -13,17 +13,16 @@ def write(path, value):
     path.write_text(json.dumps(value))
 
 
-def test_prepared_manifest_is_checked_before_use(tmp_path, monkeypatch):
+def test_prepared_manifest_is_checked_and_its_hash_recorded(tmp_path, monkeypatch):
     manifest = tmp_path / "runtime.json"
     write(manifest, {"fixture": True})
     called = []
     monkeypatch.setattr(environment, "validate_execution_environment", called.append)
-    plan = {"runtime_manifest": "runtime.json", "runtime_manifest_sha256": environment.digest(manifest)}
-    result = environment.load_execution_environment(plan, tmp_path / "plan.json")
+    result = environment.load_execution_environment(manifest)
     assert called == [{"fixture": True}] and result["evidence_root"] == str(tmp_path)
-    write(manifest, {"changed": True})
-    with pytest.raises(RuntimeEnvironmentError, match="manifest changed"):
-        environment.load_execution_environment(plan, tmp_path / "plan.json")
+    assert result["manifest_sha256"] == environment.digest(manifest)
+    with pytest.raises(RuntimeEnvironmentError, match="not found"):
+        environment.load_execution_environment(tmp_path / "missing.json")
 
 
 def readiness(tmp_path):

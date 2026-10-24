@@ -3,21 +3,21 @@ from contextlib import nullcontext
 
 import pytest
 
-from src import native_campaign as campaign
-from src.agent.output_verifier import VerificationError
-from src.agent.paired_runner import InfrastructureError, ProtocolError, read
+from src.experiments import campaign
+from src.experiments.verification import VerificationError
+from src.experiments.paired_runner import InfrastructureError, ProtocolError, read
 
 
 @pytest.mark.parametrize("error,code", [(AttributeError("verifier bug"), 64), (VerificationError("broken validator"), 64), (ProtocolError("changed inputs"), 64), (InfrastructureError("provider unavailable"), 75)])
 def test_controller_saves_unexpected_failure_and_stops_without_retry(tmp_path, monkeypatch, error, code):
     root = tmp_path / "campaign"
     (root / "controller/src").mkdir(parents=True)
-    monkeypatch.setattr(campaign, "__file__", str(root / "controller/src/native_campaign.py"))
+    monkeypatch.setattr(campaign, "REPOSITORY", root / "controller")
     case = {"suite": "bd", "problem": "ufl", "instance": "synthetic"}
     manifest = {"model_queue": [{"model": "fixture", "backend": "codex-cli", "effort": "medium"}], "instances": [case], "protocol_id": "fixture", "agent_timeout": 1, "judge_model": "fixture", "judge_effort": "high"}
     manifest["execution_environment"] = {"image_id": "sha256:fixture", "license_file": "fixture", "native_environment": {}}
-    from src import hybrid_runtime
-    from src.agent import native_solver
+    from src.experiments import docker_setup as hybrid_runtime
+    from src.experiments import sandbox as native_solver
     from types import SimpleNamespace
     monkeypatch.setattr(hybrid_runtime, "runtime", lambda: SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None))
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: object())
@@ -46,12 +46,12 @@ def test_controller_saves_unexpected_failure_and_stops_without_retry(tmp_path, m
 @pytest.mark.parametrize("backend", ["codex-cli", "claude-code-cli", "agy-cli"])
 def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_path, monkeypatch, backend):
     from types import SimpleNamespace
-    from src import hybrid_runtime
-    from src.agent import native_solver
+    from src.experiments import docker_setup as hybrid_runtime
+    from src.experiments import sandbox as native_solver
 
     root = tmp_path / "campaign"
     (root / "controller/src").mkdir(parents=True)
-    monkeypatch.setattr(campaign, "__file__", str(root / "controller/src/native_campaign.py"))
+    monkeypatch.setattr(campaign, "REPOSITORY", root / "controller")
     case = {"suite": "bd", "problem": "ufl", "instance": "synthetic"}
     environment = {"image_id": "sha256:fixture", "license_file": "fixture", "native_environment": {}}
     manifest = {"model_queue": [{"model": "tested-model", "backend": backend, "effort": "medium"}], "instances": [case], "protocol_id": "fixture", "agent_timeout": 900,
@@ -92,7 +92,7 @@ def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_p
 @pytest.mark.parametrize("returncode", [0, 1, 64, 130, -9])
 def test_watchdog_does_not_retry_an_unclassified_exit(tmp_path, monkeypatch, returncode):
     from types import SimpleNamespace
-    from src import hybrid_runtime
+    from src.experiments import docker_setup as hybrid_runtime
 
     manifest = {"execution_environment": {}, "resource_guard": {}, "retry_delays_seconds": [0], "model_queue": [{"model": "fixture", "backend": "codex-cli", "effort": "medium"}]}
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)

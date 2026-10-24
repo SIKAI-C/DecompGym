@@ -7,9 +7,8 @@ import shutil
 
 import pytest
 
-from src import campaign_report as reporter
-from src import reporting_policy
-from src.agent.paired_runner import digest, save
+from src.results import campaign_report as reporter
+from src.experiments.paired_runner import digest, save
 
 
 @pytest.fixture
@@ -228,11 +227,6 @@ def test_frozen_inventory_size_overrides_name_and_counts_reconcile(campaign):
     assert_clean(report)
     assert report["coverage"]["complete"]
     assert sum(s["completed_pairs"] for s in report["coverage"]["sizes"]) == 3
-    analysis = importlib.import_module("src.03_analysis")
-    path = root / "runs/gpt-6.1-sol/plain/bd/ufl/ufl_small_seed000"
-    assert analysis.infer_difficulty(path) == "small"
-    instances = [{"difficulty": size, "solveE_at_i": [1], "solveV_at_i": [1], "solveQ_at_i": [1], "quality_at_i": [0]} for size in reporter.SIZES]
-    assert sum(g["num_instances"] for g in analysis.aggregate_by_difficulty(instances).values() if g) == 3
 
 
 def test_paired_bootstrap_reproducible_and_preserves_shared_first(campaign):
@@ -260,26 +254,14 @@ def test_reading_never_changes_source_or_writes_inside_campaign(campaign, tmp_pa
     assert before == {str(p.relative_to(root)): digest(p) for p in root.rglob("*") if p.is_file()}
 
 
-def test_user_sol_exclusion_also_applies_to_registered_fresh_cohorts(campaign, monkeypatch):
+def test_model_selection_limits_the_report_and_names_skipped_models(campaign):
     root, manifest = campaign
-    set_backend(campaign, "codex-cli", "gpt-5.6-sol")
     write_pair(campaign)
-    excluded = reporter.build_campaign_report(root)
-    assert excluded["coverage"]["expected_pairs"] == 0
-    assert not excluded["calls"] and not excluded["paired_curves"]
-    manifest["experiment_plan"] = {"name": reporting_policy.AUTHORIZED_FRESH_PLAN, "dataset_inventory_sha256": reporting_policy.AUTHORIZED_INVENTORY_SHA256, "reuse_generated_context": False, "reporting": {"mix_legacy_results_into_fresh_totals": False}}
-    manifest.pop("protocol_id")
-    manifest["protocol_id"] = reporter.identity(manifest)
-    assert reporting_policy.model_exclusion("gpt-5.6-sol", manifest)
-    monkeypatch.setattr(reporting_policy, "AUTHORIZED_FRESH_PROTOCOL_IDS", {manifest["protocol_id"]})
-    assert reporting_policy.cohort_eligibility(manifest)["authorized_fresh_cohort"]
-    assert reporting_policy.model_exclusion("gpt-5.6-sol", manifest) is not None
-    assert reporting_policy.model_exclusion("gpt-5.6-sol") is not None
-    save(root / "campaign.json", manifest)
-    assert reporting_policy.artifact_exclusion(root / "runs/gpt-5.6-sol/plain") is not None
-    fresh_excluded = reporter.build_campaign_report(root)
-    assert fresh_excluded["coverage"]["expected_pairs"] == 0
-    assert not fresh_excluded["calls"] and not fresh_excluded["paired_curves"]
+    selected = reporter.build_campaign_report(root, models=["another-model"])
+    assert selected["coverage"]["expected_pairs"] == 0
+    assert not selected["calls"] and not selected["paired_curves"]
+    assert selected["skipped_models"] == [item["model"] for item in manifest["model_queue"]]
+    assert reporter.build_campaign_report(root)["coverage"]["expected_pairs"] > 0
 
 
 def test_snapshot_detects_replacement_without_locking(campaign):
@@ -354,9 +336,9 @@ def test_request_before_call_gate_has_no_proven_physical_consumption(campaign):
 
 
 def test_terminal_failure_uses_validated_actual_prefix_without_padding(campaign):
-    from src.agent import policy_completion as completion
+    from src.experiments import completion
     root, manifest = campaign
-    set_backend(campaign, "agy-cli", "gemini-3.1-pro-high")
+    set_backend(campaign, "agy-cli", "gemini-3.8-flash-medium")
     run = write_pair(campaign, plain_success=None, reflection_success=None, partial=True)
     directory = run / "reflection/bd/ufl/ufl_small_seed000"
     a = directory / "attempts/attempt_01"

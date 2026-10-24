@@ -68,7 +68,7 @@ def test_stalled_pricing_does_not_certify_a_bound(pattern):
 
 def test_real_bp_early_stop_preserves_solution_without_invalid_bound():
     gp = pytest.importorskip("gurobipy")
-    from src.api import solve, verify
+    from src.utils.api import solve, verify
 
     data_path = Path(__file__).resolve().parents[1] / "data/cg/bp/bp_small_seed000/data.json"
     try:

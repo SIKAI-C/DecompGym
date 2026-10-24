@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from src.agent import resource_monitor as monitor
+from src.experiments import resources as monitor
 
 
 def test_process_parsing_and_owned_tree():

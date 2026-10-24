@@ -10,11 +10,11 @@ from pathlib import Path
 import threading
 
 from src.agent.cli_events import parse_events
-from src.agent.codex_client import CodexClient, CodexResult
-from src.agent.container_runtime import ContainerError, DockerRuntime
-from src.agent.prompt_policy import WORKSPACE_POLICY, record_workspace_prompt
+from src.agent.result import AgentResult, save_result
+from src.agent.container import ContainerError, DockerRuntime
+from src.agent.prompts.policy import WORKSPACE_POLICY, record_workspace_prompt
 from src.agent.safe_artifacts import read_regular_text
-from src.runtime_environment import RuntimeEnvironmentError
+from src.experiments.environment import RuntimeEnvironmentError
 
 
 DOCKER_EDIT_POLICY = "fresh-docker-cli-edit-v1"
@@ -161,9 +161,9 @@ class DockerCliClient:
         invocation = self.protocol() | result.metadata | {"observed_models": parsed["observed_models"], "usage_available": parsed["usage_available"], "requested_model": self.model,
                                                           "target": target.name, "terminal_state": terminal, "ephemeral": True, "external_context": False, "candidate_rejection": delivery.get("rejected_target")}
         (log_dir / f"{step}_invocation.json").write_text(json.dumps(invocation, indent=2) + "\n")
-        answer = CodexResult(ok, returncode, worker.get("agent_seconds", result.elapsed_seconds), parsed["usage"], error if error else (None if ok else "Completed CLI did not deliver the requested file"), parsed["warnings"], terminal,
+        answer = AgentResult(ok, returncode, worker.get("agent_seconds", result.elapsed_seconds), parsed["usage"], error if error else (None if ok else "Completed CLI did not deliver the requested file"), parsed["warnings"], terminal,
                              hashlib.sha256(contents.encode()).hexdigest() if ok else None)
-        CodexClient._save_result(log_dir, step, answer)
+        save_result(log_dir, step, answer)
         if worker.get("credential_checkpoint_error"):
             raise RuntimeEnvironmentError("The completed CLI artifact was saved, but credential persistence needs repair")
         if not worker and "worker_error" in result.stdout:

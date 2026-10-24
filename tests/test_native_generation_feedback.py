@@ -5,8 +5,9 @@ import json
 
 import pytest
 
-from src.agent.codex_client import CodexResult
-from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, read, save
+from src.agent.result import AgentResult
+from src.experiments.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, read, save
+from host_solver import host_solver
 
 
 class Client:
@@ -20,13 +21,13 @@ class Client:
     def edit_file(self, target, prompt, *, context, log_dir, step):
         self.calls.append({"step": step, "prompt": prompt, "context": [(path.name, path.read_text()) for path in context if path.exists()]})
         if step == "agent":
-            result = CodexResult(False, 0, 0.01, {}, "Required solver artifact was not delivered", terminal_state="completed")
+            result = AgentResult(False, 0, 0.01, {}, "Required solver artifact was not delivered", terminal_state="completed")
         elif step == "reflection" and self.fail_reflection:
             self.fail_reflection = False
-            result = CodexResult(False, 1, 0.01, {}, "controlled reflection transport failure")
+            result = AgentResult(False, 1, 0.01, {}, "controlled reflection transport failure")
         elif step == "reflection":
             target.write_text("The previous generation did not deliver a solver.")
-            result = CodexResult(True, 0, 0.01, {}, terminal_state="completed", artifact_sha256=digest(target))
+            result = AgentResult(True, 0, 0.01, {}, terminal_state="completed", artifact_sha256=digest(target))
         else:
             raise AssertionError("A generation failure must not be judged")
         save(log_dir / f"{step}_metrics.json", asdict(result))
@@ -35,14 +36,14 @@ class Client:
 
 @pytest.fixture
 def failed_attempt(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.agent.paired_runner.runtime_lock", lambda name: nullcontext())
+    monkeypatch.setattr("src.experiments.paired_runner.runtime_lock", lambda name: nullcontext())
     source = tmp_path / "data/bd/ufl/ufl_small_seed000"
     source.mkdir(parents=True)
     save(source / "data.json", {"m": 1, "n": 1, "f": [1], "D": [[1]]})
     save(source / "meta.json", {"ground_truth_objective": 2})
     (source / "prompt.txt").write_text("Implement Benders decomposition.")
     client = Client()
-    task = PairedRunner(client=client, judge_client=client, model="fixture", suite="bd", problem=["ufl"])
+    task = PairedRunner(client=client, judge_client=client, solver_executor=host_solver, model="fixture", suite="bd", problem=["ufl"])
     destination = task.prepare(source, tmp_path / "runs", "reflection")
     attempt = destination / "attempts/attempt_01"
     task.mode = "reflection"

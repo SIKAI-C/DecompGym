@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.agent.decomposition_policy import method_requirements
+from src.agent.prompts.method import method_requirements
 
 
 SIZE_FLAVOR = "a logistics provider packing items into identical bins for shipment"

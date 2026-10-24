@@ -5,9 +5,10 @@ import json
 
 import pytest
 
-from src.agent.codex_client import CodexResult
-from src.agent.output_verifier import OutputVerifier
-from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, read, save
+from src.agent.result import AgentResult
+from src.experiments.verification import OutputVerifier
+from src.experiments.paired_runner import InfrastructureError, PairedRunner, ProtocolError, digest, read, save
+from host_solver import host_solver
 
 
 CASES = {
@@ -35,18 +36,18 @@ class Client:
         elif step == "llm_verifier":
             if self.fail_judge_once:
                 self.fail_judge_once = False
-                return CodexResult(False, 1, 0, {}, "controlled judge transport failure")
+                return AgentResult(False, 1, 0, {}, "controlled judge transport failure")
             target.write_text("VERDICT: PASS\nNOTES: fixture")
         else:
             target.write_text("Reflection fixture.")
-        result = CodexResult(True, 0, 0.01, {}, terminal_state="completed", artifact_sha256=digest(target))
+        result = AgentResult(True, 0, 0.01, {}, terminal_state="completed", artifact_sha256=digest(target))
         save(log_dir / f"{step}_metrics.json", asdict(result))
         return result
 
 
 @pytest.fixture(autouse=True)
 def no_native_auth_lock(monkeypatch):
-    monkeypatch.setattr("src.agent.paired_runner.runtime_lock", lambda name: nullcontext())
+    monkeypatch.setattr("src.experiments.paired_runner.runtime_lock", lambda name: nullcontext())
 
 
 def prepare(tmp_path, problem, output=None):
@@ -58,7 +59,7 @@ def prepare(tmp_path, problem, output=None):
     save(source / "meta.json", {"ground_truth_objective": valid["objective_value"]})
     (source / "prompt.txt").write_text("Implement the requested decomposition.")
     client = Client(valid if output is None else output)
-    task = PairedRunner(client=client, judge_client=client, model="fixture", suite=suite, problem=[problem])
+    task = PairedRunner(client=client, judge_client=client, solver_executor=host_solver, model="fixture", suite=suite, problem=[problem])
     destination = task.prepare(source, tmp_path / "runs", "plain")
     attempt = destination / "attempts/attempt_01"
     attempt.mkdir()

@@ -2,7 +2,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import csv
-import importlib
 import io
 import json
 from pathlib import Path
@@ -10,14 +9,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent import policy_completion as completion
-from src.agent.paired_runner import PairedRunner, ProtocolError, save
-from src.dashboard_server import Dashboard, export_csv
-from src.native_campaign import pair_complete
-from src.native_execution_phase import USER_PAUSE_GUARD_CHANGE, ensure_execution_allowed, validate_phase, install_overrides
+from src.experiments import completion
+from src.experiments.campaign import pair_complete
+from src.experiments.dashboard_server import Dashboard, export_csv
+from src.experiments.paired_runner import PairedRunner
+from src.utils.errors import ProtocolError
+from src.utils.records import save
 
 
-MODEL = "gemini-3.1-pro-high"
+MODEL = "gemini-3.8-flash-medium"
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def closed_policy(tmp_path):
     (source / "gold_monolithic.json").write_text('{"objective_value":4}')
     case["sha256"] = {p.name: completion.digest(p) for p in source.iterdir()}
     manifest = {"backend": "native", "protocol_id": "base", "workers": 2, "max_attempts": 10,
-                "gpt_order": [], "agy_order": [MODEL], "instances": [case]}
+                "model_queue": [{"model": MODEL, "backend": "agy-cli", "effort": "catalog-slug"}], "instances": [case]}
     save(root / "campaign.json", manifest)
     generation = {"ok": False, "returncode": 0, "terminal_state": "completed", "artifact_sha256": None,
                   "invocation_id": "generation-1", "usage": {"input_tokens": 17}}
@@ -132,7 +132,7 @@ def test_direct_resume_never_calls_or_rewrites_closed_pair(closed_policy, monkey
             pytest.fail("Closed policy attempted a model call")
     client = NoCalls()
     runner = PairedRunner(client=client, judge_client=client, reflection_client=client, protocol_id="base",
-                          model=MODEL, suite="bd", problem=["ufl"], max_attempts=10)
+                          model=MODEL, suite="bd", problem=["ufl"], max_attempts=10, solver_executor=lambda *args: pytest.fail("Closed pair ran a solver"))
     monkeypatch.setattr(runner, "prepare", lambda *args: pytest.fail("Closed pair was prepared again"))
     monkeypatch.setattr(runner, "run_attempt", lambda *args: pytest.fail("Closed pair was executed again"))
     summaries = runner.run_pair(f.source, f.root / "runs" / MODEL)
@@ -184,62 +184,3 @@ def test_dashboard_and_csv_separate_completion_from_first_attempt(closed_policy)
     assert row["reflection_outcome"] == "terminal_failed"
     assert Dashboard(f.root).details(MODEL, f.case["instance"])["policies"]["reflection"]["unexecuted_attempt_slots"] == 9
 
-
-def test_analysis_and_report_preserve_attempt_count_and_failed_budget_curve(closed_policy):
-    f = closed_policy
-    analysis = importlib.import_module("src.03_analysis")
-    report = importlib.import_module("src.05_report")
-    result = analysis.analyze_instance(f.directory, 0.01, False)
-    assert result["actual_attempts"] == result["num_attempts"] == 1
-    assert result["unexecuted_attempt_slots"] == 9
-    assert result["solveE_at_i"] == result["solveV_at_i"] == result["solveQ_at_i"] == [0] * 10
-    summary = completion.load_policy_summary(f.directory)
-    assert report.audit_instance(("reflection", "bd", "ufl", f.case["instance"]), f.directory / "instance_summary.json",
-                                 summary, f.source, {"max_attempts": 10, "gap_threshold": 0.01}) == []
-    assert report.attempt_scores(summary["attempts"], 4, 0.01, 10)["quality"] is False
-
-
-@pytest.mark.parametrize("changed", [None, "helper", "receipt", "summary"])
-def test_phase_verifies_helper_receipt_and_protected_original(closed_policy, changed):
-    f = closed_policy
-    if changed:
-        path = {"helper": f.phase_path.parent / "policy_completion.py", "receipt": f.receipt_path,
-                "summary": f.directory / "instance_summary.json"}[changed]
-        path.write_text("changed")
-        with pytest.raises((ValueError, KeyError)):
-            validate_phase(f.root, f.phase_path, executing_file=f.wrapper)
-    else:
-        assert validate_phase(f.root, f.phase_path, executing_file=f.wrapper)["phase_id"] == f.phase["phase_id"]
-
-
-def test_frozen_campaign_override_honors_closed_pair(closed_policy, monkeypatch):
-    f = closed_policy
-    import sys
-    old_module = sys.modules["src.agent.policy_completion"]
-    monkeypatch.setitem(sys.modules, "src.agent.policy_completion", old_module)
-    def legacy_complete(*args):
-        pytest.fail("Adjudicated pair was sent to the legacy ten-entry predicate")
-    campaign = SimpleNamespace(pair_complete=legacy_complete, save=lambda *args: None, supervise=lambda *args, **kwargs: None)
-    paired = SimpleNamespace(ProtocolError=ProtocolError, runtime_lock=lambda name: None)
-    class Client:
-        def edit_file(self, *args, **kwargs):
-            pytest.fail("No model call is needed to install completion support")
-    class Agy(Client):
-        pass
-    state = f.root / "state"
-    state.mkdir()
-    install_overrides(f.root, f.phase_path, f.phase, campaign=campaign, paired=paired,
-                      codex=SimpleNamespace(CodexClient=Client), agy=SimpleNamespace(AgyClient=Agy),
-                      state_directory=state, wrapper_path=f.wrapper)
-    assert campaign.pair_complete(f.root, MODEL, f.case, "base")
-
-
-def test_user_pause_blocks_execution_but_allows_offline_verification(tmp_path):
-    phase = {"changes": {"user_pause_guard": USER_PAUSE_GUARD_CHANGE}}
-    save(tmp_path / "pause_request.json", {"resume_requires_explicit_user_request": True})
-    ensure_execution_allowed(tmp_path, "verify", phase)
-    for command in ("run", "watch"):
-        with pytest.raises(ValueError, match="paused by the user"):
-            ensure_execution_allowed(tmp_path, command, phase)
-    save(tmp_path / "pause_request.json", {"resume_requires_explicit_user_request": False})
-    ensure_execution_allowed(tmp_path, "run", phase)

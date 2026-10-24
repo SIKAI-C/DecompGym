@@ -5,9 +5,9 @@ import tomllib
 
 import pytest
 
-from src import runtime_environment as runtime
-from src.agent.experiment_runner import ExperimentRunner
-from src.runtime_environment import RuntimeEnvironmentError
+from src.experiments import environment as runtime
+from src.experiments.paired_runner import PairedRunner
+from src.experiments.environment import RuntimeEnvironmentError
 
 
 def test_installation_and_frozen_runtime_pins_agree():
@@ -52,18 +52,7 @@ def test_versions_are_checked_against_the_campaign_record():
         runtime.require_runtime_environment(observed | {"python_version": "3.12.10"})
 
 
-def test_solver_drift_does_not_launch_or_overwrite_output(tmp_path, monkeypatch):
-    (tmp_path / "solver.py").write_text("raise AssertionError('must not execute')\n")
-    output = tmp_path / "output.json"
-    output.write_text('{"saved":"evidence"}\n')
-    monkeypatch.setattr(runtime, "version", lambda _: "12.0.0")
-    with pytest.raises(RuntimeEnvironmentError):
-        ExperimentRunner.run_solver(tmp_path, 1)
-    assert output.read_text() == '{"saved":"evidence"}\n'
-    assert not (tmp_path / "gurobi.env").exists()
-
-
 def test_runner_rejects_wrong_environment_before_generation(monkeypatch):
     monkeypatch.setattr(runtime.platform, "python_version", lambda: "3.13.5")
     with pytest.raises(RuntimeEnvironmentError, match="Python"):
-        ExperimentRunner()
+        PairedRunner(client=None, judge_client=None, solver_executor=None)

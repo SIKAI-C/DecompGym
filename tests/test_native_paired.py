@@ -6,14 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.codex_client import CodexResult
-from src.agent.paired_runner import InfrastructureError, PairedRunner, ProtocolError, ReflectionArtifactError, digest, read, save
+from src.agent.result import AgentResult
+from src.experiments.paired_runner import PairedRunner
+from src.utils.errors import InfrastructureError, ProtocolError
+from src.utils.records import digest, read, save
+from host_solver import host_solver
 
 
 @pytest.fixture(autouse=True)
 def independent_test_auth_lock(monkeypatch):
     # Fake clients must not contend with a live campaign's subscription login lock.
-    monkeypatch.setattr("src.agent.paired_runner.runtime_lock", lambda name: nullcontext())
+    monkeypatch.setattr("src.experiments.paired_runner.runtime_lock", lambda name: nullcontext())
 
 
 def source_case(tmp_path):
@@ -38,7 +41,7 @@ class Client:
         self.calls.append((step, target, list(context)))
         if step == self.fail_step:
             self.fail_step = None
-            return CodexResult(False, 1, 0, {}, "controlled transport failure")
+            return AgentResult(False, 1, 0, {}, "controlled transport failure")
         if step == "agent":
             success = next(self.outcomes)
             if success:
@@ -50,13 +53,13 @@ class Client:
             self.bad_verdict = False
         else:
             target.write_text("Repair the preceding solver.")
-        result = CodexResult(True, 0, 0.01, {"input_tokens": 7}, terminal_state="completed", artifact_sha256=digest(target))
+        result = AgentResult(True, 0, 0.01, {"input_tokens": 7}, terminal_state="completed", artifact_sha256=digest(target))
         save(log_dir / f"{step}_metrics.json", asdict(result))
         return result
 
 
 def runner(client, judge=None, **kwargs):
-    return PairedRunner(client=client, judge_client=judge or client, model="fixture", suite="bd", problem=["ufl"], **kwargs)
+    return PairedRunner(client=client, judge_client=judge or client, model="fixture", suite="bd", problem=["ufl"], **({"solver_executor": host_solver} | kwargs))
 
 
 def test_shared_success_has_one_physical_evaluation_and_two_padded_policies(tmp_path):
@@ -219,7 +222,7 @@ def test_candidate_diagnostics_do_not_become_launcher_failures(tmp_path, monkeyp
 
 @pytest.mark.parametrize("errno", [2, 13])
 def test_structured_launch_error_preserves_generation_for_recovery(tmp_path, monkeypatch, errno):
-    from src.agent.solver_errors import SolverLaunchError
+    from src.experiments.sandbox import SolverLaunchError
     client = Client()
     task = runner(client)
     source = source_case(tmp_path)
@@ -275,7 +278,7 @@ class MissingAgyReflection(Client):
         if step == "reflection" and self.omissions:
             self.omissions -= 1
             self.calls.append((step, target, list(context)))
-            result = CodexResult(False, 0, 0.01, {}, "AGY did not complete an edit (exit 0); see reflection_stderr.log", terminal_state="completed")
+            result = AgentResult(False, 0, 0.01, {}, "AGY did not complete an edit (exit 0); see reflection_stderr.log", terminal_state="completed")
             save(log_dir / "reflection_metrics.json", asdict(result))
             (log_dir / "reflection_stderr.log").write_text(self.diagnostics)
             return result
@@ -284,7 +287,7 @@ class MissingAgyReflection(Client):
 
 def test_reflection_omission_consumes_one_opportunity_and_continues(tmp_path, monkeypatch):
     waits = []
-    monkeypatch.setattr("src.agent.paired_runner.time.sleep", waits.append)
+    monkeypatch.setattr("src.experiments.paired_runner.time.sleep", waits.append)
     client = MissingAgyReflection(10)
     task = runner(client)
     source = source_case(tmp_path)
@@ -308,10 +311,9 @@ def test_reflection_omission_consumes_one_opportunity_and_continues(tmp_path, mo
 @pytest.mark.parametrize("diagnostics", ["authentication required", "HTTP 429 rate limit", "quota exceeded"])
 def test_access_failures_bypass_local_reflection_retries(tmp_path, monkeypatch, diagnostics):
     waits = []
-    monkeypatch.setattr("src.agent.paired_runner.time.sleep", waits.append)
+    monkeypatch.setattr("src.experiments.paired_runner.time.sleep", waits.append)
     client = MissingAgyReflection(3, diagnostics)
     with pytest.raises(InfrastructureError) as caught:
         runner(client).run_pair(source_case(tmp_path), tmp_path / "runs")
-    assert not isinstance(caught.value, ReflectionArtifactError)
     assert waits == []
     assert len([call for call in client.calls if call[0] == "reflection"]) == 1

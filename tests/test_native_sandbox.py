@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from src.agent.native_solver import GUROBI_PROBE, NativeSandboxExecutor
-from src.agent.resource_monitor import read_processes
+from src.experiments.sandbox import GUROBI_PROBE, NativeSandboxExecutor
+from src.experiments.resources import read_processes
 
 
 pytestmark = pytest.mark.skipif(os.environ.get("DECOMPBENCH_NATIVE_TESTS") != "1", reason="requires native macOS process permissions and the existing local Gurobi license")

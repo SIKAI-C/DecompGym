@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.agent.decomposition_policy import method_requirements
+from src.agent.prompts.method import method_requirements
 
 
 SIZE_FLAVOR = "an operation scheduling staff shifts to cover time-varying demand"

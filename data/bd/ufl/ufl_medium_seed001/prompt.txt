@@ -34,15 +34,13 @@ decide which facilities to open and how to assign each customer so total open-pl
   i=4->cust 0: 3.467941052385733, i=4->cust 1: 2.293770489094457, i=4->cust 2: 8.747202834854239, i=4->cust 3: 2.906985610238682, i=4->cust 4: 6.168824033283271, i=4->cust 5: 5.332040192872537, i=4->cust 6: 2.783997967642558, i=4->cust 7: 5.2940316910092395, i=4->cust 8: 3.144355342517688, i=4->cust 9: 9.44999807044923, i=4->cust 10: 3.304895849852025, i=4->cust 11: 4.244660108278924, i=4->cust 12: 5.855157987709227, i=4->cust 13: 1.1527492003875524, i=4->cust 14: 6.935096943128892, i=4->cust 15: 5.822076926873403, i=4->cust 16: 8.341149542826862, i=4->cust 17: 4.769427674064758, i=4->cust 18: 7.375456197821023, i=4->cust 19: 5.9024006243123495, i=4->cust 20: 5.396320375041487, i=4->cust 21: 7.504649946065992, i=4->cust 22: 3.6833084335751334, i=4->cust 23: 4.532668319244765, i=4->cust 24: 2.2833108868388967, i=4->cust 25: 4.75050431636112, i=4->cust 26: 4.019159208972732, i=4->cust 27: 6.8575954344669725, i=4->cust 28: 7.120805543056996, i=4->cust 29: 2.577444275661576, i=4->cust 30: 3.5843249582723575, i=4->cust 31: 7.784250684286851, i=4->cust 32: 2.5833945318376954, i=4->cust 33: 1.1953699434726528, i=4->cust 34: 3.0210146794750132, i=4->cust 35: 2.3354671349178195, i=4->cust 36: 8.202489047149257, i=4->cust 37: 3.632552599069938, i=4->cust 38: 5.065792190644896, i=4->cust 39: 8.091721681930986, i=4->cust 40: 2.281953050108698, i=4->cust 41: 2.2052243017868736, i=4->cust 42: 4.224869422474841, i=4->cust 43: 6.4283928013764875, i=4->cust 44: 2.055245327378922
   ... you can find all the data in the data.json
 
-All data are stored in a JSON file named data.json in the current directory.
+All input data are stored in a JSON file named data.json.
 
 Task:
-Assume gurobipy is available. Do not depend on any files other than data.json. Write a Python program solver.py that:
-1) Reads data.json from the current directory.
-2) Implements a Benders decomposition where the master problem decides y and a theta variable,
-    and the subproblem solves the subproblem given a fixed y.
-3) Generates feasibility cuts when the subproblem is infeasible and optimality cuts otherwise.
-4) Writes a JSON file output.json with at least:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads the input data.json file.
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes a JSON file output.json with at least:
    {
      "status": "optimal | feasible | infeasible | error",
      "method": "benders_decomposition",
@@ -50,3 +48,13 @@ Assume gurobipy is available. Do not depend on any files other than data.json. W
      "y": [0/1 list of length m indicating open facilities],
      "x": [[0/1 matrix of shape (m, n) indicating assignments]]
    }
+
+Decomposition method requirements:
+
+Use a master problem for the complicating decisions and recourse-cost estimates. Solve subproblems with the master decisions fixed, and use subproblem information to generate feasibility or optimality cuts and update subsequent master solves. Classical, integer, and logic-based Benders decomposition are allowed; LP duals are not required for integer or logic-based variants. Solving the master and fixed-decision subproblems as LPs or MIPs is allowed. Construct the reported solution from this decomposition, retaining a feasible incumbent when appropriate.
+
+Do not build and solve a separate monolithic optimization model of the full original problem, including for an initial incumbent, initialization, a warm start, a fallback, the reported solution, or an optimality certificate. This prohibition includes a full-original-model feasibility solve with a zero objective and applies to every reachable solution-producing path, including conditional fallback paths, even when decomposition also runs.
+
+Heuristic initialization, directly constructed seed columns, phase-I restricted masters with artificial variables and pricing, valid initial bounds or cuts, and warm-starting a legitimate decomposition master are allowed. A permitted initialization must not obtain its solution from a separate full-original-model solve. The restriction concerns that separate full model, not legitimate decomposition masters, fixed-decision subproblems, pricing problems, or integer restricted masters.
+
+Implement the information feedback required by the requested method. There is no minimum iteration count and no requirement that every instance add a cut or column, or improve the initial incumbent: legitimate immediate convergence or termination is allowed. Report mutually consistent decisions and objective values from the same incumbent. Use status feasible when returning an incumbent without a global optimality proof; optimality of an integer restricted master alone does not prove global optimality.

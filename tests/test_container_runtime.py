@@ -6,10 +6,10 @@ import time
 
 import pytest
 
-from src.agent import container_runtime as containers
-from src.agent.container_runtime import ContainerError, ContainerResult, DockerRuntime, bounded_process, parse_docker_sample
-from src.runtime_environment import RuntimeEnvironmentError
-from src.agent.resource_monitor import CleanupError
+from src.agent import container as containers
+from src.agent.container import ContainerError, ContainerResult, DockerRuntime, bounded_process, parse_docker_sample
+from src.experiments.environment import RuntimeEnvironmentError
+from src.experiments.resources import CleanupError
 
 
 @pytest.mark.parametrize("ownership_matches", [True, False])

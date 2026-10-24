@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.output_verifier import OutputVerifier
+from src.experiments.verification import OutputVerifier
 from src.utils.base_bd_class import BaseBenders, MasterSolution, SubproblemResult
 from src.utils.reference_output import reference_output
 
@@ -38,7 +38,7 @@ def test_saved_reference_is_feasible_and_objective_consistent(path, tmp_path):
 
 
 def test_reference_validation_does_not_relax_the_agent_contract(tmp_path):
-    from src.api import verify
+    from src.utils.api import verify
 
     data_path = tmp_path / "data.json"
     data_path.write_text(json.dumps({"m": 1, "n": 1, "f": [2], "D": [[3]]}))

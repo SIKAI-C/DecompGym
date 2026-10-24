@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.agent import docker_client
-from src.agent.container_runtime import ContainerResult
+from src.agent.container import ContainerResult
 from src.agent.docker_client import CLI_VERSIONS, DockerCliClient
 
 
@@ -96,8 +96,8 @@ def test_completed_wrong_target_preserves_evidence_without_promoting_it(tmp_path
 
 def test_committed_generation_omission_is_recovered_without_an_extra_call(tmp_path, monkeypatch):
     from contextlib import nullcontext
-    from src.agent.paired_runner import PairedRunner
-    monkeypatch.setattr("src.agent.paired_runner.runtime_lock", lambda *_: nullcontext())
+    from src.experiments.paired_runner import PairedRunner
+    monkeypatch.setattr("src.experiments.paired_runner.runtime_lock", lambda *_: nullcontext())
     runtime = Runtime(tmp_path, "codex-cli", contents="")
     client = DockerCliClient("fixture", backend="codex-cli", image_id="sha256:fixture", runtime=runtime, evidence_root=tmp_path / "preflight", credential_provider=lambda _: {})
     task = PairedRunner(client=client, judge_client=client, solver_executor=lambda *_: pytest.fail("This edit-only test must not execute a solver"))

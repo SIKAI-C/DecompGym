@@ -4,8 +4,9 @@ from dataclasses import asdict
 
 import pytest
 
-from src.agent.codex_client import CodexResult
-from src.agent.paired_runner import PairedRunner, ProtocolError, read, save
+from src.agent.result import AgentResult
+from src.experiments.paired_runner import PairedRunner, ProtocolError, read, save
+from host_solver import host_solver
 
 
 class MissingReflection:
@@ -23,7 +24,7 @@ class MissingReflection:
             path = log_dir / "unexpected_outputs/nested/debug.md"
             path.parent.mkdir(parents=True)
             path.write_text("Wrong-target content must never reach the next model.")
-        result = CodexResult(False, 0, 0.25, {"input_tokens": 7, "output_tokens": 2}, "No reflection delivered", terminal_state="completed")
+        result = AgentResult(False, 0, 0.25, {"input_tokens": 7, "output_tokens": 2}, "No reflection delivered", terminal_state="completed")
         save(log_dir / "reflection_metrics.json", asdict(result))
         return result
 
@@ -32,9 +33,9 @@ class MissingReflection:
 @pytest.mark.parametrize("delivery", ["empty", "deleted", "misplaced"])
 @pytest.mark.parametrize("crash", ["after_metrics", "lost_receipt", "none"])
 def test_completed_omission_is_recovered_once_with_original_usage(tmp_path, monkeypatch, backend, delivery, crash):
-    monkeypatch.setattr("src.agent.paired_runner.runtime_lock", lambda *_: nullcontext())
+    monkeypatch.setattr("src.experiments.paired_runner.runtime_lock", lambda *_: nullcontext())
     client = MissingReflection(backend, delivery)
-    task = PairedRunner(client=client, judge_client=client)
+    task = PairedRunner(client=client, judge_client=client, solver_executor=host_solver)
     target = tmp_path / "attempt_01/debug.md"
     target.parent.mkdir()
     if crash == "after_metrics":
@@ -60,9 +61,9 @@ def test_completed_omission_is_recovered_once_with_original_usage(tmp_path, monk
 
 
 def test_modified_misplaced_evidence_is_not_accepted_on_recovery(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.agent.paired_runner.runtime_lock", lambda *_: nullcontext())
+    monkeypatch.setattr("src.experiments.paired_runner.runtime_lock", lambda *_: nullcontext())
     client = MissingReflection("codex-cli", "misplaced")
-    task = PairedRunner(client=client, judge_client=client)
+    task = PairedRunner(client=client, judge_client=client, solver_executor=host_solver)
     target = tmp_path / "attempt_01/debug.md"
     target.parent.mkdir()
     task.edit(client, target, "Reflect.", [], "reflection")

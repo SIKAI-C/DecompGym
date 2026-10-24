@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.agent.output_contract import validate_output_contract
-from src.agent.output_verifier import OutputVerifier, VerificationError
+from src.utils.output_contract import validate_output_contract
+from src.experiments.verification import OutputVerifier, VerificationError
 
 
 CASES = {

@@ -34,7 +34,7 @@ def generate_suite(
 
             data = generate_tsso_instance(seed=seed, size=size, output_dir=inst_dir)
 
-            prompt_text = render_prompt(data)
+            prompt_text = render_prompt(data).rstrip() + "\n"
             (inst_dir / "prompt.txt").write_text(prompt_text)
 
             data_path = str(inst_dir / "data.json")

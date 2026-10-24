@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from src.agent import container_runtime as containers
-from src.agent.container_runtime import ContainerError, ContainerResult, DockerRuntime
+from src.agent import container as containers
+from src.agent.container import ContainerError, ContainerResult, DockerRuntime
 
 
 pytestmark = pytest.mark.skipif(os.environ.get("DECOMPBENCH_DOCKER_TESTS") != "1", reason="requires the reviewed local Docker image")
