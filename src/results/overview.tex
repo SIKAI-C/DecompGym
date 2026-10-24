@@ -1,0 +1,117 @@
+% Figure 1 of the paper (benchmark overview). Built by src/results/overview.py with pdflatex.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[scaled=.92]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[scaled=.95]{inconsolata}
+\usepackage{fontawesome5}
+\usetikzlibrary{positioning,arrows.meta,calc,shadows,backgrounds,fit}
+
+% ColorBrewer-derived tints; BD blue and CG orange match the paradigm split used in the results.
+\definecolor{ink}{HTML}{1F2A37}
+\definecolor{muted}{HTML}{5B6573}
+\definecolor{line}{HTML}{C9D1DB}
+\definecolor{bd}{HTML}{2A78D6}
+\definecolor{bdbg}{HTML}{EAF2FC}
+\definecolor{cg}{HTML}{D9622B}
+\definecolor{cgbg}{HTML}{FDEFE7}
+\definecolor{exec}{HTML}{F6C9C4}
+\definecolor{verify}{HTML}{BFE6D5}
+\definecolor{quality}{HTML}{DCD3EE}
+\definecolor{fb}{HTML}{D2342C}
+\definecolor{codebg}{HTML}{F7F8FA}
+\definecolor{kw}{HTML}{7A3E9D}
+\definecolor{cm}{HTML}{8A94A3}
+
+\tikzset{
+  panel/.style={draw=line, rounded corners=6pt, line width=.6pt, fill=white},
+  chip/.style={rounded corners=2.5pt, minimum height=.47cm, inner xsep=4pt, font=\scriptsize, anchor=west, text=ink},
+  stage/.style={draw=ink!70, rounded corners=3pt, line width=.6pt, minimum width=4.1cm, minimum height=.86cm, font=\small\bfseries, text=ink},
+  arr/.style={-{Stealth[length=5pt,width=4pt]}, line width=.8pt, draw=ink!80},
+  fbarr/.style={-{Stealth[length=5pt,width=4pt]}, line width=.9pt, draw=fb},
+  lbl/.style={font=\scriptsize, text=muted, align=center},
+}
+
+\begin{document}
+\begin{tikzpicture}[x=1cm,y=1cm]
+
+% ------------------------------------------------------------------ task suite
+\node[panel, minimum width=5.6cm, minimum height=8.35cm, anchor=north west] (suite) at (0,8.35) {};
+\node[anchor=north west, font=\small\bfseries, text=ink] at (.25,8.12) {\faLayerGroup\enspace Task suite};
+\node[anchor=north west, inner sep=0] at (.28,7.55) {\fontsize{25}{25}\selectfont\bfseries\color{ink}9};
+\node[anchor=north west, align=left, inner sep=0, font=\small, text=ink] at (.98,7.58) {\textbf{problem families}\\[-1pt]\textcolor{muted}{2 decomposition methods}};
+
+% Benders block
+\fill[bdbg, rounded corners=4pt] (.22,6.62) rectangle (5.38,3.42);
+\node[anchor=west, font=\footnotesize\bfseries, text=bd!85!black] at (.36,6.36) {Benders decomposition};
+\node[anchor=east, font=\large\bfseries, text=bd] at (5.25,6.36) {5};
+\foreach \y/\a/\n in {5.88/UFL/Uncapacitated facility location, 5.34/FCTP/Fixed-charge transportation, 4.80/KM/$k$-median, 4.26/LRP/Location routing, 3.72/TSSO/Two-stage stochastic planning}{
+  \node[chip, fill=white, draw=bd!35, minimum width=4.88cm] at (.36,\y) {};
+  \node[anchor=west, font=\scriptsize\bfseries, text=bd!85!black] at (.46,\y) {\a};
+  \node[anchor=west, font=\scriptsize, text=ink] at (1.42,\y) {\n};
+}
+% Column-generation block
+\fill[cgbg, rounded corners=4pt] (.22,3.20) rectangle (5.38,.55);
+\node[anchor=west, font=\footnotesize\bfseries, text=cg!85!black] at (.36,2.94) {Column generation};
+\node[anchor=east, font=\large\bfseries, text=cg] at (5.25,2.94) {4};
+\foreach \y/\a/\n in {2.46/BP/Bin packing, 1.92/CSP/Cutting stock, 1.38/GAP/Generalized assignment, .84/SHIFT/Shift scheduling}{
+  \node[chip, fill=white, draw=cg!35, minimum width=4.88cm] at (.36,\y) {};
+  \node[anchor=west, font=\scriptsize\bfseries, text=cg!85!black] at (.46,\y) {\a};
+  \node[anchor=west, font=\scriptsize, text=ink] at (1.42,\y) {\n};
+}
+\node[anchor=south, font=\tiny, text=muted] at (2.8,.08) {each family: 3 sizes $\times$ 3 seeds};
+
+% ------------------------------------------------------------------ prompt, agent, solver
+\node[panel, minimum width=4.9cm, minimum height=2.6cm, anchor=north west, fill=codebg] (prompt) at (6.25,8.35) {};
+\node[anchor=north west, font=\small\bfseries, text=ink] at (6.45,8.12) {\faFile*[regular]\enspace Task specification};
+\node[anchor=north west, align=left, font=\ttfamily\scriptsize, text=ink, inner sep=0] at (6.48,7.55) {%
+\textcolor{fb!80!black}{\#\# Background}\enspace\textcolor{muted}{application}\\[1.5pt]
+\textcolor{fb!80!black}{\#\# Data}\enspace\textcolor{muted}{instance.json}\\[1.5pt]
+\textcolor{fb!80!black}{\#\# Method contract}\\[-.5pt]
+\enspace\textcolor{muted}{master $\leftrightarrow$ subproblems,}\\[-.5pt]
+\enspace\textcolor{muted}{no monolithic solve}\\[1.5pt]
+\textcolor{fb!80!black}{\#\# Output}\enspace\textcolor{muted}{output.json}};
+
+\node[panel, minimum width=4.9cm, minimum height=1.25cm, anchor=north west] (agent) at (6.25,5.27) {};
+\node[anchor=west, font=\Large, text=ink] at (6.5,4.645) {\faRobot};
+\node[anchor=west, align=left, font=\small, text=ink] at (7.25,4.645) {\textbf{Coding agent}\\[-1pt]{\scriptsize\color{muted}12 configurations: Codex,}\\[-3pt]{\scriptsize\color{muted}Claude Code, Antigravity}};
+
+\node[panel, minimum width=4.9cm, minimum height=3.45cm, anchor=north west, fill=codebg] (solver) at (6.25,3.45) {};
+\node[anchor=north west, font=\small\bfseries, text=ink] at (6.45,3.22) {\faCode\enspace\texttt{solver.py}};
+\node[anchor=north west, align=left, font=\ttfamily\scriptsize, text=ink, inner sep=0] at (6.48,2.66) {%
+\textcolor{kw}{while} not converged:\\[1.5pt]
+\enspace x = master.solve()\\[1.5pt]
+\enspace info = sub.solve(x)\\[1.5pt]
+\enspace master.add(info)\\[1.5pt]
+write(incumbent, status)\\[5pt]
+\textcolor{cm}{\# BD: subproblem duals -> cuts}\\[1pt]
+\textcolor{cm}{\# CG: master duals -> columns}};
+
+\draw[arr] (prompt.south) -- (agent.north);
+\draw[arr] (agent.south) -- (solver.north) node[midway, right, lbl] {generate};
+\draw[arr] (suite.east |- prompt.west) -- (prompt.west);
+
+% ------------------------------------------------------------------ evaluation
+\node[panel, minimum width=5.2cm, minimum height=8.35cm, anchor=north west] (eval) at (11.8,8.35) {};
+\node[anchor=north west, font=\small\bfseries, text=ink] at (12.0,8.12) {\faClipboardCheck\enspace Evaluation criteria};
+
+\node[stage, fill=exec] (E) at (14.4,6.85) {\faCogs\enspace E\,$\cdot$\,Execute};
+\node[lbl, below=1pt of E] (Et) {60 s limit, one solver thread};
+\node[stage, fill=verify, below=.62cm of E] (V) {\faShield*\enspace V\,$\cdot$\,Verify};
+\node[lbl, below=1pt of V] (Vt) {feasibility checker + method judge};
+\node[stage, fill=quality, below=.62cm of V] (Q) {\faChartBar\enspace Q\,$\cdot$\,Quality};
+\node[lbl, below=1pt of Q] (Qt) {objective within 1\% of reference};
+\draw[arr] (Et.south) -- (V.north);
+\draw[arr] (Vt.south) -- (Q.north);
+
+% Retry policies
+\node[draw=fb!60, fill=fb!5, rounded corners=3pt, align=left, font=\scriptsize, text=ink, inner sep=4pt, minimum width=4.6cm, anchor=north] (pol) at (14.4,2.42) {%
+\textbf{\color{fb}On failure, up to 10 attempts}\\[2pt]
+\textbf{Plain}: regenerate from the task\\[1pt]
+\textbf{Reflection}: diagnose, then revise};
+\draw[fbarr] (Qt.south) -- (pol.north) node[midway, right, font=\scriptsize, text=fb] {fail};
+\draw[fbarr] (pol.west) -- (11.36,0 |- pol.west) |- (agent.east);
+\draw[arr, preaction={draw=white, line width=3pt, -}] (solver.east) -- (11.58,0 |- solver.east) |- (E.west);
+\node[font=\scriptsize\bfseries, text=verify!40!black, anchor=north] (succ) at (14.4,.95) {\faCheckCircle\enspace all criteria met $\rightarrow$ stop};
+\end{tikzpicture}
+\end{document}

@@ -168,14 +168,14 @@ def verify_backend(backend, evidence_root, *, engine, image_id, credential):
         raise RuntimeError("The synthetic file-handoff check did not pass; inspect its preserved records")
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["prepare", "auth"])
     parser.add_argument("--backend", choices=BACKENDS)
     parser.add_argument("--image", default=IMAGE_TAG)
     parser.add_argument("--verify", action="store_true", help="After auth, make one unscored model edit and run the supplied synthetic Gurobi program")
     parser.add_argument("--evidence-root", type=Path, default=Path("outputs/runtime"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "prepare":
         prepare(args.evidence_root.resolve(), image=args.image)
     elif not args.backend:

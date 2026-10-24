@@ -1,0 +1,869 @@
+{
+ "description": "Manual labels for every GPT-6 Astra method-judge FAIL among physical candidates of the 972-pair DecompBench paper cohort (shared first candidates counted once under plain). Labels were assigned on 2026-10-17 by reading each judge note. certificate_overclaim: the solver reports status optimal without a global certificate (e.g., from integer restricted-master optimality or an unconverged pricing loop), which the task contract explicitly prohibits. inactive_decomposition: a control-flow or modelling bug means the master-subproblem feedback never runs or cannot influence the master (e.g., an inf <= inf convergence test exits before the first subproblem). solution_bypass: a reachable heuristic or full-enumeration fallback produces the reported solution outside the decomposition.",
+ "labels": [
+  {
+   "model": "gpt-6-luna",
+   "mode": "plain",
+   "instance": "gap_medium_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The successful-output branch violates the required optimality reporting rule: it reports \"optimal\" when im.Status == GRB.OPTIMAL and proven_feasible_lp. The latter is set to all_opt when phase-II pricing adds no columns; it establishes LP pricing convergence, not global integer optimality. An optimal integer restricted master can still have a positive gap to the full LP bound and omit patterns nee"
+  },
+  {
+   "model": "gpt-6-luna",
+   "mode": "reflection",
+   "instance": "km_large_seed002",
+   "attempt": 3,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "The entry point calls main(), which creates binary opening decisions y and a recourse estimate theta, but never sets an objective or objective coefficients. The master therefore optimizes a constant zero objective, not theta. || Each master opening pattern is fixed for exact closed-form assignment recourse via argmin. Its costs generate theta >= cut constraints, but theta has no upper bound and no"
+  },
+  {
+   "model": "gpt-5.6-luna",
+   "mode": "plain",
+   "instance": "bp_small_seed002",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "For every valid nonempty instance, `solve()` creates singleton patterns and continuous master variables but never attaches those initial variables to the coverage constraints. Each `master.addConstr(gp.LinExpr() == 1.0, ...)` therefore imposes `0 == 1`. The first `master.optimize()` must encounter an infeasible master, and the subsequent status check returns `base_result(\"error\")` before extractin"
+  },
+  {
+   "model": "claude-opus-5-5",
+   "mode": "plain",
+   "instance": "fctp_small_seed001",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "However, main() initializes best_ub = float(\"inf\") and checks best_ub - lb <= TOL * max(1.0, abs(best_ub)) before its first sub.solve(ybar). With a finite master bound, or lb still equal to negative infinity, both sides are positive infinity, so the comparison is true. The loop sets proven = True and breaks before solving recourse or obtaining any incumbent. || Consequently, the written feedback s"
+  },
+  {
+   "model": "claude-opus-5-5",
+   "mode": "plain",
+   "instance": "fctp_medium_seed001",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "However, `UB` starts as `float(\"inf\")` and `best` as `None`. After the first master solve with an incumbent and a finite lower bound, the check `UB - LB <= TOL * max(1.0, abs(UB))` evaluates as `inf <= inf`, which is true. It sets `proven = True` and breaks before extracting `ybar` or calling either subproblem. A lower bound of negative infinity has the same effect; earlier infeasibility, time, or"
+  },
+  {
+   "model": "claude-haiku-5-5",
+   "mode": "plain",
+   "instance": "lrp_medium_seed001",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "The source entry point is main() -> solve(); main() adds the method label and calls write_output() to write output.json. No separate monolithic solve is present, but the decomposition does not substantively run on the reachable control flow."
+  },
+  {
+   "model": "claude-haiku-5-5",
+   "mode": "plain",
+   "instance": "csp_small_seed000",
+   "attempt": 1,
+   "label": "solution_bypass",
+   "judge_excerpt": "However, solve() unconditionally computes independent first_fit_decreasing() rows and replaces best_rows when best_rows is None or len(ffd_rows) < len(best_rows). These heuristic rows are neither seed columns nor fed back into either master; they depend only on sizes, demands, and W. Thus a reachable output path constructs the reported solution outside the column-generation procedure, violating th"
+  },
+  {
+   "model": "claude-haiku-5-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 1,
+   "label": "solution_bypass",
+   "judge_excerpt": "However, a reachable solution-producing fallback bypasses the column-generation result: if master_ip has no incumbent (ip.SolCount == 0), or its rounded candidate fails covers(), usage remains None and solve() calls ffd_fallback(). That function independently packs all demanded items using first-fit decreasing, without using accumulated columns, master duals, or master decisions. Its patterns dire"
+  },
+  {
+   "model": "claude-haiku-5-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the global-optimality reporting rule: `integer_master()` returns `im.Status == GRB.OPTIMAL` as `ip_proven`; when its incumbent is selected, `main()` sets `proven_optimal = ip_proven`, then reports `status = \"optimal\"` if `proven_optimal or objective <= lower_bound`. Thus restricted-master optimality alone can trigger a global optimality claim without matching the pricing-derived low"
+  },
+  {
+   "model": "claude-haiku-5-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 1,
+   "label": "solution_bypass",
+   "judge_excerpt": "However, a reachable solution-producing fallback bypasses the required solution construction. If column_generation() raises, returns None because mip.SolCount == 0, or returns patterns rejected by verify(), main() calls ffd_fallback(), which independently packs the original demands without using the master, duals, or accumulated columns. These patterns are neither initialization columns nor an inc"
+  },
+  {
+   "model": "claude-opus-5",
+   "mode": "plain",
+   "instance": "lrp_large_seed002",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "Consequently, the normal solution-producing path never reaches fixed-decision routing, incumbent updates, or cut feedback. The later `if best_y is None` branch calls write_output() to write output.json with status \"infeasible\", objective 0.0, and zero decisions. This is a source-level control-flow finding, not an observed execution or merely a numerical-quality objection. || The bypassed code has "
+  },
+  {
+   "model": "claude-opus-5",
+   "mode": "plain",
+   "instance": "lrp_small_seed000",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "The decomposition is bypassed before any subproblem evaluation: `best_obj` starts at `float(\"inf\")`, and after the first master solution the guard `best_obj - lower_bound <= TOL * max(1.0, abs(best_obj))` evaluates to `inf <= inf` for a finite master bound. It sets `proved = True` and breaks with no initialized incumbent. If the master has no solution or the time guard fires, those paths also exit"
+  },
+  {
+   "model": "claude-opus-5",
+   "mode": "plain",
+   "instance": "lrp_medium_seed002",
+   "attempt": 1,
+   "label": "inactive_decomposition",
+   "judge_excerpt": "Consequently, `best_y` remains `None` and the reachable output branch writes status `infeasible`, objective `0.0`, and zero decisions. The intended incumbent output uses `best_obj`, `best_y`, and `best_lam`, but those are populated only after the bypassed subproblem solve. This is a control-flow failure preventing substantive decomposition use, not merely an incorrect numerical result or legitimat"
+  },
+  {
+   "model": "claude-opus-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The optimal-status condition violates the required global-proof rule: lp_bound is assigned master.ObjVal before pricing, so it is a restricted-master LP value, not necessarily a lower bound for the original problem. The loop can exit on remaining() < 8.0, its 500-iteration limit, a nonoptimal master status, or missing pricing incumbent without establishing pricing convergence, yet main() still set"
+  },
+  {
+   "model": "claude-opus-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "No prohibited separate full-original-model solve appears in the supplied source. Pricing optimizes the item counts in one stock piece; the final integer solve fixes accumulated pattern compositions and optimizes only their usages in the same restricted master. || The explicit optimality-status requirement is violated on a reachable conditional path: the generation loop can stop at `remaining() < 1"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_small_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable successful-output path sets is_optimal = final.Status == GRB.OPTIMAL and writes status \"optimal\" on that basis alone. This proves only optimality over accumulated columns; the loop can stop for time, iteration limits, unsuccessful solves, or pricing termination, and the code supplies no global integer optimality certificate. Even completed LP pricing alone does not establish global i"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_small_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final solve changes only accumulated lambda_vars to integer and optimizes their multiplicities over the generated patterns. No separate full-original-model solve is present. Selected patterns produce bins_list, with a possible direct singleton repair; objective_value is computed from those bins, and output is written to output.json. Failure and exception paths write empty error/infeasibility o"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the reachable successful-final-solve branch sets status = \"optimal\" whenever final.status == GRB.OPTIMAL. This proves only optimality over the accumulated columns, not global integer optimality. The source supplies no global certificate, and the pricing loop can also terminate on time, unsuccessful solves, or duplicate patterns. The contract explicitly requires status \"feasible\" for such "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed002",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The required status rule is violated: after the final integer restricted master, `if m_int.Status == GRB.OPTIMAL:` sets the reported status to `\"optimal\"`. This reachable output path has no global optimality proof; the code never compares the incumbent with a valid global lower bound, and column generation can stop on time or iteration limits. Integer restricted-master optimality alone is insuffic"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed002",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless requires feasible when no global optimality proof exists. The reachable assignment status = \"optimal\" if final_model.Status == GRB.OPTIMAL else \"feasible\" claims global optimality solely from optimality of the integer restricted master. The code provides no global certificate, and the preceding pricing loop can also stop at its iteration/time limits, on a nonoptimal maste"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_medium_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable incumbent branch with `rmp_int.Status == GRB.OPTIMAL` and `rmp_int.SolCount > 0`: it sets `status = \"optimal\"` solely from integer restricted-master optimality. The code supplies no global optimality proof, including when column generation stops at its time or iteration limit. The contract explicitly requires `feasible` for an incumbent without such a proof."
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_medium_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The optimality-status requirement is violated: status_map maps GRB.OPTIMAL from the final integer restricted master directly to \"optimal\", without a global optimality proof or bound comparison. This path is reachable even when the pricing loop exits because its 50-second budget expires; integer restricted-master optimality alone is insufficient even after pricing convergence. Such incumbents must "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_medium_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract is violated by the reachable `if mip_optimal and not trimmed` branch: `mip_optimal` means only that `rmp_int` is optimal, yet this branch writes status `optimal`. There is no global optimality certificate or bound comparison, and this branch also remains available after iteration/time limits or unsuccessful pricing. An unchanged integer restricted-master incumbent does not establish g"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_medium_seed000",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless requires `feasible` without a global optimality proof. The reachable successful final-solve branch sets `status = \"optimal\"` solely when the integer restricted master is optimal, even after time/iteration limits or unsuccessful pricing terminate column generation. Restricted-master optimality does not establish global integer optimality, and the source performs no additio"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_medium_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the explicit optimality-status requirement: the reachable condition `mip.Status == GRB.OPTIMAL and converged` writes `status = \"optimal\"`. Pricing convergence establishes at most full-master LP optimality, and integer restricted-master optimality does not establish global integer optimality. The code never compares the integer incumbent with a valid global lower bound or otherwise c"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable branch `if mip.Status == GRB.OPTIMAL: final_status = \"optimal\"` violates the required global-proof/status rule: optimality of this integer restricted master alone does not establish global optimality. The loop may also exit on its elapsed-time limit, iteration limit, nonoptimal master status, or missing pricing incumbent, and no global bound comparison or other global integer optimal"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status requirement is violated: whenever im.SolCount > 0 and im.Status == GRB.OPTIMAL, main() reports status \"optimal\" solely from integer restricted-master optimality. It performs no global optimality check; the LP bound obj_val is unused, and generation may stop on time, iteration limits, or unsuccessful pricing. Even completed LP pricing does not by itself certify integer restricted-master "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, when `final.Status == GRB.OPTIMAL` and `final.SolCount > 0`, the code assigns `status = \"optimal\"` solely from optimality of that integer restricted master. There is no global optimality certificate or comparison with a valid global bound; even certified LP pricing convergence would not alone establish global integer optimality. This reachable reporting path violates the explicit requirem"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The required status rule is violated on a reachable output path: `master_status` starts as `\"optimal\"` and changes only when an LP master solve is nonoptimal. Whenever `rmp_int.Status == GRB.OPTIMAL` and that flag remains unchanged, the code writes `\"optimal\"`, although it has proved only optimality over the accumulated columns. This also applies after time/iteration limits or pricing termination "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 5,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable incumbent-output branch sets status = \"optimal\" whenever master_int.Status == GRB.OPTIMAL. This proves only integer restricted-master optimality. The code establishes no global optimality certificate or matching global bound, and the generation loop can stop on time, iteration limits, nonoptimal master status, unavailable pricing, or a duplicate pattern. Nevertheless, restricted-mast"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 6,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The source substantively implements column generation, but violates the explicit status requirement: `status = \"optimal\" if ip_model.status == GRB.OPTIMAL else \"feasible\"` treats integer restricted-master optimality as global optimality without a global proof. This reachable branch applies whenever the final restricted master solves optimally; no comparison with a valid global lower bound is requi"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed000",
+   "attempt": 7,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable branch if final.Status == GRB.OPTIMAL sets status = \"optimal\" solely from optimality of this integer restricted master. The code establishes no global integer optimality certificate, and column generation may stop on its time or iteration limit, master/pricing status, missing pricing incumbent, duplicate pattern, or pricing value threshold. Even complete LP pricing convergence alone "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_small_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable incumbent branch sets `status = \"optimal\" if final.Status == GRB.OPTIMAL else \"feasible\"`. This certifies only the integer restricted master over accumulated columns; the code supplies no global integer optimality proof. Pricing termination, time limits, or the iteration limit do not establish that this restricted integer optimum is globally optimal. Reporting `optimal` on this condi"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_small_seed002",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable assignment `status = \"optimal\" if master_int.Status == GRB.OPTIMAL else \"feasible\"`. Optimality of this integer restricted master supplies no global optimality proof, yet that status is passed directly to the nonempty-instance output. The column-generation loop can also stop on time or iteration limits, unavailable pricing incumbents, or duplicate patterns; "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_small_seed002",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the reachable incumbent-producing path sets is_optimal = (final_master.Status == GRB.OPTIMAL) and then status = \"optimal\" if is_optimal else \"feasible\". This certifies only the integer restricted master, including when column generation stops for time, iteration limits, or unsuccessful pricing. No global bound comparison or other global optimality proof guards that status. Reporting this "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_small_seed002",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final integer master fixes the accumulated pattern contents and optimizes only their usage counts. Its x_final incumbent supplies both objective_value and bins_out to output.json. No prohibited separate monolithic solve or solution-producing fallback appears in the supplied source; empty input returns zero bins and exceptions return error. || The optimality-status requirement is violated: when"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "For a nonempty instance, when `master_int.Status == GRB.OPTIMAL` and `master_int.MIPGap <= 1e-6`, the code assigns `result[\"status\"] = \"optimal\"` solely from the integer restricted master's result. There is no comparison with a certified global lower bound or other global proof. Even successful LP pricing convergence would not by itself prove that this integer restricted-master incumbent is global"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "Nevertheless, `status_map` maps `GRB.OPTIMAL` for `rmp_int` to `\"optimal\"`, and `status_str` is written to `output.json`. This reachable branch claims global optimality solely from integer restricted-master optimality, without a global certificate. Pricing can also terminate because of time or iteration limits. The contract explicitly requires `\"feasible\"` for an incumbent without global proof; ev"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed001",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final solve fixes the available pattern set and optimizes integer lambda_vars over accumulated columns. It is a permitted integer restricted master, not a separate full-original-model solve; pricing optimizes a single bin's binary item selection. No prohibited full-model solve appears in the supplied reachable paths. || However, the incumbent branch sets is_optimal = master.Status == GRB.OPTIM"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed001",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable nonempty-instance success path sets `status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\"` after solving only the integer restricted master. There is no global integer optimality certificate; even complete LP pricing would not alone certify this integer incumbent. This violates the explicit requirement to report `feasible` without global proof."
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "bp_large_seed001",
+   "attempt": 5,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status requirement is violated on the reachable path where the integer restricted master returns GRB.OPTIMAL: is_optimal is set solely from that status, and output reports \"optimal\". Optimality over accumulated columns does not prove global integer optimality, and no global certificate is checked, including after time, iteration, or pricing termination. This path must report \"feasible\" unless "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The required status contract is violated: after converting accumulated master variables to integers, `main()` sets `status_final = \"optimal\"` solely when that restricted master returns `GRB.OPTIMAL`. Pricing can terminate on the 55-second check, the 200-iteration cap, or a nonoptimal LP status; no global optimality certificate is checked before reporting optimal. These are source-level reachable c"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the unconditional promotion of restricted-master optimality to global optimality: `if master.Status == GRB.OPTIMAL: status = \"optimal\"`. The generation loop can stop at `time_left() < 3.0` or its 500-iteration limit without certifying pricing convergence, and no global bound or other optimality proof is checked before this assignment. A feasible incumbent from such a rest"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless fails at status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\": integer restricted-master optimality alone is used to claim global optimality. Reachable exits on the time budget or max_iters can leave pricing unfinished, yet an optimal final restricted-master solve still produces status \"optimal\". No global certificate is checked before writing this status; a"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed001",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The optimality-status requirement is violated on the reachable incumbent branch where rmp_int.status == GRB.OPTIMAL: result reports \"optimal\" solely from integer restricted-master optimality. There is no global bound comparison or other global optimality certificate, and this branch is not conditioned on successful pricing convergence; the loop can also terminate at max_iters, a nonoptimal LP stat"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed001",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the explicit global-optimality reporting requirement: whenever the integer restricted master has `GRB.OPTIMAL` status and uses no artificials, the code reports `status = \"optimal\"` solely on that basis. The pricing loop can stop at `max_iters = 200` or the elapsed-time limit without establishing pricing convergence, and there is no global bound comparison or other global optimality "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_small_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the reporting contract is violated: column generation can stop at `max_iters = 200` or after `master.status != GRB.OPTIMAL`, without establishing pricing convergence or global optimality. The subsequent integer restricted master still sets `status = \"optimal\"` solely when its own status is `GRB.OPTIMAL`, and writes that status to `output.json`. Restricted-master optimality alone is insuff"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_small_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The optimality-status requirement is violated: the loop can stop at `max_iters = 200` or the `time_budget = 50.0` check without pricing convergence, yet `status = \"optimal\" if rm_int.Status == GRB.OPTIMAL else \"feasible\"` relies solely on integer restricted-master optimality. This reachable branch has no global optimality proof and must report `feasible`; this finding does not assume the branch ra"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_small_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is global optimality reporting: the loop can stop at the 45-second budget or 200-iteration limit without certified pricing convergence, yet the final `master.Status == GRB.OPTIMAL` unconditionally sets output `status` to `\"optimal\"`. That status proves only optimality over accumulated columns; the source supplies no global certificate for these reachable termination paths. S"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_small_seed001",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless fails on status certification: the generation loop can stop at `max_iters = 300` or either time-budget check without proving pricing convergence. If the subsequent integer restricted master has an incumbent, uses no artificials, and returns `GRB.OPTIMAL`, the code unconditionally sets `result[\"status\"] = \"optimal\"`. It neither requires completed pricing nor checks a globa"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_small_seed001",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable success branch assigning `\"optimal\"` solely when the final integer restricted master has `GRB.OPTIMAL` status. The generation loop can stop at its 200-iteration cap or time budget without certifying that pricing has no improving column, and no global bound or certificate is checked before this assignment. Restricted-master optimality alone does not justify g"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status requirement is violated: the pricing loop can stop at `max_iters = 200` or its elapsed-time check without establishing pricing convergence. The subsequent LP and integer restricted-master solves do not resume pricing or establish a global bound. Nevertheless, whenever the integer restricted master is optimal and its incumbent uses no artificial variables, `if master.status == GRB.OPTIMA"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable assignment `status = \"optimal\"` whenever the final integer restricted master has `GRB.OPTIMAL` status and zero artificial usage. Column generation can stop at the time-budget check or `max_iters = 500` without certifying pricing convergence, and the code supplies no global bound or other global optimality proof. Restricted-master optimality alone is insuffic"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The supplied optimality-status requirement is violated: the pricing loop can stop at `time_budget` or `max_iters` without certifying complete pricing, yet a final restricted-master incumbent with `art_total <= 0.5` is labeled `optimal` solely when `master.Status == GRB.OPTIMAL`. There is no global bound comparison or other global certificate on that reachable path. It must report `feasible` withou"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status rule violates the contract: `if ip_model.Status == GRB.OPTIMAL: status = \"optimal\"` treats restricted-master optimality alone as global proof. Reachable termination paths include exceeding the 50-second budget, exhausting 200 iterations, and breaking on a nonoptimal LP status; each proceeds to the same integer restricted master without requiring pricing convergence or a matching global "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status contract is violated: status_map maps GRB.OPTIMAL from the final integer restricted master to \"optimal\" without establishing global optimality. The pricing loop can terminate at max_iters = 200 without certifying that no improving column remains, and this termination receives the same status handling. This conditional path is present in source; no execution is claimed. Restricted-master"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed001",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status rule violates the supplied contract: `status = \"optimal\" if int_master.Status == GRB.OPTIMAL else \"feasible\"` treats integer restricted-master optimality as global optimality. The column-generation loop can terminate on the 55-second budget, the 200-iteration cap, or a nonoptimal LP status without a completed pricing certificate; these reachable paths still proceed to `RMP_INT` and can "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status requirement is violated on the conditional path where the 200-iteration limit is exhausted without pricing convergence and the final integer restricted master returns GRB.OPTIMAL: status is set to \"optimal\" solely from master.Status, without a global optimality proof. Integer restricted-master optimality alone is insufficient; this path must report \"feasible\" unless global optimality is"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed002",
+   "attempt": 2,
+   "label": "solution_bypass",
+   "judge_excerpt": "A reachable fallback violates the separate-full-model prohibition. If columns is empty after the loop, `if not columns:` enumerates every admissible (start, end) shift. This condition can follow the elapsed-time guard breaking before the first master solve, or a nonoptimal master status before any columns are added. The fallback does not perform further pricing or LP master reoptimization; int_mod"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed002",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the loop can terminate at max_iters or when time_left() <= 5.0 without establishing pricing convergence. If the final restricted master then has GRB.OPTIMAL status and negligible artificial usage, main() unconditionally sets status_str to \"optimal\". No global bound or other global optimality proof is checked. This reachable reporting path violates the explicit requirement to use \"feasible"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_medium_seed002",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated: when an incumbent exists and art_total <= 1e-4, main() assigns \"optimal\" solely when the final integer restricted master has GRB.OPTIMAL status. No global bound comparison or other global optimality proof is implemented. This reachable reporting branch also applies after pricing stops for the time budget or iteration limit; even exhausted LP pricing alo"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final `rmp_int` optimizes integer usage only for accumulated `shift_vars` columns, with no usage decisions fixed and no artificial variables. This is an allowed integer restricted master; enumerating candidate shifts for pricing does not constitute a separate full-original-model solve. No prohibited separate full-model solve or fallback appears in the supplied source. || The status requirement"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status requirement is violated: the column-generation loop can stop at `max_iters = 200` or when elapsed time exceeds `time_budget = 45.0` without proving pricing convergence. Nevertheless, whenever `int_master.Status == GRB.OPTIMAL`, the code sets `status_out = \"optimal\"` solely from restricted-master optimality, without a global bound comparison or other global optimality proof. These reacha"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "shift_large_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "RMP_int fixes the available shift intervals to the accumulated columns and optimizes their integer usages xi plus integer artificial variables. With an accepted incumbent and zero artificial usage, shifts_out is constructed from xi[j].X and written to output.json. This is a permitted integer restricted master; no prohibited separate full-original-model solve or fallback appears. || The reporting p"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_medium_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable successful-output branch: when `final.status == GRB.OPTIMAL`, `final.SolCount > 0`, and all jobs appear in `assignment_map`, the code sets `status = \"optimal\"`. This proves only optimality over accumulated columns. The loop can stop for time or iteration limits, and even completed LP pricing does not by itself certify the integer solution globally. No global"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_medium_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the explicit global-optimality reporting requirement: lp_bound is assigned model.ObjVal from a restricted LP before pricing, and the loop can terminate at cg_time_limit or max_iters after adding columns without establishing pricing convergence. Nevertheless, when artificials vanish and all jobs are assigned, abs(model.ObjVal - lp_bound) < 1e-4 causes status = \"optimal\". Equality wit"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_large_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "This verdict concerns the unsupported optimality status required by the method contract, not a failure to implement column generation or an observed numerical error. Review was source-only; the solver was not executed."
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_medium_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable assignment status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\" after the integer restricted-master solve. This establishes optimality only over accumulated columns, not the original problem. Pricing can stop on time, iteration limits, or lack of added columns, and no global bound comparison or other global integer optimality proof guards this "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_medium_seed002",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is status = \"optimal\" if converged else \"feasible\". converged becomes true when a pricing pass adds no columns, but LP pricing convergence plus an optimal integer restricted master does not prove global integer optimality. No integer/LP bound comparison or other global proof guards this reachable output path; it must report feasible unless such a proof is established. A time"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_large_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless requires feasible status without a global optimality proof. Here mip_optimal records only the final restricted master's GRB.OPTIMAL status, and the branch `if mip_optimal and not used_artificial and not repaired` reports optimal. This branch requires neither completed pricing nor a matching global bound; the pricing loop can stop at cg_time_budget before convergence. Even"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_small_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status assignment violates the required optimality reporting rule: `status = \"optimal\" if (converged and master.status == GRB.OPTIMAL) else \"feasible\"`. Even complete LP pricing convergence plus an optimal integer restricted master does not prove global integer optimality; the code neither compares the integer objective with a certified global lower bound nor supplies another global proof. Add"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "gap_large_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract is violated on the reachable successful branch where `final_model.Status == GRB.OPTIMAL` and `final_model.SolCount > 0`: `status = \"optimal\" if final_model.Status == GRB.OPTIMAL else \"feasible\"` claims global optimality solely from the integer restricted master. There is no global optimality certificate or comparison with a certified global bound, and column generation can also stop o"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract is violated by `status = \"optimal\" if final_model.Status == GRB.OPTIMAL else \"feasible\"`: integer restricted-master optimality alone triggers a global optimality claim, without a global bound comparison or other global proof. This path is reachable after pricing convergence or early termination for time, iteration limits, duplicates, or solver status; the source does not require a glo"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the reachable successful path sets `status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\"` solely from the final integer restricted master. It provides no global optimality proof, and the pricing loop can also terminate on time, iteration, or solver-status limits. This violates the explicit requirement to report `feasible` for an incumbent without a global proof; restricted-m"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless fails on the reachable successful-output branch: status = \"optimal\" if rmp_int.Status == GRB.OPTIMAL else \"feasible\" asserts global optimality solely from optimality of the integer restricted master. The source contains no global optimality certificate or bound comparison, and column generation may also stop at its iteration limit or other break conditions. This branch mu"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final solve fixes the accumulated pattern compositions and optimizes only their integer usage variables `xi`; it is a permitted integer restricted master. No separate full-original-model solve or prohibited fallback appears in the supplied source. || The failure is the explicit status requirement: when the final restricted master has an incumbent and `final_model.Status == GRB.OPTIMAL`, the re"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the explicit incumbent-status requirement: when the final integer restricted master has a solution and `master.Status == GRB.OPTIMAL`, `status_map` reports `\"optimal\"`. This proves optimality only over accumulated patterns; the source performs no global integer optimality certification. This reporting path is also reachable after time-based or nonoptimal-pricing termination. Such an"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status/proof requirement is violated: `if final.Status == GRB.OPTIMAL: status = \"optimal\"` treats optimality of the integer restricted master as global optimality. This reachable branch requires no global bound comparison or other global proof, including after early column-generation termination. Such an incumbent must be reported as `feasible` unless global optimality is established."
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final master_int fixes each accumulated pattern's item counts and optimizes only integer pattern usages y[p]. This is a permitted integer restricted master; no prohibited separate full-original-model solve appears in the supplied source. Its incumbent supplies result_patterns, and objective_value sums those same usages before output.json is written. Failure and exception paths write error outp"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is status reporting: `status = \"optimal\" if master_int.Status == GRB.OPTIMAL else \"feasible\"` claims global optimality solely from integer restricted-master optimality. There is no global bound comparison or other global optimality proof, and this branch remains reachable after iteration/time limits or unsuccessful pricing. The contract explicitly requires feasible when retu"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract is violated by `status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\"`: whenever the integer restricted master solves optimally with an incumbent, the output claims global optimality without a global proof. The column-generation loop can stop on time or iteration limits, and even completed LP pricing does not by itself establish integer global optimality; no matching glob"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 5,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is status reporting: status_map maps GRB.OPTIMAL from the final integer restricted master to \"optimal\", and the reachable master.SolCount > 0 branch writes that status to output.json. There is no global optimality certificate or bound comparison; optimality over accumulated columns alone does not establish global integer optimality, even if LP pricing converged. The contract"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 6,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The method contract requires feasible status without a global optimality proof, but main() maps final.status == GRB.OPTIMAL to \"optimal\" whenever final.SolCount > 0. final optimizes only integer usages y[p] of accumulated patterns; its optimality alone does not establish global optimality. No global certificate check guards this reachable output path, including after time or iteration limits stop "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 7,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated: whenever final_model.Status == GRB.OPTIMAL and SolCount > 0, main() reports status \"optimal\" solely from integer restricted-master optimality. There is no global optimality certificate or bound comparison, including after time-budget, iteration-limit, or other early exits from column generation. Even completed LP pricing does not alone certify the integ"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 8,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated: whenever `master_int.SolCount > 0` and `master_int.Status == GRB.OPTIMAL`, `main()` sets output status to `\"optimal\"` solely from integer restricted-master optimality. There is no global optimality certificate or comparison with a valid global lower bound; even completed LP pricing does not alone certify the integer restricted-master solution globally. "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 9,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable successful-output branch violates the status requirement: when `rm_int.status == GRB.OPTIMAL` and `rm_int.SolCount > 0`, `status = \"optimal\" if rm_int.status == GRB.OPTIMAL else \"feasible\"` claims global optimality solely from integer restricted-master optimality. No global integer optimality proof is established, even if LP pricing converges; the loop can also terminate on time, ite"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed000",
+   "attempt": 10,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated: status starts as \"optimal\", and an optimal rmp_int sets final_status to \"optimal\" whenever that flag remains unchanged, without a global integer optimality certificate. Normal pricing convergence, duplicate-pattern termination, and exhausting max_iters can all leave the flag unchanged. Optimality of the integer restricted master, even after full LP pric"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the reachable successful-output path maps GRB.OPTIMAL for the final integer restricted master to status \"optimal\" via status_map. There is no global integer optimality certificate or bound comparison; even convergence of LP pricing does not establish that the integer restricted master is globally optimal, and the loop also permits termination at 200 iterations or a nonoptimal pricing stat"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless requires feasible status absent a global optimality proof. The reachable incumbent branch sets status = \"optimal\" whenever int_model.status == GRB.OPTIMAL, using only restricted-master optimality. There is no global certificate check, including after the 200-iteration limit or breaks caused by nonoptimal master/pricing status. Even successful LP pricing convergence alone "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_medium_seed001",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated on the reachable branch where final_model.Status == GRB.OPTIMAL and final_model.SolCount > 0: status is set to \"optimal\" solely because the integer restricted master is optimal. There is no global optimality certificate or bound comparison, and final_model is also reached after pricing failure, a nonoptimal master, or the iteration limit. Restricted-mast"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated: after the integer restricted master returns GRB.OPTIMAL with an incumbent, main() sets status to \"optimal\" solely from that status. The pricing loop can terminate on time limits, max_iters, or other stopping conditions, and no global optimality certificate is checked. Even completed LP pricing followed by an optimal integer restricted-master solve alone"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "master_int fixes the accumulated pattern compositions and optimizes their integer usages. Its positive x_int values supply out_patterns, their usages are summed into objective_value, and json.dump(result, f, indent=2) writes output.json. This is a permitted integer restricted master, and no prohibited separate full-original-model solve appears in the supplied source. || The contract nevertheless f"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 3,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract violation is the reachable incumbent branch `final_master.status in (GRB.OPTIMAL, GRB.TIME_LIMIT) and final_master.SolCount > 0`: it sets `status = \"optimal\"` whenever the integer restricted master is optimal, without a global optimality proof. Restricted-master optimality alone is insufficient, even after LP column generation converges; the contract requires `feasible` without such a"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 4,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit status requirement is violated: whenever rmp_int.Status == GRB.OPTIMAL, main() reports status = \"optimal\" solely from optimality over the restricted columns. There is no global integer optimality proof or bound comparison. This branch is also reachable after the iteration limit or an early break caused by nonoptimal master/pricing status or a rejected pattern. The reported incumbent m"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 5,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The solver substantively implements column generation, but violates the required optimality-reporting rule: after the final integer restricted-master solve, `if master.Status == GRB.OPTIMAL: status_final = \"optimal\"` claims global optimality solely from restricted-master optimality. No global certificate is established; this incumbent must be reported as `feasible` absent such a proof."
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 6,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The solver substantively implements column generation, but violates the required status rule: `status_str = \"optimal\" if final.Status == GRB.OPTIMAL else \"feasible\"` treats integer restricted-master optimality as global optimality. There is no global bound comparison or other global optimality proof; this assignment is reachable after pricing, time-limit, or iteration-limit termination and is writ"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 7,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The reachable successful-final-solve branch sets status = \"optimal\" whenever the integer restricted master has GRB.OPTIMAL status. It provides no global integer optimality proof or bound comparison, including when column generation stops at its time or iteration limit. This violates the explicit requirement to report feasible for an incumbent without a global optimality proof; restricted-master op"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 8,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The final solve changes only accumulated pattern-usage variables to integers; pattern contents remain fixed. The reported cuts, usages, and `total_used` come from that restricted-master incumbent and are written to `output.json`. No separate monolithic solve or solution-producing fallback appears; failure and exception paths write error results. || The contract violation is the reachable `GRB.OPTI"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 9,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract nevertheless requires `feasible` without a global optimality proof. The reachable final-incumbent branch assigns `status = \"optimal\"` whenever the integer restricted master has `GRB.OPTIMAL` status. Restricted-master optimality alone does not certify the original problem, and the code supplies no additional global certificate or bound comparison. This branch also permits that claim af"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed001",
+   "attempt": 10,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The contract is violated by status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\": whenever the final integer restricted master is solved optimally, the code reports global optimality without establishing it for the original problem. Column generation can stop on time, iteration, or solver-status limits, and even complete LP pricing does not by itself certify the restricted integer so"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed002",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The solver substantively implements column generation, but violates the explicit status requirement: after the final integer restricted-master solve, `master.status == GRB.OPTIMAL` sets `status = \"optimal\"` without a global optimality proof. Optimality over the accumulated patterns alone is insufficient, including when pricing stops at the iteration or time limit."
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_small_seed002",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, the reachable success branch assigns `status = \"optimal\" if fmodel.Status == GRB.OPTIMAL else \"feasible\"`. Optimality of this integer restricted master does not establish global optimality, and the code supplies no global certificate or bound comparison before making that claim. This violates the explicit requirement to report `feasible` for an incumbent without a global optimality proof,"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed000",
+   "attempt": 1,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "However, `status_map` maps `GRB.OPTIMAL` to `\"optimal\"` after the integer restricted-master solve, and `status = status_map.get(master.Status, \"feasible\")` is written to `output.json`. This reachable path asserts global optimality based solely on restricted-master optimality, contrary to the explicit status requirement. There is no global certificate check, including when column generation stops o"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "plain",
+   "instance": "csp_large_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The explicit optimality-status requirement is violated: `status` starts as `\"optimal\"`, and an optimal final integer restricted master preserves that status without a global integer optimality proof. In particular, the `time_left() < 5.0`, nonoptimal pricing, and iteration-limit exits can leave that flag unchanged despite incomplete pricing. Even successful LP pricing convergence does not alone pr"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "reflection",
+   "instance": "lrp_small_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the contract's optimality-status requirement: converged becomes true when the LP-derived cut value is at most theta_hat, and output status becomes \"optimal\" whenever converged and master_proved_optimal hold. Integer routing recourse can exceed its LP relaxation, and this reachable branch never checks that best_obj matches a valid global lower bound. Consequently, it can label an unp"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "reflection",
+   "instance": "bp_small_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "rmp_int optimizes only selections of accumulated patterns, whose item memberships are fixed. Its selected columns determine both objective_value and bins_out, which main() writes to output.json. This is an allowed integer restricted master, and no prohibited monolithic solve appears. || The optimal-status logic violates the required global-proof condition: lp_bound = master.ObjVal records a restri"
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "reflection",
+   "instance": "bp_large_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The status rule violates the required global-proof condition: if cg_converged and mip.Status == GRB.OPTIMAL, main() sets final_status = \"optimal\" and writes it to output.json. Even certified LP pricing convergence plus optimality of the integer restricted master does not establish global integer optimality: columns unnecessary for the LP optimum can improve the integer solution. The code performs "
+  },
+  {
+   "model": "claude-sonnet-5",
+   "mode": "reflection",
+   "instance": "gap_large_seed000",
+   "attempt": 2,
+   "label": "certificate_overclaim",
+   "judge_excerpt": "The failure is the reachable unsupported global-optimality claim: `lp_bound = master.ObjVal` is recorded before pricing, even when pricing subsequently adds negative-reduced-cost columns. The next iteration can terminate at the 70% time-budget check, or the loop can exhaust `max_iters`, without establishing pricing convergence. Nevertheless, the output branch sets `status = \"optimal\"` whenever the"
+  }
+ ]
+}

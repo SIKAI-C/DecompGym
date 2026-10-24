@@ -84,13 +84,9 @@ class DockerCliClient:
         self.runtime.ensure_volume(volume, self.backend + "-v2-auth")
         return {volume: "/auth"}
 
-    def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
-        target = Path(target).absolute()
-        log_dir = Path(log_dir or target.parent).resolve()
-        log_dir.mkdir(parents=True, exist_ok=True)
-        if target.is_symlink() or target.name not in {"solver.py", "debug.md", "alg_verifier.md"}:
-            raise ValueError("Docker edits require an ordinary declared target")
-        sections = [f"Edit only {target.name}. All task context is supplied below.", "Do not inspect other directories, use external tools or services, or search for reference implementations.",
+    def compose_prompt(self, target_name, prompt, context=None):
+        """Workspace rules, the task prompt and each context file; record_workspace_prompt then rewrites the first line."""
+        sections = [f"Edit only {target_name}. All task context is supplied below.", "Do not inspect other directories, use external tools or services, or search for reference implementations.",
                     "Do not execute the generated solver. The harness executes it later in its documented runtime directory.", "Keep prose paragraphs and list items on one physical line; rely on editor soft wrapping.", prompt]
         if self.backend == "agy-cli":
             sections[1:4] = ["Do not inspect other directories, use external tools or services, or search for reference implementations. Do not execute the generated solver. Do not use memory, skills, subagents or prior conversations. Keep prose paragraphs on one physical line."]
@@ -100,7 +96,15 @@ class DockerCliClient:
                 label = f"{path.parent.name}/{path.name}"
                 ending = "--- END CONTEXT ---" if self.backend == "agy-cli" else f"--- END CONTEXT: {label} ---"
                 sections.append(f"--- BEGIN CONTEXT: {label} ---\n{contents}\n{ending}")
-        effective = record_workspace_prompt(Path("/work"), target.name, "\n\n".join(sections), log_dir, step, old_absolute_note=self.backend == "agy-cli")
+        return "\n\n".join(sections)
+
+    def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
+        target = Path(target).absolute()
+        log_dir = Path(log_dir or target.parent).resolve()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink() or target.name not in {"solver.py", "debug.md", "alg_verifier.md"}:
+            raise ValueError("Docker edits require an ordinary declared target")
+        effective = record_workspace_prompt(Path("/work"), target.name, self.compose_prompt(target.name, prompt, context), log_dir, step, old_absolute_note=self.backend == "agy-cli")
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
         job = {"target": target.name, "initial_content": read_regular_text(target.parent, target.name, missing_ok=True) or "", "prompt": effective,

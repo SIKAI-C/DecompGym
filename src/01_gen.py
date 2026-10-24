@@ -1,8 +1,9 @@
-"""
-Unified generator + validator for BD/CG benchmarks.
+"""Generate and validate the 81 benchmark instances in data/ (problem families in src/bd and src/cg).
 
-python -m src.01_gen -s all -m both -vl simple # generate and validate all instances
-python -m src.01_gen -s all -m validate -vl simple # validate all instances
+    python src/01_gen.py -s all -m validate -vl simple   # validate the shipped instances
+    python src/01_gen.py -s all -m both -vl strict       # generate missing instances, then validate with all references
+
+Existing instances are reused; pass --regenerate to rebuild them.
 """
 
 from __future__ import annotations
@@ -12,9 +13,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 from typing import Any
 
-from src.utils.dataset import ensure_suite, write_manifest
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.utils.dataset import ensure_suite, write_manifest  # noqa: E402
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 

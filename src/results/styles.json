@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "style_id": "decompbench-models-v1-20261015",
+  "frozen_on": "2026-10-15",
+  "policy": "Append new models; never reassign an existing model's color, marker, dash, or order when filtering or sorting a figure. A revision requires a new style version.",
+  "palette": {
+    "source": "ColorBrewer embedded catalog in color-pick/SKILL.md",
+    "qualitative_bases": {
+      "Dark2_3": [
+        "#1b9e77",
+        "#d95f02",
+        "#7570b3"
+      ],
+      "Paired_4": [
+        "#a6cee3",
+        "#1f78b4",
+        "#b2df8a",
+        "#33a02c"
+      ]
+    },
+    "base_colorblind_rating": 1,
+    "derivation": "Exact base colors plus darker/lighter shades to distinguish 13 models. The custom 13-color combination has no ColorBrewer colorblind-safety rating; unique markers and dash patterns provide redundant identification.",
+    "heatmap": {
+      "name": "YlGnBu",
+      "classes": 9,
+      "colorblind_rating": 1,
+      "colors": [
+        "#ffffd9",
+        "#edf8b1",
+        "#c7e9b4",
+        "#7fcdbb",
+        "#41b6c4",
+        "#1d91c0",
+        "#225ea8",
+        "#253494",
+        "#081d58"
+      ]
+    }
+  },
+  "models": {
+    "gpt-6-astra": {
+      "label": "GPT-6 Astra",
+      "color": "#12476b",
+      "marker": "o",
+      "marker_name": "circle",
+      "linestyle": "-",
+      "order": 0
+    },
+    "gpt-6-sol": {
+      "label": "GPT-6 Sol",
+      "color": "#1f78b4",
+      "marker": "s",
+      "marker_name": "square",
+      "linestyle": "--",
+      "order": 1
+    },
+    "gpt-6.1-sol": {
+      "label": "GPT-6.1 Sol",
+      "color": "#1b9e77",
+      "marker": "D",
+      "marker_name": "diamond",
+      "linestyle": "-.",
+      "order": 2
+    },
+    "gpt-6-luna": {
+      "label": "GPT-6 Luna",
+      "color": "#126b50",
+      "marker": "^",
+      "marker_name": "triangle up",
+      "linestyle": "-",
+      "order": 3
+    },
+    "gpt-5.6-luna": {
+      "label": "GPT-5.6 Luna",
+      "color": "#3b8f8c",
+      "marker": "v",
+      "marker_name": "triangle down",
+      "linestyle": "--",
+      "order": 4
+    },
+    "claude-opus-5-5": {
+      "label": "Claude Opus 5.5",
+      "color": "#a34702",
+      "marker": "P",
+      "marker_name": "filled plus",
+      "linestyle": "-",
+      "order": 5
+    },
+    "claude-sonnet-5-5": {
+      "label": "Claude Sonnet 5.5",
+      "color": "#7570b3",
+      "marker": "X",
+      "marker_name": "filled cross",
+      "linestyle": "--",
+      "order": 6
+    },
+    "claude-haiku-5-5": {
+      "label": "Claude Haiku 5.5",
+      "color": "#b16c37",
+      "marker": "*",
+      "marker_name": "star",
+      "linestyle": ":",
+      "order": 7
+    },
+    "claude-opus-5": {
+      "label": "Claude Opus 5",
+      "color": "#d95f02",
+      "marker": "<",
+      "marker_name": "triangle left",
+      "linestyle": "-.",
+      "order": 8
+    },
+    "claude-sonnet-5": {
+      "label": "Claude Sonnet 5",
+      "color": "#514d7d",
+      "marker": ">",
+      "marker_name": "triangle right",
+      "linestyle": "-",
+      "order": 9
+    },
+    "claude-fable-5": {
+      "label": "Claude Fable 5",
+      "color": "#9180a8",
+      "marker": "h",
+      "marker_name": "hexagon",
+      "linestyle": ":",
+      "order": 10
+    },
+    "gemini-3.8-flash-medium": {
+      "label": "Gemini 3.8 Flash (M)",
+      "color": "#246f1f",
+      "marker": "p",
+      "marker_name": "pentagon",
+      "linestyle": "-.",
+      "order": 11
+    }
+  }
+}

@@ -47,10 +47,10 @@ def model_queue(manifest):
     return manifest["model_queue"]
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     plan = load_plan(args.config)
     print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": 81 * len(plan["model_queue"]), "launch_performed": False}, indent=2))
 
