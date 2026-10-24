@@ -37,10 +37,12 @@ def frozen(command, rest):
     parser.add_argument("--root", type=Path, required=True)
     known, _ = parser.parse_known_args(rest)
     controller = known.root.resolve() / "controller"
-    if not (controller / "src/experiments/campaign.py").is_file():
+    # The paper campaigns froze the older layout, whose controller module is src/native_campaign.py.
+    module = next((name for name, path in (("src.experiments.campaign", "src/experiments/campaign.py"), ("src.native_campaign", "src/native_campaign.py")) if (controller / path).is_file()), None)
+    if module is None:
         raise SystemExit(f"{controller} is not a campaign controller; run init first")
     rest = [str(known.root.resolve()) if previous == "--root" else value for previous, value in zip([None, *rest], rest)]
-    return subprocess.call([sys.executable, "-u", "-m", "src.experiments.campaign", command, *rest], cwd=controller)
+    return subprocess.call([sys.executable, "-u", "-m", module, command, *rest], cwd=controller)
 
 
 def report(rest):

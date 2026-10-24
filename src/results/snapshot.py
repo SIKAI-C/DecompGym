@@ -29,6 +29,8 @@ def build_snapshot(experiments: Path, output: Path, *, refresh: bool):
             export_campaign_report(report, output / label)
         else:
             report = json.loads((output / label / "evaluation.json").read_text())
+            # The saved audit records where the campaign was; read it from where it is now.
+            report["input_root"] = str(root)
         if report["cohort_manifest"]["protocol_id"] != protocol:
             raise ValueError(f"{name} is not the frozen paper campaign")
         reports.append(report)
