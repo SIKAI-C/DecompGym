@@ -78,7 +78,7 @@ def compare(out, paper):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--experiments", type=Path, default=REPOSITORY / "outputs/experiments", help="folder containing the two paper campaign roots")
-    parser.add_argument("--output", type=Path, default=REPOSITORY / "outputs/reports/paper")
+    parser.add_argument("--output", type=Path, help="defaults to outputs/reports/paper, or outputs/reports/<campaign> with --campaign")
     parser.add_argument("--refresh", action="store_true", help="re-audit the raw campaign records instead of reusing the saved snapshot")
     parser.add_argument("--results", type=Path, default=REPOSITORY / "results", help="tracked folder for the published figures, tables and summary")
     parser.add_argument("--paper", type=Path, help="paper folder (with figures/, tables/, prompts/) to compare against")
@@ -88,14 +88,14 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.campaign:
         root = args.campaign.resolve()
-        destination = REPOSITORY / "outputs/reports" / root.name
+        destination = args.output or REPOSITORY / "outputs/reports" / root.name
         export_campaign_report(build_campaign_report(root, models=args.models), destination)
         print(destination / "report.md")
         return
     missing = [tool for tool in ("pdflatex", "gs") if shutil.which(tool) is None]
     if missing:
         raise SystemExit(f"Missing {' and '.join(missing)}: the overview figure needs pdflatex and its PNG and rendering checks need Ghostscript")
-    out = args.output.resolve()
+    out = (args.output or REPOSITORY / "outputs/reports/paper").resolve()
     build_snapshot(args.experiments.resolve(), out, refresh=args.refresh or not (out / "source_original/evaluation.json").exists())
     manifest = paper_figures.build(out)
     failures.build(out)

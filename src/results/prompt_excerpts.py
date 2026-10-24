@@ -6,6 +6,7 @@ and non-ASCII dashes become `--` for the LaTeX listings.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -49,23 +50,37 @@ def short_data(match):
     return f"--- BEGIN CONTEXT: {match['label']} ---\n" + "\n".join(shown) + f"\n--- END CONTEXT: {match['label']} ---"
 
 
+def committed(attempt: Path, name: str) -> str:
+    """Read a saved file only if it still has the hash the campaign recorded when it was produced."""
+    text = (attempt / name).read_text()
+    if name.endswith("_prompt.md"):
+        expected = json.loads((attempt / name.replace("_prompt.md", "_workspace.json")).read_text())["effective_prompt_sha256"]
+    elif name == "debug.md":
+        expected = json.loads((attempt / "reflection_receipt.json").read_text())["result"]["artifact_sha256"]
+    else:
+        expected = json.loads((attempt / "score_receipt.json").read_text())["artifact_sha256"][name]
+    if hashlib.sha256(text.encode()).hexdigest() != expected:
+        raise ValueError(f"{attempt / name} differs from the hash recorded by its campaign")
+    return text
+
+
 def excerpts(experiments: Path) -> dict[str, str]:
     case = experiments / EXAMPLE["run"] / "runs" / EXAMPLE["model"]
     plain = case / "plain" / EXAMPLE["suite"] / EXAMPLE["problem"] / EXAMPLE["instance"] / "attempts"
     reflection = case / "reflection" / EXAMPLE["suite"] / EXAMPLE["problem"] / EXAMPLE["instance"] / "attempts"
-    generation = (plain / "attempt_01/agent_prompt.md").read_text()
-    judge = (plain / "attempt_01/llm_verifier_prompt.md").read_text()
-    diagnosis = (reflection / "attempt_01/reflection_prompt.md").read_text()
-    revision = (reflection / "attempt_02/agent_prompt.md").read_text()
+    generation = committed(plain / "attempt_01", "agent_prompt.md")
+    judge = committed(plain / "attempt_01", "llm_verifier_prompt.md")
+    diagnosis = committed(reflection / "attempt_01", "reflection_prompt.md")
+    revision = committed(reflection / "attempt_02", "agent_prompt.md")
     tasks = diagnosis[diagnosis.index("You have generated the solver.py file"):diagnosis.index("Keep the reflection concise and actionable.") + len("Keep the reflection concise and actionable.")]
     texts = {
         "generation_csp.txt": BLOCK.sub(short_data, highlight(generation)),
         "contract_benders.txt": METHOD_HEADER + "\n\n" + METHOD_REQUIREMENTS["bd"],
         "judge.txt": BLOCK.sub(elided, highlight(judge)),
-        "judge_rationale_sonnet5.txt": (plain / "attempt_01/alg_verifier.md").read_text(),
+        "judge_rationale_sonnet5.txt": committed(plain / "attempt_01", "alg_verifier.md"),
         "quality_feedback.txt": OBJECTIVE_RETRY,
         "reflection_diagnosis.txt": "<<the workspace rules of Prompt 1 with debug.md as the file to edit, the line \"You are making an attempt to solve the following problem.\", and the text of Prompt 1 from its first task line through its runtime rules>>\n\n" + tasks + "\n\n" + blocks(diagnosis),
-        "reflection_advice_sonnet5.txt": ascii_dashes((reflection / "attempt_01/debug.md").read_text()),
+        "reflection_advice_sonnet5.txt": ascii_dashes(committed(reflection / "attempt_01", "debug.md")),
         "revision_generation.txt": "<<the generation instructions of Prompt 1, unchanged, followed by these context blocks>>\n\n" + blocks(revision),
     }
     return {name: text.rstrip("\n") + "\n" for name, text in texts.items()}

@@ -91,7 +91,7 @@ python src/03_analysis.py --campaign outputs/experiments/my_run           # audi
 
 - **Codex:** sign in on the host first (`codex login`); `auth` copies `~/.codex/auth.json`.
 - **Claude Code:** create a subscription token with `claude setup-token` and paste it at the hidden prompt (or set `CLAUDE_CODE_OAUTH_TOKEN`).
-- **Antigravity:** the harness restores an existing encrypted keyring volume (`decompbench-agy-native-keyring-v1`) and asks for its passphrase; creating that volume, by signing in to Antigravity inside the agent image once, is a manual step that this repository does not automate.
+- **Antigravity:** the harness never signs in. It expects an existing Docker volume `decompbench-agy-native-keyring-v1` (label `io.decompbench.purpose=agy-native-auth`) holding a passphrase-protected GNOME keyring in which an Antigravity login has already been sealed; it unlocks that keyring with `DECOMPBENCH_AGY_KEYRING_PASSPHRASE` and restores the login into each fresh container. This repository does not include a tool to create that volume, so running Antigravity models requires setting it up by hand first.
 
 To test other models, copy [configs/paper.json](configs/paper.json) and edit `model_queue`; the attempt budget, time limits, judge and prompts are fixed by the protocol. `init` freezes a copy of `src/`, `docker/`, the data and the config inside the campaign root, and `run`/`watch` only execute that copy, so later code changes never alter a running or finished campaign. `watch` restarts the run after infrastructure failures and pauses on CPU, memory or thermal pressure; Antigravity needs `DECOMPBENCH_AGY_KEYRING_PASSPHRASE` in the launch environment.
 
@@ -112,8 +112,8 @@ DECOMPBENCH_PAPER=path/to/paper python -m pytest tests/test_paper_equivalence.py
 ```
 src/
   01_gen.py           generate and validate the dataset             -> bd/, cg/, utils/
-  02_experiment.py    Docker setup, campaigns, dashboard, reports   -> experiments/
-  03_analysis.py      every table and figure of the paper           -> results/
+  02_experiment.py    Docker setup, campaigns, dashboard            -> experiments/
+  03_analysis.py      every paper table and figure; campaign reports -> results/
   agent/              Docker CLI client, container runtime, all prompt text (prompts/)
   experiments/        campaign controller, paired runner, solver sandbox, verification, dashboard
   results/            audit snapshot, paper tables and figures, failure analysis, prompt examples
