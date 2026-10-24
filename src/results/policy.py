@@ -25,6 +25,11 @@ def run_identity(manifest: dict | None) -> dict:
     return {"id": manifest.get("protocol_id"), "plan": plan.get("name"), "paper_run": manifest.get("protocol_id") in PAPER_RUNS.values()}
 
 
+def default_models(manifest: dict | None):
+    """The paper campaigns are reported with the paper models only; any other campaign with all of its models."""
+    return PAPER_MODELS if run_identity(manifest)["paper_run"] else None
+
+
 def reported(model, models=None) -> bool:
     """Report every model of a campaign unless a selection (such as PAPER_MODELS) is given."""
     return models is None or model in models

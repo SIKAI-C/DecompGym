@@ -19,6 +19,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from src.experiments.plan import model_queue
+from src.results.policy import default_models, reported
 from src.experiments.completion import is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
 
 
@@ -230,7 +231,7 @@ class Dashboard:
                 raw_active = {"experiment_0": {"instance": status["active_instance"], "started_at": status.get("case_started_at")}}
             active = []
             totals_usage = {"generation": {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}, "judge": {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}}
-            queue = model_queue(manifest)
+            queue = [item for item in model_queue(manifest) if reported(item["model"], default_models(manifest))]
             for specification in queue:
                 model = specification["model"]
                 backend = {"codex-cli": "Codex", "agy-cli": "AGY", "claude-code-cli": "Claude Code"}[specification["backend"]]

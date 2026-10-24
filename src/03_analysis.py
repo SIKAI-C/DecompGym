@@ -3,6 +3,9 @@
     python src/03_analysis.py --refresh                # re-audit the raw campaigns, then build everything
     python src/03_analysis.py                          # rebuild from the saved audit snapshot
     python src/03_analysis.py --paper ../paper         # also compare with (or, with --update, copy into) a paper folder
+    python src/03_analysis.py --campaign outputs/experiments/my_run   # audit any one campaign and export its report
+
+Building the paper artifacts needs pdflatex (TikZ, helvet, inconsolata, fontawesome5) and Ghostscript (gs).
 
 Everything is written to outputs/reports/paper/ (with the audit snapshot and QA files); the small artifacts and a
 summary page are also published to the tracked results/ folder. Nothing here calls a model or runs a solver.
@@ -26,6 +29,7 @@ sys.path.insert(0, str(REPOSITORY))
 os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
 
 from src.results import failures, overview, paper_figures, prompt_excerpts, summary, verify  # noqa: E402
+from src.results.campaign_report import build_campaign_report, export_campaign_report  # noqa: E402
 from src.results.snapshot import build_snapshot  # noqa: E402
 
 
@@ -79,7 +83,18 @@ def main(argv=None):
     parser.add_argument("--results", type=Path, default=REPOSITORY / "results", help="tracked folder for the published figures, tables and summary")
     parser.add_argument("--paper", type=Path, help="paper folder (with figures/, tables/, prompts/) to compare against")
     parser.add_argument("--update", action="store_true", help="with --paper, copy the generated artifacts into the paper folder")
+    parser.add_argument("--campaign", type=Path, help="instead of the paper, audit this campaign root and export its report")
+    parser.add_argument("--model", action="append", dest="models", help="with --campaign, limit the report to these models")
     args = parser.parse_args(argv)
+    if args.campaign:
+        root = args.campaign.resolve()
+        destination = REPOSITORY / "outputs/reports" / root.name
+        export_campaign_report(build_campaign_report(root, models=args.models), destination)
+        print(destination / "report.md")
+        return
+    missing = [tool for tool in ("pdflatex", "gs") if shutil.which(tool) is None]
+    if missing:
+        raise SystemExit(f"Missing {' and '.join(missing)}: the overview figure needs pdflatex and its PNG and rendering checks need Ghostscript")
     out = args.output.resolve()
     build_snapshot(args.experiments.resolve(), out, refresh=args.refresh or not (out / "source_original/evaluation.json").exists())
     manifest = paper_figures.build(out)

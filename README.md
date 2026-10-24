@@ -52,7 +52,7 @@ All tables, figures and the prompt examples of the paper are in [results/](resul
 
 ## Quick start
 
-Requirements: macOS on Apple silicon (the solver sandbox uses `sandbox-exec`), Python 3.12.11 and Gurobi 11.0.3 with a license. Docker is needed only to run agents.
+Requirements: macOS on Apple silicon (the solver sandbox uses `sandbox-exec`), Python 3.12.11 and Gurobi 11.0.3 with a license. Docker is needed only to run agents; rebuilding the paper's figures also needs `pdflatex` (TikZ, helvet, inconsolata, fontawesome5) and Ghostscript (`gs`).
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
@@ -78,14 +78,20 @@ Agents run inside a Docker image with the pinned CLIs (Codex 0.162.1, Claude Cod
 ```bash
 docker build -f docker/agents/Dockerfile -t decompbench-agents-v2:20261013 .
 python src/02_experiment.py docker prepare                        # record the image and sandbox evidence in outputs/runtime/
-python src/02_experiment.py docker auth --backend codex --verify  # once per CLI: codex, claude or agy
+python src/02_experiment.py docker auth --backend codex --verify  # once per CLI: codex, claude or agy (see below)
 
 python src/02_experiment.py init   --root outputs/experiments/my_run --config configs/paper.json
 python src/02_experiment.py resume --root outputs/experiments/my_run      # a new campaign starts paused
 python src/02_experiment.py watch  --root outputs/experiments/my_run --all-models
 python src/02_experiment.py dashboard --root outputs/experiments/my_run   # http://localhost:8765
-python src/02_experiment.py report --root outputs/experiments/my_run      # audited report in outputs/reports/
+python src/03_analysis.py --campaign outputs/experiments/my_run           # audited report in outputs/reports/
 ```
+
+`docker auth` copies an existing login into a private Docker volume and, with `--verify`, makes one unscored test edit; it does not sign in for you:
+
+- **Codex:** sign in on the host first (`codex login`); `auth` copies `~/.codex/auth.json`.
+- **Claude Code:** create a subscription token with `claude setup-token` and paste it at the hidden prompt (or set `CLAUDE_CODE_OAUTH_TOKEN`).
+- **Antigravity:** the harness restores an existing encrypted keyring volume (`decompbench-agy-native-keyring-v1`) and asks for its passphrase; creating that volume, by signing in to Antigravity inside the agent image once, is a manual step that this repository does not automate.
 
 To test other models, copy [configs/paper.json](configs/paper.json) and edit `model_queue`; the attempt budget, time limits, judge and prompts are fixed by the protocol. `init` freezes a copy of `src/`, `docker/`, the data and the config inside the campaign root, and `run`/`watch` only execute that copy, so later code changes never alter a running or finished campaign. `watch` restarts the run after infrastructure failures and pauses on CPU, memory or thermal pressure; Antigravity needs `DECOMPBENCH_AGY_KEYRING_PASSPHRASE` in the launch environment.
 
@@ -99,7 +105,7 @@ python src/03_analysis.py --paper path/to/paper         # also compare with a pa
 DECOMPBENCH_PAPER=path/to/paper python -m pytest tests/test_paper_equivalence.py
 ```
 
-`03_analysis.py` writes all 12 tables, 12 figures and 8 prompt examples to `outputs/reports/paper/` and publishes them to [results/](results/README.md). The equivalence tests check that this repository still matches the code that ran the paper: every one of the 4,970 recorded generation, judge and reflection prompts is rebuilt byte for byte, all 2,363 executed solver outputs re-score identically, and every paper artifact is regenerated (text byte for byte, figures with identical rendering).
+`03_analysis.py` (which needs `pdflatex` and `gs`) writes all 12 tables, 12 figures and 8 prompt examples to `outputs/reports/paper/` and publishes them to [results/](results/README.md). The equivalence tests check that this repository still matches the code that ran the paper: every one of the 4,970 recorded generation, judge and reflection prompts is rebuilt byte for byte, all 2,363 executed solver outputs re-score identically, and every paper artifact is regenerated (text byte for byte, figures with identical rendering).
 
 ## Repository layout
 

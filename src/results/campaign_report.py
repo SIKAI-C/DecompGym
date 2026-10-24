@@ -16,7 +16,7 @@ import numpy as np
 
 from src.experiments.verification import OutputVerifier
 from src.experiments.completion import TerminalCompletionError, approved_receipts, is_terminal_failure, load_policy_summary, policy_is_complete
-from src.results.policy import reported, run_identity
+from src.results.policy import default_models, reported, run_identity
 
 
 MODES = ("plain", "reflection")
@@ -494,6 +494,7 @@ def build_campaign_report(root: Path, models=None):
             path = root / "dataset" / case["suite"] / case["problem"] / case["instance"] / name
             if not snapshot.hash_matches(path, digest):
                 errors.append({"path": snapshot.relative(path), "issue": "Frozen dataset changed"})
+    models = default_models(manifest) if models is None else models
     skipped = [s for s in queue_for(manifest) if not reported(s["model"], models)]
     specifications = [s for s in queue_for(manifest) if reported(s["model"], models)]
     phase_pointer = snapshot.json(root / "active_execution_phase.json")
@@ -513,8 +514,10 @@ def build_campaign_report(root: Path, models=None):
             first = [snapshot.json(root / p["path"] / "shared_first.json") for p in pair["policies"].values()]
             if all(first):
                 shared_id = identity({"protocol": manifest["protocol_id"], "model": pair["model"], "instance": case["instance"], "attempt": 1})
-                expected_canonical = root / pair["policies"]["plain"]["path"] / "attempts/attempt_01"
-                if first[0] != first[1] or first[0].get("id") != shared_id or Path(first[0].get("canonical", "")).resolve() != expected_canonical:
+                # The recorded path is absolute; compare its part inside the campaign so a moved copy still audits.
+                expected_canonical = Path(pair["policies"]["plain"]["path"]) / "attempts/attempt_01"
+                recorded = Path(first[0].get("canonical", "")).parts
+                if first[0] != first[1] or first[0].get("id") != shared_id or recorded[-len(expected_canonical.parts):] != expected_canonical.parts:
                     for policy in pair["policies"].values():
                         policy["audit_issues"].append("Shared-first identity differs between policies")
                 first_scores = [score_base(p["attempts"][0]) if p["attempts"] else None for p in pair["policies"].values()]

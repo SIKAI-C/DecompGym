@@ -383,3 +383,14 @@ def test_paired_stage_costs_cancel_shared_work_and_keep_missing_differences_null
     pair = deepcopy(report["pairs"][0])
     pair["costs"]["plain_including_shared"]["stages"][1]["raw_usage_fields"]["input_tokens"]["complete"] = False
     assert any(r["reflection_minus_plain"] is None for r in reporter.paired_cost_differences([pair]))
+
+
+def test_a_moved_copy_of_a_campaign_audits_like_the_original(campaign, tmp_path):
+    root, _ = campaign
+    write_pair(campaign)
+    moved = tmp_path / "elsewhere" / root.name
+    shutil.copytree(root, moved, symlinks=True)
+    original, copy = reporter.build_campaign_report(root), reporter.build_campaign_report(moved)
+    assert_clean(copy)
+    assert [p["state"] for p in copy["pairs"]] == [p["state"] for p in original["pairs"]]
+    assert copy["pairs"][0]["state"] == "complete"

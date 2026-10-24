@@ -1,6 +1,7 @@
 """Audit the two paper campaigns read-only and save the combined dataset the paper figures and tables use."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -16,6 +17,18 @@ from src.results.token_analysis import build_token_analysis
 LABELS = {"fixed81_strict_decomposition_20261013_r1": "source_original", "fixed81_strict_claude_extension_20261014_r1": "source_extension"}
 
 
+def check_cached(report, root):
+    """A saved audit is reused only while the campaign manifest and its frozen dataset are unchanged."""
+    manifest = json.loads((root / "campaign.json").read_text())
+    if report["cohort_manifest"] != manifest:
+        raise ValueError(f"The saved audit of {root.name} no longer matches its campaign.json; rerun with --refresh")
+    for case in manifest["instances"]:
+        directory = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
+        for name, expected in case["sha256"].items():
+            if hashlib.sha256((directory / name).read_bytes()).hexdigest() != expected:
+                raise ValueError(f"{directory / name} changed since the saved audit; rerun with --refresh")
+
+
 def build_snapshot(experiments: Path, output: Path, *, refresh: bool):
     """With refresh, re-audit the raw campaigns; otherwise reuse the saved audits in `output`."""
     output.mkdir(parents=True, exist_ok=True)
@@ -29,6 +42,7 @@ def build_snapshot(experiments: Path, output: Path, *, refresh: bool):
             export_campaign_report(report, output / label)
         else:
             report = json.loads((output / label / "evaluation.json").read_text())
+            check_cached(report, root)
             # The saved audit records where the campaign was; read it from where it is now.
             report["input_root"] = str(root)
         if report["cohort_manifest"]["protocol_id"] != protocol:

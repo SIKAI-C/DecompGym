@@ -400,7 +400,7 @@ def build_time_analysis(reports, *, agent_budgets=DEFAULT_AGENT_BUDGETS):
             "quantiles": "Linear interpolation at index (n-1)*p; distributions describe case variation in the saved run.",
             "partial_models": "Only models with complete audited coverage of the exact common inventory are primary. Other completed pairs are labeled partial and never pooled into primary model comparisons.",
             "provider_time": "Provider-reported durations, when available in supplemental raw-event evidence, are separate optional diagnostics and do not replace client elapsed time.",
-            "qualifications": "Retain the three documented native SIGTERM recorded-score qualifications and two Gemini empty-SUCCESS events. This analysis does not rescore outcomes; GPT-5.6 Sol is excluded globally.",
+            "qualifications": "Retain the three documented native SIGTERM recorded-score qualifications and two Gemini empty-SUCCESS events. This analysis does not rescore outcomes; only the paper configurations (results/policy.py) are included.",
         },
     }
     return {
