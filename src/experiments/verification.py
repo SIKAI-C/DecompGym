@@ -87,6 +87,9 @@ class OutputVerifier:
             result["issues"] = result.get("issues", []) + issues
             result["ok"] = bool(result.get("ok")) and not result["issues"]
             return result
+        except OverflowError as exc:
+            # Finite but enormous values (e.g. usage 1e308) are a bad candidate, not a verifier defect.
+            return {"ok": False, "issues": [f"output values are too large to evaluate: {exc}"], "failure_kind": "output_values"}
         except Exception as exc:
             raise VerificationError(f"{suite}/{problem} verifier failed: {type(exc).__name__}: {exc}") from exc
 

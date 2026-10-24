@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -114,3 +115,17 @@ def test_unreadable_reference_is_not_a_simple_pass(tmp_path):
 def test_one_verdict_parser_for_execution_and_audit(notes, verdict):
     from src.agent.prompts.judge import parse_verdict
     assert parse_verdict(notes) == verdict
+
+
+def test_enormous_counts_fail_the_candidate_instead_of_stopping_the_campaign(tmp_path):
+    from src.utils.reference_output import reference_output
+    instance = Path(__file__).resolve().parents[1] / "data/cg/csp/csp_small_seed000"
+    data = json.loads((instance / "data.json").read_text())
+    output = reference_output("cg", "csp", data, json.loads((instance / "gold_cg.json").read_text()))
+    output.update(status="feasible", method="column_generation")
+    for pattern in output["solution"]["patterns"]:
+        pattern["usage"] = 1e308
+    path = tmp_path / "output.json"
+    path.write_text(json.dumps(output))
+    result = OutputVerifier.verify_output("cg", "csp", instance / "data.json", path, 1e-6)
+    assert not result["ok"] and result["failure_kind"] == "output_values"
