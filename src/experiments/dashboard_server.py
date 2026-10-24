@@ -19,7 +19,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from src.experiments.plan import model_queue
-from src.experiments.completion import TERMINAL_KIND, is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
+from src.experiments.completion import is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
 
 
 APP_ID = "decompbench-dashboard-v1"

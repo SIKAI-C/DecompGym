@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 import csv
 from datetime import datetime, timezone
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -96,6 +95,7 @@ def _validate_reports(reports):
         for field in ("reference_policy", "runtime_manifest_sha256"):
             if manifest.get("experiment_plan", {}).get(field) != first.get("experiment_plan", {}).get(field):
                 raise ValueError(f"Reference/runtime settings differ: {field}")
+        # File names of the older src/agent layout that the paper campaigns froze in their controllers.
         for name in ("src/agent/paired_runner.py", "src/agent/prompt_builder.py", "src/agent/output_verifier.py", "src/agent/native_solver.py"):
             if manifest.get("controller_sha256", {}).get(name) != first.get("controller_sha256", {}).get(name):
                 raise ValueError(f"Scoring or prompt-construction source differs: {name}")

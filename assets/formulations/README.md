@@ -1,6 +1,6 @@
 # Teaching figures
 
-The repository README embeds these figures alongside the corresponding formulations. The Benders charts show the recorded master lower bound, best feasible integer solution cost, and cuts generated in each iteration. The column-generation charts show the restricted master LP objective, best reported pricing reduced cost, and available column count. These are reference-solver iterations; coding-agent attempts are recorded separately.
+[docs/problems.md](../../docs/problems.md) embeds these figures alongside the corresponding formulations. The Benders charts show the recorded master lower bound, best feasible integer solution cost, and cuts generated in each iteration. The column-generation charts show the restricted master LP objective, best reported pricing reduced cost, and available column count. These are reference-solver iterations; coding-agent attempts are recorded separately.
 
 | Suite | Problem | Instance | Saved trace |
 | --- | --- | --- | --- |

@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from src.experiments import campaign, docker_setup as hybrid_runtime
+from src.experiments import campaign, docker_setup
 from src.experiments import sandbox as native_solver
 from src.agent.docker_client import AuthenticationRequired
 from src.experiments.paired_runner import ProtocolError, read, save
@@ -32,7 +32,7 @@ def scoped_campaign(tmp_path, monkeypatch):
                 "prompt_protocol": PROMPT_PROTOCOL, "resource_guard": {}, "retry_delays_seconds": [0]}
     before = deepcopy(manifest)
     engine = SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None, resource_samples=lambda: [], stop_campaign_workers=lambda _: None)
-    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: engine)
+    monkeypatch.setattr(docker_setup, "runtime", lambda: engine)
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: object())
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)

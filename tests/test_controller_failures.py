@@ -16,10 +16,10 @@ def test_controller_saves_unexpected_failure_and_stops_without_retry(tmp_path, m
     case = {"suite": "bd", "problem": "ufl", "instance": "synthetic"}
     manifest = {"model_queue": [{"model": "fixture", "backend": "codex-cli", "effort": "medium"}], "instances": [case], "protocol_id": "fixture", "agent_timeout": 1, "judge_model": "fixture", "judge_effort": "high"}
     manifest["execution_environment"] = {"image_id": "sha256:fixture", "license_file": "fixture", "native_environment": {}}
-    from src.experiments import docker_setup as hybrid_runtime
+    from src.experiments import docker_setup
     from src.experiments import sandbox as native_solver
     from types import SimpleNamespace
-    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None))
+    monkeypatch.setattr(docker_setup, "runtime", lambda: SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None))
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: object())
     monkeypatch.setattr(campaign, "require_backend_readiness", lambda *_: {})
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
@@ -46,7 +46,7 @@ def test_controller_saves_unexpected_failure_and_stops_without_retry(tmp_path, m
 @pytest.mark.parametrize("backend", ["codex-cli", "claude-code-cli", "agy-cli"])
 def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_path, monkeypatch, backend):
     from types import SimpleNamespace
-    from src.experiments import docker_setup as hybrid_runtime
+    from src.experiments import docker_setup
     from src.experiments import sandbox as native_solver
 
     root = tmp_path / "campaign"
@@ -58,7 +58,7 @@ def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_p
                 "judge_model": "independent-judge", "judge_effort": "high", "execution_environment": environment}
     engine = SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None)
     executor = object()
-    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: engine)
+    monkeypatch.setattr(docker_setup, "runtime", lambda: engine)
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: executor)
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
     monkeypatch.setattr(campaign, "ensure_execution_allowed", lambda *_: None)
@@ -92,13 +92,13 @@ def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_p
 @pytest.mark.parametrize("returncode", [0, 1, 64, 130, -9])
 def test_watchdog_does_not_retry_an_unclassified_exit(tmp_path, monkeypatch, returncode):
     from types import SimpleNamespace
-    from src.experiments import docker_setup as hybrid_runtime
+    from src.experiments import docker_setup
 
     manifest = {"execution_environment": {}, "resource_guard": {}, "retry_delays_seconds": [0], "model_queue": [{"model": "fixture", "backend": "codex-cli", "effort": "medium"}]}
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
     monkeypatch.setattr(campaign, "ensure_execution_allowed", lambda *_: None)
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
-    monkeypatch.setattr(hybrid_runtime, "runtime", lambda: SimpleNamespace(bind_environment=lambda _: None, resource_samples=lambda: [], stop_campaign_workers=lambda _: None))
+    monkeypatch.setattr(docker_setup, "runtime", lambda: SimpleNamespace(bind_environment=lambda _: None, resource_samples=lambda: [], stop_campaign_workers=lambda _: None))
     monkeypatch.setattr(campaign, "runtime_lock", lambda *_: nullcontext())
     monkeypatch.setattr(campaign.signal, "signal", lambda *_: None)
     calls = []

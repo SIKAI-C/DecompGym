@@ -345,28 +345,6 @@ def _validate_fresh_delivery_call(call: Path, root: Path, model: str) -> dict:
     return {"campaign_file": "campaign.json", "protocol_id": manifest["protocol_id"], "request_sha256": request["request_sha256"]}
 
 
-def build_delivery_receipt(directory: Path, attempt: Path, root: Path, *, recorded_at: str) -> dict:
-    """Close one future failed delivery while preserving the raw summary and scores."""
-    raw = read(directory / "instance_summary.json")
-    stage = read(attempt / "reflection_receipt.json")
-    require(stage.get("result", {}).get("file_delivery_failure") is True, "No committed wrong-target failure")
-    call = attempt / "calls" / stage["result"]["invocation_id"]
-    authorization = validate_delivery_call(call, root)
-    index = int(attempt.name.split("_")[-1])
-    scores = [read(directory / "attempts" / f"attempt_{n:02d}" / "score_receipt.json")["result"] for n in range(1, index + 1)]
-    receipt = {"schema_version": 1, "kind": DELIVERY_KIND, "recorded_at": recorded_at,
-               "authorization": authorization, "outcome": "failed", "mode": "reflection", "stage": "reflection",
-               "reason": "required_reflection_written_to_wrong_path", "trigger_call": str(call.relative_to(directory)),
-               **{k: raw[k] for k in ("model", "suite", "problem", "instance", "protocol_id", "max_attempts")},
-               "terminal_attempt": index, "actual_attempts": index, "unexecuted_attempt_slots": raw["max_attempts"] - index,
-               "attempts": scores, "evidence_sha256": {str(p.relative_to(directory)): digest(p) for p in directory.rglob("*") if p.is_file()}}
-    plain = root / "runs" / raw["model"] / "plain" / raw["suite"] / raw["problem"] / raw["instance"]
-    receipt["plain_summary_sha256"] = digest(plain / "instance_summary.json")
-    receipt["receipt_id"] = identity(receipt)
-    validate_delivery_receipt(directory, root, receipt)
-    return receipt
-
-
 def validate_delivery_receipt(directory: Path, root: Path, receipt: dict):
     require(receipt.get("receipt_id") == identity({k: v for k, v in receipt.items() if k != "receipt_id"}), "Delivery receipt changed")
     require(receipt.get("schema_version") == 1 and receipt.get("kind") == DELIVERY_KIND

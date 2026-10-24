@@ -52,6 +52,7 @@ def validate_compatibility(manifests):
         for key in ("reference_policy", "runtime_manifest_sha256"):
             if manifest["experiment_plan"].get(key) != first["experiment_plan"].get(key):
                 raise ValueError(f"Reference/runtime policy differs: {key}")
+    # File names of the older src/agent layout that the paper campaigns froze in their controllers.
     for name in ("src/agent/paired_runner.py", "src/agent/prompt_builder.py", "src/agent/output_verifier.py", "src/agent/native_solver.py"):
         hashes = [m["controller_sha256"].get(name) for m in manifests]
         if not all(hashes) or len(set(hashes)) != 1:

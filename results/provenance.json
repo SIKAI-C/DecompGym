@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T00:22:10.859695+00:00",
+  "generated_at": "2026-10-24T00:26:12.419833+00:00",
   "primary_models": [
     "gpt-6-astra",
     "gpt-6-sol",
@@ -55,8 +55,8 @@
   "sources": {
     "combined.json": "3b7eb32ef5a1d113c4caa061da5e409d5b35c5e861ee676552838b8230475e79",
     "resources.json": "5a97678d1f30bbad24f759e5c87f4ded2bff4a7bde7beaf94e0b4cbbb0785e56",
-    "source_original/evaluation.json": "75f09c211a568f5762c6a40b592b8c8f0b95e542dee9a101db123b8201aab202",
-    "source_extension/evaluation.json": "75245582e846fc9ab04b0c608cb0e91147a2b57a478f26c26467a696b77511f8"
+    "source_original/evaluation.json": "31b044eadcee44ee92590bae17f54cc26d52c0806f4f1ffd949938b405ea5802",
+    "source_extension/evaluation.json": "673846e50aed9c9beb8e9b362f1b1c0ac4b7c7bc2808171d674c4c9ea2c86944"
   },
   "verification": {
     "status": "pass",
@@ -66,7 +66,7 @@
   },
   "analysis_modules": {
     "campaign_report.py": "44251c801a5331e3b4e96f670513fdeb12ee77763eca419652835f5693735e35",
-    "combine.py": "57901d686743e6a82e34991ad053e6c5c65b6f70afe8bce422606ad19f9a2210",
+    "combine.py": "7c8499541476e3f0527895b9e58cf7de12ecb76da1eff9bf7b6fbc1ddcc3d57b",
     "costs.py": "152b74cfee76ce54878f62e0b6467aa1211a00ad46cce25e9b10973ea71476bf",
     "failure_labels.json": "2578c0d0c1ca8bb74539832528a79a6f7dadf00d3fe33c824d5830feca674db1",
     "failures.py": "dc7311c350acb18ee99f6bba287216007654458c72fbfea63afd9d4a201c19b0",
@@ -79,8 +79,8 @@
     "styles.json": "c186e848a57662e37b2df13b88aebe086354e296dd3c414137333c8ef8889fa4",
     "summary.py": "7232ec34f1f1bddcc3083a0f7c5dffd6cdb5c75f982a8a3106509786736085ab",
     "teaching_figures.py": "18360333f8eae6354ff230d65bf047bea7673100a685ed51411b0911ac3836d5",
-    "time_analysis.py": "1328b9b8838463f9df605cbb0adf0324e5165c66720c2e0989a2faeb8a32979f",
-    "token_analysis.py": "22c4b181b718c7d511eb23ae00ff56967cfed391a4b357f536427ea508489b58",
+    "time_analysis.py": "575bdd236f8c9e880ebbbef2ee402f5719dd93462d15ced00abc3896d499e5e2",
+    "token_analysis.py": "738ac26f3c50d411f7838f69e4bc6820c747d01fc0570a0b23b7033775e02aec",
     "verify.py": "719b062f64575c182d9920d11f15607a23dd8f4a78c9e2558a67635cb80c4d8b"
   },
   "artifacts": {

@@ -1,7 +1,6 @@
 """Fresh Docker CLI edits with private credentials and recoverable call records."""
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 import os
@@ -11,7 +10,7 @@ import threading
 
 from src.agent.cli_events import parse_events
 from src.agent.result import AgentResult, save_result
-from src.agent.container import ContainerError, DockerRuntime
+from src.agent.container import DockerRuntime
 from src.agent.prompts.policy import WORKSPACE_POLICY, record_workspace_prompt
 from src.agent.safe_artifacts import read_regular_text
 from src.experiments.environment import RuntimeEnvironmentError
