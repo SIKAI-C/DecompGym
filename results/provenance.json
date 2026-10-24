@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T00:26:12.419833+00:00",
+  "generated_at": "2026-10-24T21:22:56.524794+00:00",
   "primary_models": [
     "gpt-6-astra",
     "gpt-6-sol",
@@ -55,8 +55,8 @@
   "sources": {
     "combined.json": "3b7eb32ef5a1d113c4caa061da5e409d5b35c5e861ee676552838b8230475e79",
     "resources.json": "5a97678d1f30bbad24f759e5c87f4ded2bff4a7bde7beaf94e0b4cbbb0785e56",
-    "source_original/evaluation.json": "31b044eadcee44ee92590bae17f54cc26d52c0806f4f1ffd949938b405ea5802",
-    "source_extension/evaluation.json": "673846e50aed9c9beb8e9b362f1b1c0ac4b7c7bc2808171d674c4c9ea2c86944"
+    "source_original/evaluation.json": "d7b4bd0323d2eadd14c67118353937c13f6194b1a0456df8a704d36624db1e92",
+    "source_extension/evaluation.json": "7c499e2b3456ac96cd8a036dd8f2a3507ae016303b68779d59ae1b2c140afdd2"
   },
   "verification": {
     "status": "pass",
@@ -65,29 +65,29 @@
     "printed_percentage_cells_checked": 91
   },
   "analysis_modules": {
-    "campaign_report.py": "44251c801a5331e3b4e96f670513fdeb12ee77763eca419652835f5693735e35",
+    "campaign_report.py": "76119a7a4d5c103c0850147554bc8f2753bf69335d61286bf1e78b330dd049ee",
     "combine.py": "7c8499541476e3f0527895b9e58cf7de12ecb76da1eff9bf7b6fbc1ddcc3d57b",
     "costs.py": "152b74cfee76ce54878f62e0b6467aa1211a00ad46cce25e9b10973ea71476bf",
     "failure_labels.json": "2578c0d0c1ca8bb74539832528a79a6f7dadf00d3fe33c824d5830feca674db1",
-    "failures.py": "dc7311c350acb18ee99f6bba287216007654458c72fbfea63afd9d4a201c19b0",
+    "failures.py": "a9128b7629b934168361baeaf4643771b3a5afd01bfb95e61e24368de034f9a0",
     "overview.py": "083be99c3b159f11318af6922a566a1a4f122d30ab6976925afc74d3ec407887",
-    "overview.tex": "10a31cca881634f067c4e8c5c6f2b665af3b5dbba3eed5ee50b1a8d53e3a4cbc",
+    "overview.tex": "4fb722d379fdb9d0a1939acbe2c3084d630d6f0c7a1a768b3031c9134d710c5d",
     "paper_figures.py": "bbd3d48063ca98d7dbdc6eef1299a6e5554c47bb3fd3a6b4efffbdf7b2eb785b",
-    "policy.py": "bc14852442b1a153c93e0730018ee4ad70f7dc9e672fe38767a88ac54268992d",
-    "prompt_excerpts.py": "0bc2e72cba04af14765e1349577d792ec231b693c45b2faa0eca38414dda9f68",
-    "snapshot.py": "438b994726e7476139a0af653af8719a502671778560dd13686e5ee27819484b",
+    "policy.py": "55db091dbd7dfb9410cdb29226f4441937dc7f8c033a3f0dbd8676dae89e2732",
+    "prompt_excerpts.py": "38ef897fbb7c7af6fe30cbe31f46b5aa06a84b39674e4bed8b049126a2a873bc",
+    "snapshot.py": "3ac9f473cec6808f6de2b60ece28ebb373837b16963ca7f13c9ef68346370269",
     "styles.json": "c186e848a57662e37b2df13b88aebe086354e296dd3c414137333c8ef8889fa4",
-    "summary.py": "7232ec34f1f1bddcc3083a0f7c5dffd6cdb5c75f982a8a3106509786736085ab",
-    "teaching_figures.py": "18360333f8eae6354ff230d65bf047bea7673100a685ed51411b0911ac3836d5",
-    "time_analysis.py": "575bdd236f8c9e880ebbbef2ee402f5719dd93462d15ced00abc3896d499e5e2",
-    "token_analysis.py": "738ac26f3c50d411f7838f69e4bc6820c747d01fc0570a0b23b7033775e02aec",
+    "summary.py": "b3a0b76776d1480698dc8917ea0f93436fdd847df3b78c8452c69b130d191ec0",
+    "teaching_figures.py": "59d02e5a4625dfbbb121fad38bee26ec86c5f737ec59e1cf6f2a748e69ac036f",
+    "time_analysis.py": "129e2366cbbdd032d5b6795bea768f22c44dfc989a8116996e3be5dfd73043d8",
+    "token_analysis.py": "5aded6b2df3f9456cf135be24f9d1cdc68249988905e986a8410f0841018cedb",
     "verify.py": "719b062f64575c182d9920d11f15607a23dd8f4a78c9e2558a67635cb80c4d8b"
   },
   "artifacts": {
     "figures/agent_time.pdf": "892a532b52d2dd7d02ed44aeccf9013fbe1cf98dd976755d0f4709748c0ac991",
     "figures/agent_tokens.pdf": "4397bcccd2c38062d42c755d395341d9cd4371e931066936bbe892cf6b633b04",
     "figures/attempt_quality.pdf": "b97fd4cc78885b55cd301fd5beb706e26b88a3eaaf339172ab30a5823cdfb2a6",
-    "figures/benchmark_overview.pdf": "921c3e60b21a11903b9080291541ea917edaafb7a91deb22ca10a649e0774f48",
+    "figures/benchmark_overview.pdf": "24f23bf88e6ddef84674b62ad7887e7de94b1bc51ebe50901574435b139d1842",
     "figures/cost_breakdown.pdf": "7018d6706c6728b518f9af2cd74f565a0f3fa20abac5344293cf648820f71140",
     "figures/failure_first.pdf": "5ceb566b22f0664b0f3ccfa9760b71af07f504bdccbfcd9c7212607685f3c342",
     "figures/failure_retry.pdf": "5661a1c99bee73111d3b6120fdb02e05d85679828c2f9746db2e34c2d7bf4053",

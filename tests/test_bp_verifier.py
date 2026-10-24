@@ -55,18 +55,8 @@ def test_capacity_is_checked_using_actual_item_sizes():
     assert "exceeds capacity" in result["issues"][0]
 
 
-@pytest.mark.parametrize(
-    "bins",
-    [
-        [[0, 1], [2]],
-        [
-            {"contents": [{"item_id": 0}, {"item_id": 1}]},
-            {"contents": [{"item_id": 2}]},
-        ],
-    ],
-    ids=["item-lists", "pattern-contents"],
-)
-def test_valid_individual_item_packing_still_passes(bins):
+def test_valid_individual_item_packing_passes():
+    bins = [{"contents": [{"item_id": 0}, {"item_id": 1}]}, {"contents": [{"item_id": 2}]}]
     result = verify_solution(ITEM_DATA, {"solution": {"bins": bins}})
     assert result["ok"], result["issues"]
     assert result["objective_value"] == 2
@@ -77,7 +67,7 @@ def test_individual_item_ids_need_not_be_contiguous():
         "bin_capacity": 10,
         "items": [{"id": 17, "size": 6}, {"id": 4, "size": 4}],
     }
-    result = verify_solution(data, {"solution": {"bins": [[17, 4]]}})
+    result = verify_solution(data, {"solution": {"bins": [{"contents": [{"item_id": 17}, {"item_id": 4}]}]}})
     assert result["ok"], result["issues"]
     assert result["objective_value"] == 1
 
@@ -97,3 +87,8 @@ def test_explicit_item_types_still_support_aggregate_patterns():
     result = verify_solution(data, {"solution": {"bins": bins}})
     assert result["ok"], result["issues"]
     assert result["objective_value"] == 2
+
+
+@pytest.mark.parametrize("bins", [[[0, 1], [2]], [{"items": [0, 1]}, {"items": [2]}], [{"item_ids": [0, 1]}, {"item_ids": [2]}]], ids=["bare-lists", "items", "item_ids"])
+def test_only_the_documented_contents_field_is_accepted(bins):
+    assert not verify_solution(ITEM_DATA, {"solution": {"bins": bins}})["ok"]

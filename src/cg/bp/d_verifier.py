@@ -47,29 +47,8 @@ def _parse_bins(solution: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, 
 
     parsed: list[dict[str, Any]] = []
     for idx, bin_entry in enumerate(bins):
-        if isinstance(bin_entry, list):
-            bin_entry = {"items": bin_entry}
         if not isinstance(bin_entry, dict):
             return None, f"bin {idx} not a dict"
-
-        if "items" in bin_entry or "item_ids" in bin_entry:
-            ids = bin_entry.get("items", bin_entry.get("item_ids"))
-            if not isinstance(ids, list):
-                return None, f"bin {idx} items not a list"
-            if "usage" in bin_entry:
-                usage_val, err = _coerce_int(bin_entry.get("usage"), f"bins[{idx}].usage")
-                if err:
-                    return None, err
-                if usage_val != 1:
-                    return None, f"bin {idx} uses usage with explicit item list"
-            items: list[tuple[int, int]] = []
-            for item_id in ids:
-                if not integer_value(item_id):
-                    return None, f"bin {idx} item_id must be a finite integer JSON number"
-                item_id = int(item_id)
-                items.append((item_id, 1))
-            parsed.append({"usage": 1, "items": items, "mode": "items"})
-            continue
 
         if "contents" in bin_entry:
             usage_raw = bin_entry.get("usage", 1)
@@ -103,7 +82,7 @@ def _parse_bins(solution: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, 
             parsed.append({"usage": usage, "items": items, "mode": "contents"})
             continue
 
-        return None, f"bin {idx} missing items or contents"
+        return None, f"bin {idx} missing contents"
 
     return parsed, None
 

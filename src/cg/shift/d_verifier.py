@@ -55,14 +55,14 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         if not isinstance(shift, dict):
             return _result(False, f"shift {idx} not a dict")
 
-        start = shift.get("start_slot", shift.get("start"))
-        end = shift.get("end_slot", shift.get("end"))
+        start = shift.get("start")
+        end = shift.get("end")
         if not integer_value(start) or not integer_value(end):
             return _result(False, f"shift {idx} start/end must be finite integer JSON numbers")
         start, end = int(start), int(end)
 
-        count_raw = shift.get("count", shift.get("usage", 1))
-        count, err = _coerce_int(count_raw, f"shifts[{idx}].count")
+        count_raw = shift.get("usage", 1)
+        count, err = _coerce_int(count_raw, f"shifts[{idx}].usage")
         if err:
             return _result(False, err)
         if count < 0:
