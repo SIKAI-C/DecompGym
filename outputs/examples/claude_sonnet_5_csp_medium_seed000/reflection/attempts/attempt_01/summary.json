@@ -1,0 +1,58 @@
+{
+  "attempt": 1,
+  "status": "verify_failed",
+  "exec_ok": true,
+  "verify_ok": false,
+  "objective": 87.0,
+  "gold_objective": 87.0,
+  "gap_to_gold": 0.0,
+  "issues": [
+    "algorithm_verifier_failed: fail"
+  ],
+  "llm_verdict": "fail",
+  "llm_notes": "VERDICT: FAIL\nNOTES:\n- The source substantively implements column generation: `main()` constructs single-item seed patterns, solves a continuous restricted master over `patterns`, passes demand-constraint duals (`c.Pi`) to a single-stock knapsack pricing problem, and appends a new pattern when its dual value exceeds `1.0 + 1e-6`; subsequent iterations rebuild and reoptimize the master with that column.\n- Initialization directly constructs columns. The final integer master fixes each accumulated pattern's item counts and optimizes only its usage (`y_vars`). No separate full-original-model solve appears on any reachable path; time, iteration, master-status, and pricing termination paths proceed with the accumulated patterns.\n- The explicit status/proof requirement is violated: `if final.Status == GRB.OPTIMAL: status = \"optimal\"` treats optimality of the integer restricted master as global optimality. This reachable branch requires no global bound comparison or other global proof, including after early column-generation termination. Such an incumbent must be reported as `feasible` unless global optimality is established.\n- The successful `output.json` path derives pattern usages from `y_vars[p_idx].X` and the objective from their sum, but writes the unsupported `optimal` status above. The no-incumbent and exception paths write error results. This assessment is based solely on the supplied source; the solver was not executed.",
+  "reused_from_previous": false,
+  "first_success_attempt": null,
+  "stdout": "",
+  "stderr": "",
+  "feasibility_ok": true,
+  "metrics": {
+    "generation": {
+      "ok": true,
+      "returncode": 0,
+      "elapsed_seconds": 25.379625303001376,
+      "usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 5004,
+        "cache_read_input_tokens": 15204,
+        "output_tokens": 2841
+      },
+      "error": null,
+      "warnings": [],
+      "terminal_state": "completed",
+      "artifact_sha256": "6d3bf4a08c91ddef104df4b01f08e58b24f81e66106e5b895d0c03b30f2aab79",
+      "invocation_id": "66a17ec9e2dc4b31b587e805119e789c"
+    },
+    "execution_seconds": 0.46991220908239484,
+    "execution_timed_out": false,
+    "cooldown_seconds": 0,
+    "algorithm_verification": {
+      "ok": true,
+      "returncode": 0,
+      "elapsed_seconds": 41.464651685997524,
+      "usage": {
+        "input_tokens": 41919,
+        "cached_input_tokens": 36736,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 776,
+        "reasoning_output_tokens": 324
+      },
+      "error": null,
+      "warnings": [],
+      "terminal_state": "completed",
+      "artifact_sha256": "7abdd4b6653d80daa3f62bf2806b3aacc394e9c499328c5bbd7616e0a39521c2",
+      "invocation_id": "d75fe15bbf0a42e08b233227b22eb89d"
+    },
+    "total_seconds": 138.50819295784459
+  }
+}

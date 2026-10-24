@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "decompbench"
 version = "0.1.0"
-description = "Educational examples and evaluation infrastructure for Benders decomposition and column generation"
+description = "DecompGym: an executable environment for coding agents designing Benders decomposition and column generation solvers"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = "==3.12.11"

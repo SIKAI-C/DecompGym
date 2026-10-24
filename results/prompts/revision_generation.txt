@@ -1,0 +1,13 @@
+<<the generation instructions of Prompt 1, unchanged, followed by these context blocks>>
+
+--- BEGIN CONTEXT: csp_medium_seed000/data.json ---
+<<elided: 42 lines of csp_medium_seed000/data.json>>
+--- END CONTEXT: csp_medium_seed000/data.json ---
+
+--- BEGIN CONTEXT: attempt_01/solver.py ---
+<<elided: 184 lines of attempt_01/solver.py>>
+--- END CONTEXT: attempt_01/solver.py ---
+
+--- BEGIN CONTEXT: attempt_01/debug.md ---
+<<elided: 13 lines of attempt_01/debug.md>>
+--- END CONTEXT: attempt_01/debug.md ---

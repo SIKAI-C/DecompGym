@@ -1,1 +1,0 @@
-[alg_verifier.md](<alg_verifier.md) written with `VERDICT: PASS`.

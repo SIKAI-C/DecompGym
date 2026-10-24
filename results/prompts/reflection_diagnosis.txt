@@ -1,0 +1,30 @@
+<<the workspace rules of Prompt 1 with debug.md as the file to edit, the line "You are making an attempt to solve the following problem.", and the text of Prompt 1 from its first task line through its runtime rules>>
+
+You have generated the solver.py file based on the problem description and the data.json file.
+And the exec.log file shows the output of the solver.py file.
+You also have alg_verifier.md with an LLM-based algorithm check; use it to improve the reflection.
+Your tasks:
+1) Read solver.py, exec.log, and the verifier feedback to diagnose execution, feasibility, algorithm, or objective-quality failures.
+2) Write a concise reflection to debug.md: what likely went wrong and what the next attempt should change
+3) List the concrete changes the next attempt should make in debug.md.
+Keep the reflection concise and actionable.
+
+--- BEGIN CONTEXT: csp_medium_seed000/data.json ---
+<<elided: 42 lines of csp_medium_seed000/data.json>>
+--- END CONTEXT: csp_medium_seed000/data.json ---
+
+--- BEGIN CONTEXT: attempt_01/solver.py ---
+<<elided: 184 lines of attempt_01/solver.py>>
+--- END CONTEXT: attempt_01/solver.py ---
+
+--- BEGIN CONTEXT: attempt_01/exec.log ---
+<<elided: 16 lines of attempt_01/exec.log>>
+--- END CONTEXT: attempt_01/exec.log ---
+
+--- BEGIN CONTEXT: attempt_01/alg_verifier.md ---
+<<elided: 6 lines of attempt_01/alg_verifier.md>>
+--- END CONTEXT: attempt_01/alg_verifier.md ---
+
+--- BEGIN CONTEXT: attempt_01/output.json ---
+<<elided: 96 lines of attempt_01/output.json>>
+--- END CONTEXT: attempt_01/output.json ---

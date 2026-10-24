@@ -1,0 +1,600 @@
+{
+  "instance": "csp_medium_seed000",
+  "suite": "cg",
+  "problem": "csp",
+  "source": "dataset/cg/csp/csp_medium_seed000",
+  "output_dir": "runs/claude-sonnet-5/plain/cg/csp/csp_medium_seed000",
+  "backend": "claude-code-cli",
+  "model": "claude-sonnet-5",
+  "reflection": false,
+  "solver_threads": 1,
+  "solver_timeout": 60,
+  "solver_cooldown_seconds": 10,
+  "max_attempts": 10,
+  "gap_threshold": 0.01,
+  "protocol_id": "a7653c5686cddb4fbd2b2073ccb324b9dced7f8a2afc0ae72bdf7b083776ebee",
+  "shared_first_attempt": true,
+  "complete": true,
+  "attempts": [
+    {
+      "attempt": 1,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- The source substantively implements column generation: `main()` constructs single-item seed patterns, solves a continuous restricted master over `patterns`, passes demand-constraint duals (`c.Pi`) to a single-stock knapsack pricing problem, and appends a new pattern when its dual value exceeds `1.0 + 1e-6`; subsequent iterations rebuild and reoptimize the master with that column.\n- Initialization directly constructs columns. The final integer master fixes each accumulated pattern's item counts and optimizes only its usage (`y_vars`). No separate full-original-model solve appears on any reachable path; time, iteration, master-status, and pricing termination paths proceed with the accumulated patterns.\n- The explicit status/proof requirement is violated: `if final.Status == GRB.OPTIMAL: status = \"optimal\"` treats optimality of the integer restricted master as global optimality. This reachable branch requires no global bound comparison or other global proof, including after early column-generation termination. Such an incumbent must be reported as `feasible` unless global optimality is established.\n- The successful `output.json` path derives pattern usages from `y_vars[p_idx].X` and the objective from their sum, but writes the unsupported `optimal` status above. The no-incumbent and exception paths write error results. This assessment is based solely on the supplied source; the solver was not executed.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 25.379625303001376,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 5004,
+            "cache_read_input_tokens": 15204,
+            "output_tokens": 2841
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "6d3bf4a08c91ddef104df4b01f08e58b24f81e66106e5b895d0c03b30f2aab79",
+          "invocation_id": "66a17ec9e2dc4b31b587e805119e789c"
+        },
+        "execution_seconds": 0.46991220908239484,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 41.464651685997524,
+          "usage": {
+            "input_tokens": 41919,
+            "cached_input_tokens": 36736,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 776,
+            "reasoning_output_tokens": 324
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "7abdd4b6653d80daa3f62bf2806b3aacc394e9c499328c5bbd7616e0a39521c2",
+          "invocation_id": "d75fe15bbf0a42e08b233227b22eb89d"
+        },
+        "total_seconds": 138.50819295784459
+      }
+    },
+    {
+      "attempt": 2,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- Source review only; the solver was not executed. The entry point calls main(), which directly constructs homogeneous seed patterns without a separate full-original-model solve.\n- Genuine column generation is implemented: main() solves the continuous master_rmp over patterns, passes demand-constraint duals cons[i].Pi to solve_knapsack_pricing(), and appends a new pattern when price_obj > 1 + 1e-6 and the pattern is new. Subsequent iterations rebuild and reoptimize the master with that column.\n- The final master_int fixes each accumulated pattern's item counts and optimizes only integer pattern usages y[p]. This is a permitted integer restricted master; no prohibited separate full-original-model solve appears in the supplied source. Its incumbent supplies result_patterns, and objective_value sums those same usages before output.json is written. Failure and exception paths write error outputs.\n- The contract is violated by status_str = \"optimal\" if master_int.Status == GRB.OPTIMAL else \"feasible\". Whenever the restricted integer master is optimal, this reachable output path claims global optimality without a global proof. Column generation can stop at max_iters, on an unsuccessful LP or pricing solve, or on a duplicate column; even successful LP pricing convergence alone does not certify the integer restricted master's incumbent globally. The code performs no bound comparison or other global certification and must report feasible absent such a proof.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 18.893369800000073,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2067,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2125
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "363eab9735faaab2966bcf476dcbfa8c32cceab88135f14858521f0daed31b03",
+          "invocation_id": "ae80681612b04a00b0be5fa97524c059"
+        },
+        "execution_seconds": 0.38517312495969236,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 33.2251514319978,
+          "usage": {
+            "input_tokens": 40936,
+            "cached_input_tokens": 36224,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 606,
+            "reasoning_output_tokens": 157
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "702dcaaf2dd90975478e146cb63639aff020fc0e362f18714b4e7ae8452f4797",
+          "invocation_id": "23a318a38d7b4bde91104691d1ca2656"
+        },
+        "total_seconds": 55.23774025007151
+      }
+    },
+    {
+      "attempt": 3,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- The source substantively implements column generation: the entry point calls main(), which directly constructs seed patterns, solves master_lp over continuous pattern usages, passes demand-constraint Pi duals to solve_pricing(), and appends a new pattern when its reduced cost is below -1e-6. Subsequent iterations rebuild and reoptimize the restricted master with those columns.\n- Initialization performs no optimization. Pricing optimizes one stock pattern using integer item counts; master_int fixes all accumulated pattern compositions and optimizes only their integer usages. No separate full-original-model solve or conditional fallback appears in the supplied source.\n- The contract violation is status reporting: `status = \"optimal\" if master_int.Status == GRB.OPTIMAL else \"feasible\"` claims global optimality solely from integer restricted-master optimality. There is no global bound comparison or other global optimality proof, and this branch remains reachable after iteration/time limits or unsuccessful pricing. The contract explicitly requires feasible when returning an incumbent without such a proof.\n- The successful output.json path constructs cuts and usages from the accumulated patterns and master_int incumbent, and computes objective_value as the sum of those usages, but writes the unsupported optimal status above. The no-incumbent and exception paths write empty solutions. This assessment is source-only; the solver was not executed.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 19.54503425800067,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2322,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2355
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "e9faf3101a32f1cde8093317625ff594da926e3f71f276f7c2d8e3c5b243c25b",
+          "invocation_id": "1ae6f39d6a7c4c78a2a749c5249324fd"
+        },
+        "execution_seconds": 0.21658458304591477,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 34.152430764999735,
+          "usage": {
+            "input_tokens": 41377,
+            "cached_input_tokens": 36480,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 695,
+            "reasoning_output_tokens": 251
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "e586d1c19aa726dff9e28fbfb4266264aa9d66f0b008e97117ee7cdabb6987f8",
+          "invocation_id": "ee8ece93365d44ea88b44d436fa9562a"
+        },
+        "total_seconds": 119.71463495888747
+      }
+    },
+    {
+      "attempt": 4,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- The reachable `__main__` entry calls `main()`, which genuinely implements column generation: directly constructed single-type seed patterns initialize a continuous restricted master; demand-constraint duals (`constrs[i].Pi`) drive `solve_knapsack_pricing`; pricing maximizes dual-weighted pattern counts under stock capacity; patterns with `obj > 1.0 + 1e-6` enter the master through `gp.Column`, and subsequent iterations reoptimize it.\n- The final solve changes only accumulated pattern-use variables to integer; pattern compositions remain fixed. Its positive usages determine both the reported cuts and `total`, which are written to `output.json`. No separate full-original-model solve or solution-producing fallback appears in the supplied source.\n- The contract is violated by `status = \"optimal\" if master.Status == GRB.OPTIMAL else \"feasible\"`: whenever the integer restricted master solves optimally with an incumbent, the output claims global optimality without a global proof. The column-generation loop can stop on time or iteration limits, and even completed LP pricing does not by itself establish integer global optimality; no matching global bound is checked. Such incumbents must be labeled `feasible` absent a global certificate. This is a source-only finding, not an observed execution result.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 30.06321268100146,
+          "usage": {
+            "input_tokens": 8,
+            "cache_creation_input_tokens": 3290,
+            "cache_read_input_tokens": 39861,
+            "output_tokens": 2972
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "e5878980c1a41031db4da5e10d82006ee501e2ce88083fe2c4829b6984e36aff",
+          "invocation_id": "4d857283a5ce40b5b2cbed1327736eb6"
+        },
+        "execution_seconds": 0.203832000028342,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 37.02409030800118,
+          "usage": {
+            "input_tokens": 40959,
+            "cached_input_tokens": 36224,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 593,
+            "reasoning_output_tokens": 157
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "782d0910b55e910db52e937ce282fb9bff1f1acff02a7e855def5c8aa78594a5",
+          "invocation_id": "3c7edc46b55f4ff8b68ba56818049616"
+        },
+        "total_seconds": 91.50163400010206
+      }
+    },
+    {
+      "attempt": 5,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- The source substantively implements column generation: the entry point calls main(), which directly constructs single-type seed patterns and solves a continuous restricted master minimizing pattern usage subject to demand constraints. No separate full-original-model solve appears in the reachable paths.\n- The loop passes demand-row duals (constrs[i].Pi) to solve_pricing(), which optimizes integer counts for one stock roll. When 1.0 - price_obj < -1e-6, main() adds the returned counts through gp.Column, appends the pattern and variable, and reoptimizes the master.\n- The final solve fixes the accumulated pattern definitions and optimizes their integer usage counts by changing x_vars to GRB.INTEGER. The reported cuts, usage, and objective come from this restricted-master incumbent and are written to output.json; the no-incumbent and GurobiError branches return empty solutions.\n- The contract violation is status reporting: status_map maps GRB.OPTIMAL from the final integer restricted master to \"optimal\", and the reachable master.SolCount > 0 branch writes that status to output.json. There is no global optimality certificate or bound comparison; optimality over accumulated columns alone does not establish global integer optimality, even if LP pricing converged. The contract requires \"feasible\" for such an incumbent. This finding is based on source inspection, not observed execution.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 23.456331302000763,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2534,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2557
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "e2552fbea000e655cc83238f5e2eeda33a91dbf594b9ff753880542ee209317b",
+          "invocation_id": "c57e04217311409983e57b8b525b380b"
+        },
+        "execution_seconds": 0.24139616708271205,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 37.59319430799951,
+          "usage": {
+            "input_tokens": 41220,
+            "cached_input_tokens": 22912,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 682,
+            "reasoning_output_tokens": 235
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "510245a933426778eb4d4c65e01c90248e351448c4955371c0b8afb03b313728",
+          "invocation_id": "cadc3e906e7a44c989429c8e03acabef"
+        },
+        "total_seconds": 109.71126029198058
+      }
+    },
+    {
+      "attempt": 6,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- The method contract requires feasible status without a global optimality proof, but main() maps final.status == GRB.OPTIMAL to \"optimal\" whenever final.SolCount > 0. final optimizes only integer usages y[p] of accumulated patterns; its optimality alone does not establish global optimality. No global certificate check guards this reachable output path, including after time or iteration limits stop pricing.\n- Genuine column generation is implemented: the entry point calls main(), which directly constructs single-item seed patterns, solves a continuous restricted master with demand constraints, passes cons[i].Pi into a capacity-constrained integer knapsack pricing objective, and appends a pattern when 1.0 - sub.ObjVal < -1e-6. Subsequent iterations rebuild and reoptimize the master over the expanded patterns.\n- The final integer restricted master fixes each accumulated pattern's item counts and optimizes its usage. Positive rounded y[p].X values determine both the reported cuts and the summed objective_value; result is then written to output.json. No separate full-original-model solve appears in the supplied source. No-incumbent and exception paths write error results.\n- This is a source-only assessment; the solver was not executed. The failure concerns the explicit optimality-status requirement, not the presence or substantive use of column generation.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 23.81847580199974,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2670,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2703
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "cbf57b7ca5f995b4ed3bceac6f7612698c6300b246b8f4d5bb46d99b722d4c5a",
+          "invocation_id": "22563d803c9d45cc9159f495dac02fd3"
+        },
+        "execution_seconds": 0.25766812497749925,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 40.714413601999695,
+          "usage": {
+            "input_tokens": 41495,
+            "cached_input_tokens": 27008,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 623,
+            "reasoning_output_tokens": 193
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "0c275e8c14e575c5baec87a843a9b685d6362f9dd24e66f81f57339563766228",
+          "invocation_id": "49883d6c30f44e478ee27d7d643a28c2"
+        },
+        "total_seconds": 125.52663541701622
+      }
+    },
+    {
+      "attempt": 7,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- Source review only; the solver was not executed. The entry point calls main(), which directly constructs homogeneous seed patterns with build_initial_patterns(); initialization uses no optimization model.\n- Column generation is substantively implemented: main() solves a continuous restricted master over patterns, reads demand-constraint Pi duals, and passes them to solve_knapsack_pricing(). Pricing optimizes one roll's integer item counts under its width constraint; a valid, new pattern with dual value greater than 1 is appended to patterns and included in the next master solve.\n- final_model fixes the accumulated pattern compositions and optimizes only their integer usages, so it is a permitted integer restricted master. Its positive usages supply both the reported cuts and objective_value, and json.dump(result, f, indent=2) writes them to output.json. No separate full-original-model solve appears in the supplied reachable paths.\n- The explicit status requirement is violated: whenever final_model.Status == GRB.OPTIMAL and SolCount > 0, main() reports status \"optimal\" solely from integer restricted-master optimality. There is no global optimality certificate or bound comparison, including after time-budget, iteration-limit, or other early exits from column generation. Even completed LP pricing does not alone certify the integer restricted-master incumbent globally. This reachable reporting path must use \"feasible\" unless global optimality is established.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 21.116337509000005,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2529,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2567
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "a2b3a3a94664d9ec92b38ef2086d430e2e4ab5edebbbb89e3036b7087f5d3de1",
+          "invocation_id": "1af2399904a44c358a6c1650dd7eeea5"
+        },
+        "execution_seconds": 0.42773033399134874,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 38.10173847599799,
+          "usage": {
+            "input_tokens": 41835,
+            "cached_input_tokens": 36736,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 644,
+            "reasoning_output_tokens": 189
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "b4390678684d09fe9c3605871baeb591fd6b338df1523f20c2c91c721f85cfde",
+          "invocation_id": "60b0274f6457450390fc319bca177f2e"
+        },
+        "total_seconds": 82.8006952079013
+      }
+    },
+    {
+      "attempt": 8,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- The source substantively implements column generation: `__main__` calls `main()`, which directly constructs single-type seed patterns, solves `master_lp` over pattern usage variables, and passes demand-constraint duals (`c.Pi`) to the integer knapsack pricing objective. A distinct nonzero column with `1.0 - sub.ObjVal < -1e-6` is appended to `patterns`, and the next iteration rebuilds and reoptimizes the restricted master.\n- The final `master_ip` fixes each accumulated pattern's item counts and optimizes only integer usage of those patterns. Its incumbent supplies both `objective_value` and `patterns_out`, which are written to `output.json`. No separate full-original-model solve or solution-producing fallback appears in the supplied source.\n- The explicit status requirement is violated: whenever `master_int.SolCount > 0` and `master_int.Status == GRB.OPTIMAL`, `main()` sets output status to `\"optimal\"` solely from integer restricted-master optimality. There is no global optimality certificate or comparison with a valid global lower bound; even completed LP pricing does not alone certify the integer restricted-master solution globally. This branch is also reachable after time/iteration limits or unsuccessful pricing. Such incumbents must be reported as `\"feasible\"` absent a global proof.\n- This is a source-only assessment; the solver was not executed. The failure concerns the explicit optimality-reporting requirement, not the presence or substantive use of column generation or an observed numerical result.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 22.443887178000296,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2544,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2552
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "979d90ec279b8dd76154b22e81c97fb2a7e03af0a08676ee11151baee023eca7",
+          "invocation_id": "caffb26988e24d7fab6f4bfd8cb571b1"
+        },
+        "execution_seconds": 0.19243166712112725,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 43.559746103997895,
+          "usage": {
+            "input_tokens": 41443,
+            "cached_input_tokens": 36480,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 773,
+            "reasoning_output_tokens": 299
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "25b421d7dbed2f5538f18c6ac4be8f25f6d391d2b1004d9d8ce9392e4001e35c",
+          "invocation_id": "376931c26a744e5695f7ef08b180cf37"
+        },
+        "total_seconds": 123.00785370799713
+      }
+    },
+    {
+      "attempt": 9,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- Genuine column generation is implemented in `main()`: directly constructed single-type seed patterns initialize an LP restricted master; demand-constraint duals (`constrs[i].Pi`) determine the integer knapsack pricing objective; a pricing value above `1.0 + 1e-6` produces `new_pat`, which is appended to `patterns` and incorporated into the next master solve.\n- The final `rm_int` fixes the accumulated pattern compositions and optimizes only their integer usage counts. This is a permitted integer restricted master; no separate full-original-model solve or solution-producing fallback appears in the supplied source.\n- The reachable successful-output branch violates the status requirement: when `rm_int.status == GRB.OPTIMAL` and `rm_int.SolCount > 0`, `status = \"optimal\" if rm_int.status == GRB.OPTIMAL else \"feasible\"` claims global optimality solely from integer restricted-master optimality. No global integer optimality proof is established, even if LP pricing converges; the loop can also terminate on time, iteration limits, or other breaks. The incumbent must be reported as `feasible` absent such a proof.\n- The entry point calls `main()`, which derives pattern usages and `objective_value = sum(u for _, u in usage_list)` from the same `rm_int` incumbent and writes these together with the unsupported status through `json.dump(result, f, indent=2)` to `output.json`. This assessment is source-only; the solver was not executed.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 21.31659963400307,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2407,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2444
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "9d7b18b583ed67046a2657d7bd1ad54cc0ab9fb132eed6cfb4c4530664ec13c6",
+          "invocation_id": "5f9877d8ce4547929739550f56c22407"
+        },
+        "execution_seconds": 0.311406624969095,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 33.00390963999962,
+          "usage": {
+            "input_tokens": 41352,
+            "cached_input_tokens": 36352,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 584,
+            "reasoning_output_tokens": 107
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "edad7aad21172d0606ac506b5c8f8b83152416d0db7a08accda894470f388b04",
+          "invocation_id": "4fcdf7eeced7428ab9deeb3ae85699c8"
+        },
+        "total_seconds": 59.51651008287445
+      }
+    },
+    {
+      "attempt": 10,
+      "status": "verify_failed",
+      "exec_ok": true,
+      "verify_ok": false,
+      "objective": 87.0,
+      "gold_objective": 87.0,
+      "gap_to_gold": 0.0,
+      "issues": [
+        "algorithm_verifier_failed: fail"
+      ],
+      "llm_verdict": "fail",
+      "llm_notes": "VERDICT: FAIL\nNOTES:\n- Source review only; the solver was not executed. The entry point calls main(), which directly constructs single-item seed patterns without solving a separate full-original model.\n- Column generation is substantively implemented: the continuous rmp optimizes usage of current patterns, demand-constraint Pi values become the knapsack pricing objective, and pricing values above 1 + 1e-6 produce patterns.append(new_pat), feeding the next restricted-master solve.\n- The final rmp_int fixes the accumulated pattern compositions and optimizes only their integer usage counts. Its x[p].X values supply both the reported patterns and total_usage written to output.json. No separate monolithic solve or solution-producing fallback is present; no-incumbent and exception paths write error results.\n- The explicit status requirement is violated: status starts as \"optimal\", and an optimal rmp_int sets final_status to \"optimal\" whenever that flag remains unchanged, without a global integer optimality certificate. Normal pricing convergence, duplicate-pattern termination, and exhausting max_iters can all leave the flag unchanged. Optimality of the integer restricted master, even after full LP pricing convergence, does not establish global integer optimality; this reachable output path must report \"feasible\" unless a separate valid global proof is established.",
+      "reused_from_previous": false,
+      "first_success_attempt": null,
+      "stdout": "",
+      "stderr": "",
+      "feasibility_ok": true,
+      "metrics": {
+        "generation": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 30.04600518100051,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2766,
+            "cache_read_input_tokens": 17462,
+            "output_tokens": 2919
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "4d30cd8341a60aa849a1488f68a17f70c008280074d62637dd5820fb7970fe57",
+          "invocation_id": "09fdfd315d6549d29ff2738c874de234"
+        },
+        "execution_seconds": 0.19154641684144735,
+        "execution_timed_out": false,
+        "cooldown_seconds": 0,
+        "algorithm_verification": {
+          "ok": true,
+          "returncode": 0,
+          "elapsed_seconds": 39.390558100003545,
+          "usage": {
+            "input_tokens": 41734,
+            "cached_input_tokens": 27136,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 679,
+            "reasoning_output_tokens": 244
+          },
+          "error": null,
+          "warnings": [],
+          "terminal_state": "completed",
+          "artifact_sha256": "ef6d045fe342475c71cd7ebc994c03d952673bc9049e590e1710b4942485d486",
+          "invocation_id": "56ce53a959964164ac9ecf6292fa1cc9"
+        },
+        "total_seconds": 109.31907162512653
+      }
+    }
+  ]
+}

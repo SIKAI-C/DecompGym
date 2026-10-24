@@ -1,16 +1,14 @@
 # custom files
 .vscode/*
 z_artifacts
-test*.py
-test*.md
+/test*.py
+/test*.md
 api_info.md
-/docs/
-# Local outputs, except two curated teaching trajectories.
+/docs/*
+!/docs/problems.md
+# Local outputs, except the curated example trajectory.
 /outputs/*
 !/outputs/examples/
-/outputs/examples/*
-!/outputs/examples/without_reflection/
-!/outputs/examples/with_reflection/
 # Generated plots can be rebuilt; the teaching figures live in assets/.
 /data/**/plots/
 !tests/
@@ -18,11 +16,6 @@ api_info.md
 !tests/**/*.py
 .DS_Store
 .mplconfig/
-
-# Local figure-authoring and macOS monitoring utilities
-/src/06_draw_workflow.py
-/src/07_draw_formulations.py
-/src/08_monitor_experiments.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

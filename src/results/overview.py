@@ -23,4 +23,7 @@ def build(out: Path) -> Path:
         for _ in range(2):
             subprocess.run(["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "overview.tex"], cwd=directory, env=environment, check=True, capture_output=True)
         shutil.copyfile(Path(directory) / "overview.pdf", target)
+    if shutil.which("gs"):
+        # A PNG for the README; the paper uses the PDF.
+        subprocess.run(["gs", "-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=png16m", "-r200", f"-sOutputFile={target.with_suffix('.png')}", str(target)], check=True)
     return target

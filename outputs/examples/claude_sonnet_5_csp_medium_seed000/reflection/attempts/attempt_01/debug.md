@@ -1,0 +1,13 @@
+# Debug Reflection — attempt_01
+
+## Diagnosis
+The verifier failed the attempt on a single concrete defect: the final status-reporting logic conflates "integer restricted master solved to optimality" with "global optimality." The line `if final.Status == GRB.OPTIMAL: status = "optimal"` reports `optimal` whenever the final integer solve over the accumulated columns terminates optimally, but this only proves optimality of the restricted master (a subset of all possible cutting patterns), not of the original cutting-stock problem. Since the LP relaxation's column generation loop stops as soon as no column has reduced cost > 1 (i.e., LP-optimal for the restricted set), and the integer master is then solved separately, there is no global lower bound (e.g., ceil(LP relaxation objective) compared against the integer incumbent, or proof that no further columns could improve the integer solution) ever computed or checked. So the reported "optimal" status is unsupported — everything else in the algorithm (seed patterns, dual-based knapsack pricing, iterative column addition, final integer solve) was judged structurally sound and compliant with the decomposition requirements.
+
+## Root cause
+Status assignment used local (restricted master) optimality as a proxy for global optimality without any certificate.
+
+## Concrete changes for next attempt
+1. Always report `status = "feasible"` for the incumbent produced by the final integer restricted-master solve, unless a genuine global optimality certificate is constructed (e.g., comparing the final integer objective to a valid lower bound such as ceil(final LP relaxation bound) AND confirming the pricing loop terminated because no improving column exists at the LP optimum, not merely because of a time/iteration cutoff).
+2. Simplest compliant fix: unconditionally set `status = "feasible"` when returning any incumbent from the integer restricted master, since optimality of that integer program does not prove global optimality of the original cutting-stock problem (as stated explicitly in the task requirements). Only use `"optimal"` if the column-generation loop provably converged (no improving column exists, i.e., pricing objective <= 1 + tol) AND the final integer master's objective equals the LP relaxation's rounded-up bound — otherwise default to `"feasible"`.
+3. Keep all other logic (seed patterns, duals from master, knapsack pricing subproblem, final integer solve over accumulated columns) unchanged — it already satisfies the decomposition requirements and avoids any monolithic full-model solve.
+4. Double check: if `sub.Status == GRB.TIME_LIMIT` is used to break the loop (not a proven no-improving-column condition), that path must also report `"feasible"`, not `"optimal"`.

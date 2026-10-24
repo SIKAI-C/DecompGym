@@ -1,0 +1,57 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a 1D cutting stock problem:
+  - Stock length W = 247 cm.
+  - Item types i=0..m-1, each with width size[i] and demand demand[i].
+  - Objective: minimize number of stock pieces used.
+
+Context: a manufacturing operation cutting stock material into ordered widths.
+
+Input file data.json contains:
+  - "stock_size" (or "roll_width"), "stock_unit"
+  - "item_types": list of { "id": int, "name": str, "size": int, "demand": int }
+
+Examples from this instance:
+  - PaperProduct_0 (id=0, size=137, demand=41)
+  - PaperProduct_1 (id=1, size=77, demand=35)
+  - PaperProduct_2 (id=2, size=29, demand=60)
+  - PaperProduct_3 (id=3, size=57, demand=29)
+  - ...
+
+Task:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the cutting stock problem,
+3) writes output.json with at least:
+{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "column_generation",
+  "objective_value": <#stock pieces used>,
+  "solution": {
+    "patterns": [
+      {
+        "pattern_id": <int>,
+        "usage": <int>,
+        "cuts": [
+          {
+            "item_id": <int>,
+            "count": <int>
+          },
+          ...
+        ]
+      },
+      ...
+    ]
+  }
+}
+Each pattern's total width must not exceed stock_size. Across all patterns (accounting for usage) every item demand must be met.
+
+Decomposition method requirements:
+
+Use a restricted master problem and pricing subproblems. Use master dual or reduced-cost information to generate columns, add useful columns to the restricted master, and reoptimize iteratively. A final integer solve of the restricted master over the accumulated columns is allowed. Construct the reported solution from this column-generation procedure.
+
+Do not build and solve a separate monolithic optimization model of the full original problem, including for an initial incumbent, initialization, a warm start, a fallback, the reported solution, or an optimality certificate. This prohibition includes a full-original-model feasibility solve with a zero objective and applies to every reachable solution-producing path, including conditional fallback paths, even when decomposition also runs.
+
+Heuristic initialization, directly constructed seed columns, phase-I restricted masters with artificial variables and pricing, valid initial bounds or cuts, and warm-starting a legitimate decomposition master are allowed. A permitted initialization must not obtain its solution from a separate full-original-model solve. The restriction concerns that separate full model, not legitimate decomposition masters, fixed-decision subproblems, pricing problems, or integer restricted masters.
+
+Implement the information feedback required by the requested method. There is no minimum iteration count and no requirement that every instance add a cut or column, or improve the initial incumbent: legitimate immediate convergence or termination is allowed. Report mutually consistent decisions and objective values from the same incumbent. Use status feasible when returning an incumbent without a global optimality proof; optimality of an integer restricted master alone does not prove global optimality.

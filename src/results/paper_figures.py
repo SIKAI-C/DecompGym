@@ -15,7 +15,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
-from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
 from matplotlib.ticker import PercentFormatter
 import numpy as np
 
@@ -29,7 +28,7 @@ FAMILIES = ("bd/ufl", "bd/fctp", "bd/km", "bd/lrp", "bd/tsso", "cg/bp", "cg/csp"
 SIZE_COLORS = ("#1b9e77", "#d95f02", "#7570b3")
 # ColorBrewer Paired, four classes, colorblind rating 1.
 STAGE_COLORS = ("#a6cee3", "#1f78b4", "#b2df8a", "#33a02c")
-FIGURE_SIZES = {"paired": (8, 5), "matrix": (8, 5.4), "single": (8, 5), "stages": (8, 9), "workflow": (8, 4.8)}
+FIGURE_SIZES = {"paired": (8, 5), "matrix": (8, 5.4), "single": (8, 5), "stages": (8, 9)}
 # Budget columns of the result tables: Q@1 is shared, then each policy at budgets 2, 3 and 10.
 TABLE_BUDGETS = ((1, "plain"), (2, "plain"), (2, "reflection"), (3, "plain"), (3, "reflection"), (10, "plain"), (10, "reflection"))
 PLOT_PRESENTATION = {"attempt_quality_ymin": .4, "stage_success_ymin": .5, "size_quality_ymin": .85, "reflection_gain_budgets": [2, 3], "main_table_unit": "percent (one decimal)", "family_matrix_unit": "successes / 9"}
@@ -212,83 +211,6 @@ def cost_breakdown(data, resources, output):
     save(fig, output, "cost_breakdown")
 
 
-def workflow(output):
-    fig, ax = plt.subplots(figsize=FIGURE_SIZES["workflow"])
-    fig.subplots_adjust(left=.01, right=.99, bottom=.015, top=.985)
-    ax.set(xlim=(0, 100), ylim=(0, 60))
-    ax.axis("off")
-    # ColorBrewer Paired (4), colorblind rating 1; neutral fills support the two accents.
-    blue, green, ink, muted = "#1f78b4", "#33a02c", "#213547", "#526574"
-
-    def box(x, y, w, h, fill="white", edge="#d6dfe5", lw=.8, radius=.8):
-        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle=f"round,pad=0,rounding_size={radius}", ec=edge, fc=fill, lw=lw))
-
-    def txt(x, y, text, size=9, color=ink, weight="normal", ha="left", **kwargs):
-        ax.text(x, y, text, fontsize=size, color=color, weight=weight, ha=ha, va="center", **kwargs)
-
-    def arrow(start, end, color=muted, lw=1.1, **kwargs):
-        ax.add_patch(FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=9, color=color, lw=lw, **kwargs))
-
-    def badge(x, y, text, color, radius=1.65, size=8.5):
-        ax.add_patch(Circle((x, y), radius, ec="none", fc=color))
-        txt(x, y, text, size, "white", "bold", ha="center")
-
-    txt(50, 57.6, "DecompBench: from optimization tasks to verified solvers", 13.2, weight="bold", ha="center")
-    txt(50, 53.9, "81 common instances  ·  12 coding-agent configurations  ·  972 paired evaluations", 9.2, muted, ha="center")
-    for x, w, fill, color, number, title in [(1, 29, "#f2f8fc", blue, "01", "Specify the task"), (35, 30, "#f6f8fa", muted, "02", "Build the solver"), (70, 29, "#f3f9f1", green, "03", "Verify the result")]:
-        box(x, 27, w, 23.5, fill)
-        badge(x+3.1, 47.1, number, color)
-        txt(x+5.8, 47.1, title, 10.5, weight="bold")
-
-    txt(4, 40, "81", 25, blue, "bold")
-    txt(14, 42.1, "fixed instances", 9.3, weight="bold")
-    txt(14, 38.5, "9 families", 9, muted)
-    txt(14, 35.5, "3 sizes × 3 seeds", 9, muted)
-    box(3.6, 30.2, 12, 3.6, "#a6cee3", edge="none")
-    box(17, 30.2, 9.4, 3.6, "#b2df8a", edge="none")
-    txt(9.6, 32, "45 Benders", 9, weight="bold", ha="center")
-    txt(21.7, 32, "36 CG", 9, weight="bold", ha="center")
-    txt(15.5, 28.3, "Task + data + method contract", 8.8, muted, ha="center")
-
-    box(38, 31.4, 24, 12.3, "white", edge="#c5d1da")
-    txt(40, 41.1, "</>", 12, blue, "bold", fontfamily="DejaVu Sans Mono")
-    txt(47.4, 41, "solver.py", 9.3, weight="bold", fontfamily="DejaVu Sans Mono")
-    ax.plot([39.5, 60.5], [38.7, 38.7], color="#d6dfe5", lw=.7)
-    txt(50, 36.2, "Master ⇄ subproblems", 9, ha="center")
-    txt(50, 33.2, "Decisions + objective", 9, muted, ha="center")
-    txt(50, 28.7, "Gurobi + NumPy + Python", 9, muted, ha="center")
-
-    for y, gate, title, detail in [(41.5, "E", "Executable", "60 seconds · one thread"), (35.5, "V", "Verified", "Feasibility + method use"), (29.5, "Q", "Quality", "Within 1% of reference")]:
-        badge(73.8, y+.6, gate, green, radius=1.45, size=9)
-        txt(77, y+1.1, title, 9.3, weight="bold")
-        txt(77, y-1.4, detail, 8.8, muted)
-    for y in (39.9, 33.9):
-        arrow((73.8, y), (73.8, y-1.7), green, .8)
-    arrow((30.6, 38.7), (34.5, 38.7))
-    arrow((65.6, 38.7), (69.5, 38.7))
-
-    ax.plot([84.5, 84.5, 24.5], [27, 24.2, 24.2], color=muted, lw=.9)
-    txt(50, 24.2, "Shared first candidate · retry after failure", 9, muted, ha="center", bbox={"facecolor":"white", "edgecolor":"none", "pad":2})
-    for x in (24.5, 75.5):
-        arrow((x, 24.2), (x, 21.8), muted, .9)
-
-    for x, color, fill, title, nodes, note in [(1, blue, "#f2f8fc", "Without reflection", ("Original task", "Generate", "Evaluate"), "Fresh generation from the original task"), (52, green, "#f3f9f1", "With reflection", ("Diagnose", "Revise", "Evaluate"), "Carry failed code + written advice forward")]:
-        box(x, 5.3, 47, 16.4, fill)
-        txt(x+23.5, 18.8, title, 10.8, weight="bold", ha="center")
-        centers = [x+8, x+23.5, x+39]
-        for center, node in zip(centers, nodes):
-            box(center-6.3, 11.8, 12.6, 4.4, "white", edge=color, radius=.55)
-            txt(center, 14, node, 9, ha="center")
-        for first, second in zip(centers, centers[1:]):
-            arrow((first+6.5, 14), (second-6.5, 14), color, .9)
-        ax.plot([centers[-1], centers[-1], centers[0], centers[0]], [11.8, 9.7, 9.7, 10.7], color=color, lw=.8)
-        arrow((centers[0], 10.7), (centers[0], 11.8), color, .8)
-        txt(x+23.5, 9.7, "if unsuccessful", 8.8, color, ha="center", bbox={"facecolor":fill, "edgecolor":"none", "pad":1})
-        txt(x+23.5, 7, note, 9, muted, ha="center")
-    txt(50, 2.2, "Stop at quality success or 10 candidates  ·  Compare success, agent time, and tokens", 9, ink, ha="center")
-    save(fig, output, "benchmark_workflow")
-
-
 def tex_table(path, columns, header, rows):
     text = [r"\begin{tabular}{" + columns + "}", r"\toprule", header + r" \\", r"\midrule"]
     text.extend(" & ".join(map(str, row)) + r" \\" for row in rows)
@@ -362,7 +284,7 @@ def tables(data, resources, output):
     write_csv(dest/"first_success.csv", first)
 
 
-FIGURES = ("benchmark_workflow", "attempt_quality", "reflection_gain", "size_quality", "family_quality", "stage_success", "agent_time", "agent_tokens", "cost_breakdown")
+FIGURES = ("attempt_quality", "reflection_gain", "size_quality", "family_quality", "stage_success", "agent_time", "agent_tokens", "cost_breakdown")
 TABLES = ("main_results", "resource_costs", "size_results", "staged_counts", "instance_sizes", "gemini_usage")
 
 
@@ -382,7 +304,7 @@ def build(out):
     models, pairs = check_dataset(data)
     for folder in ("figures","tables","qa"):(out/folder).mkdir(exist_ok=True)
     setup();tables(data,resources,out)
-    workflow(out);success_curves(data,out);gains(data,out);size_curves(data,out);family_matrix(data,out);stages(data,out)
+    success_curves(data,out);gains(data,out);size_curves(data,out);family_matrix(data,out);stages(data,out)
     resource_curve(data,resources,out,"time_to_quality_agent_seconds","agent_time","Cumulative agent time (seconds)")
     resource_curve(data,resources,out,"tokens_to_quality","agent_tokens","Cumulative context + output tokens")
     cost_breakdown(data,resources,out)

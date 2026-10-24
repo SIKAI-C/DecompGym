@@ -4,7 +4,8 @@
     python src/03_analysis.py                          # rebuild from the saved audit snapshot
     python src/03_analysis.py --paper ../paper         # also compare with (or, with --update, copy into) a paper folder
 
-Outputs go to outputs/reports/paper/{figures,tables,prompts,qa}. Nothing here calls a model or runs a solver.
+Everything is written to outputs/reports/paper/ (with the audit snapshot and QA files); the small artifacts and a
+summary page are also published to the tracked results/ folder. Nothing here calls a model or runs a solver.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ sys.path.insert(0, str(REPOSITORY))
 # Fixed timestamps keep the generated PDFs byte-reproducible.
 os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
 
-from src.results import failures, overview, paper_figures, prompt_excerpts, verify  # noqa: E402
+from src.results import failures, overview, paper_figures, prompt_excerpts, summary, verify  # noqa: E402
 from src.results.snapshot import build_snapshot  # noqa: E402
 
 
@@ -75,6 +76,7 @@ def main(argv=None):
     parser.add_argument("--experiments", type=Path, default=REPOSITORY / "outputs/experiments", help="folder containing the two paper campaign roots")
     parser.add_argument("--output", type=Path, default=REPOSITORY / "outputs/reports/paper")
     parser.add_argument("--refresh", action="store_true", help="re-audit the raw campaign records instead of reusing the saved snapshot")
+    parser.add_argument("--results", type=Path, default=REPOSITORY / "results", help="tracked folder for the published figures, tables and summary")
     parser.add_argument("--paper", type=Path, help="paper folder (with figures/, tables/, prompts/) to compare against")
     parser.add_argument("--update", action="store_true", help="with --paper, copy the generated artifacts into the paper folder")
     args = parser.parse_args(argv)
@@ -90,6 +92,7 @@ def main(argv=None):
                              "analysis_modules": {p.name: digest(p) for p in sorted((REPOSITORY / "src/results").iterdir()) if p.is_file()}, "artifacts": artifacts,
                              "generated_at": datetime.now(timezone.utc).isoformat()}
     (out / "results_provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
+    summary.publish(out, args.results.resolve())
     print(json.dumps({"output": str(out), "artifacts": len(artifacts), "verification": checks["status"]}, indent=2))
     if args.paper:
         paper = args.paper.resolve()

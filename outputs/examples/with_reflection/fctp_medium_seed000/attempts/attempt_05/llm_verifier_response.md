@@ -1,1 +1,0 @@
-[alg_verifier.md](alg_verifier.md) was written with `VERDICT: PASS` and supporting evidence.
