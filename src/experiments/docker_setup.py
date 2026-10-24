@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 
 from src.agent.container import DockerRuntime
 from src.agent.docker_client import AUTH_VOLUMES, CLI_VERSIONS, DOCKER_EDIT_POLICY, DockerCliClient, IMAGE_TAG, credential_from_environment, worker_file_hashes
@@ -168,16 +169,44 @@ def verify_backend(backend, evidence_root, *, engine, image_id, credential):
         raise RuntimeError("The synthetic file-handoff check did not pass; inspect its preserved records")
 
 
+def agy_login(command, *, image=IMAGE_TAG, volume=None):
+    """Sign in to Antigravity once (`login`) or check the saved login (`models`) in the agent image.
+
+    The keyring volume is created on first use. docker/agents/agy_login.py is mounted read-only for this
+    container only, so the agent image and its worker hashes stay unchanged.
+    """
+    if not os.isatty(0) or not os.isatty(1):
+        raise RuntimeError("Run this in your own terminal; it asks for a hidden passphrase and the Google sign-in code")
+    engine = runtime()
+    image_id = engine.image_id(image)
+    volume = volume or AUTH_VOLUMES["agy-cli"]
+    engine.ensure_volume(volume, "agy-native-auth", label="io.decompbench.purpose", create=command == "login")
+    script = Path(__file__).resolve().parents[2] / "docker/agents/agy_login.py"
+    arguments = engine.cli("run", "--rm", "-it", "--init", "--pull", "never", "--platform", "linux/arm64", "--user", "1000:1000", "--cap-drop", "ALL",
+                           "--security-opt", "no-new-privileges", "--security-opt", f"seccomp={engine.seccomp_profile}", "--read-only", "--log-driver", "none",
+                           "--pids-limit", "128", "--memory", "1536m", "--cpus", "2", "--network", "bridge",
+                           "--tmpfs", "/tmp:rw,nosuid,nodev,size=128m", "--tmpfs", "/home/node:rw,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=0700",
+                           "--tmpfs", "/run/user/1000:rw,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=0700",
+                           "--mount", f"type=volume,src={volume},dst=/auth/keyrings", "--mount", f"type=bind,src={script},dst=/opt/login/agy_login.py,readonly",
+                           "--env", "HOME=/home/node", "--env", "TERM=xterm-256color", "--entrypoint", "dbus-run-session", image_id, "--", "python3", "/opt/login/agy_login.py", command)
+    returncode = subprocess.call(arguments)
+    if returncode:
+        raise RuntimeError("Antigravity sign-in did not finish with a sealed login and the required model; see the messages above")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["prepare", "auth"])
+    parser.add_argument("command", choices=["prepare", "auth", "agy-login", "agy-models"], help="agy-login: one-time Antigravity sign-in; agy-models: check the saved login")
     parser.add_argument("--backend", choices=BACKENDS)
     parser.add_argument("--image", default=IMAGE_TAG)
     parser.add_argument("--verify", action="store_true", help="After auth, make one unscored model edit and run the supplied synthetic Gurobi program")
     parser.add_argument("--evidence-root", type=Path, default=Path("outputs/runtime"))
+    parser.add_argument("--agy-volume", help="agy-login/agy-models only: use another keyring volume, e.g. to test a fresh sign-in")
     args = parser.parse_args(argv)
     if args.command == "prepare":
         prepare(args.evidence_root.resolve(), image=args.image)
+    elif args.command in ("agy-login", "agy-models"):
+        agy_login(args.command.split("-")[1], image=args.image, volume=args.agy_volume)
     elif not args.backend:
         parser.error("auth requires --backend")
     else:
