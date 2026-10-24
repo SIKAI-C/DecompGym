@@ -52,9 +52,10 @@ def publish(out: Path, results: Path):
     data = json.loads((out / "combined.json").read_text())
     for folder, pattern in (("figures", "*.png"), ("tables", "*.tex"), ("prompts", "*.txt")):
         target = results / folder
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(parents=True)
+        target.mkdir(parents=True, exist_ok=True)
+        for stale in target.glob(pattern):
+            if (out / folder / stale.name).exists() or stale.name != "benchmark_overview.png":
+                stale.unlink()
         for path in sorted((out / folder).glob(pattern)):
             shutil.copyfile(path, target / path.name)
     shutil.copyfile(out / "results_provenance.json", results / "provenance.json")

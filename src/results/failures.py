@@ -1,4 +1,4 @@
-"""Candidate-level failure anatomy for the DecompBench paper cohort.
+"""Candidate-level failure anatomy for the paper campaigns.
 
 Reads the saved per-attempt summaries of the 972 audited pairs (read-only) and the manual
 method-judge labels in src/results/failure_labels.json. Each physical candidate is assigned the

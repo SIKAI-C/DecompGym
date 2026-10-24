@@ -5,7 +5,8 @@
     python src/03_analysis.py --paper ../paper         # also compare with (or, with --update, copy into) a paper folder
     python src/03_analysis.py --campaign outputs/experiments/my_run   # audit any one campaign and export its report
 
-Building the paper artifacts needs pdflatex (TikZ, helvet, inconsolata, fontawesome5) and Ghostscript (gs).
+Only the overview diagram (Figure 1) is drawn in TikZ and needs pdflatex; without it that one figure is skipped.
+Ghostscript (gs), if present, adds a PNG of the diagram and lets --paper compare PDFs by their rendering.
 
 Everything is written to outputs/reports/paper/ (with the audit snapshot and QA files); the small artifacts and a
 summary page are also published to the tracked results/ folder. Nothing here calls a model or runs a solver.
@@ -92,15 +93,16 @@ def main(argv=None):
         export_campaign_report(build_campaign_report(root, models=args.models), destination)
         print(destination / "report.md")
         return
-    missing = [tool for tool in ("pdflatex", "gs") if shutil.which(tool) is None]
-    if missing:
-        raise SystemExit(f"Missing {' and '.join(missing)}: the overview figure needs pdflatex and its PNG and rendering checks need Ghostscript")
     out = (args.output or REPOSITORY / "outputs/reports/paper").resolve()
     build_snapshot(args.experiments.resolve(), out, refresh=args.refresh or not (out / "source_original/evaluation.json").exists())
     manifest = paper_figures.build(out)
     failures.build(out)
     checks = verify.verify(out)
-    overview.build(out)
+    # Only the overview diagram (Figure 1) is a TikZ drawing; everything else is plain Python.
+    if shutil.which("pdflatex"):
+        overview.build(out)
+    else:
+        print("pdflatex not found: skipping the overview diagram (Figure 1); all other artifacts are built", flush=True)
     prompt_excerpts.write(args.experiments.resolve(), out)
     artifacts = {f"{folder}/{p.name}": digest(p) for folder, pattern in ARTIFACTS.items() for p in sorted((out / folder).glob(pattern))}
     provenance = manifest | {"verification": {k: checks[k] for k in ("status", "physical_policy_summaries_read", "candidate_budget_states_checked", "printed_percentage_cells_checked")},

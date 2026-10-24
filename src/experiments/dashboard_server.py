@@ -1,4 +1,4 @@
-"""Read-only localhost dashboard for a running DecompBench campaign (standard library only)."""
+"""Read-only localhost dashboard for a running DecompGym campaign (standard library only)."""
 
 from __future__ import annotations
 
@@ -447,7 +447,7 @@ def handler_for(dashboard):
                 elif url.path == "/report":
                     contents = dashboard.report_artifact("report.md")
                     links = " ".join(f'<a class="button" href="/api/report-artifact?name={name}">{name}</a>' for name in ("evaluation.json", "paired_curves.csv", "physical_calls.csv", "case_costs.csv", "paired_cost_differences.csv"))
-                    page = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DecompBench · Audited report</title><link rel="stylesheet" href="/style.css"><main><p><a href="/">← Live monitor</a></p><h1>Audited report snapshot</h1><p>This report has a fixed snapshot time. Live progress is on the monitor.</p><div class="report-downloads">' + links + '</div><pre class="report-text">' + html.escape(contents) + '</pre></main></html>'
+                    page = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DecompGym · Audited report</title><link rel="stylesheet" href="/style.css"><main><p><a href="/">← Live monitor</a></p><h1>Audited report snapshot</h1><p>This report has a fixed snapshot time. Live progress is on the monitor.</p><div class="report-downloads">' + links + '</div><pre class="report-text">' + html.escape(contents) + '</pre></main></html>'
                     self.send_body(200, page.encode(), "text/html; charset=utf-8")
                 elif url.path == "/api/report-artifact":
                     name = parse_qs(url.query).get("name", [""])[0]

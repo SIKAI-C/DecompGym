@@ -4,8 +4,7 @@ z_artifacts
 /test*.py
 /test*.md
 api_info.md
-/docs/*
-!/docs/problems.md
+/docs/
 # Local outputs, except the curated example trajectory.
 /outputs/*
 !/outputs/examples/

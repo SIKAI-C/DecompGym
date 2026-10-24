@@ -1,4 +1,4 @@
-"""Read-only token accounting for audited DecompBench snapshots."""
+"""Read-only token accounting for audited campaign snapshots."""
 from __future__ import annotations
 
 from collections import defaultdict

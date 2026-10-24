@@ -1,4 +1,4 @@
-"""Teaching charts for docs/problems.md: reference bound and column progress from the saved reference records in data/.
+"""Teaching charts for the README's problem formulations: reference bound and column progress from the saved reference records in data/.
 
     python -m src.results.teaching_figures      # writes assets/formulations/*.png; no model is solved
 """
