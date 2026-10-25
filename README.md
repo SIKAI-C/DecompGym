@@ -74,7 +74,7 @@ The paper evaluates 12 configurations, all at medium effort: five GPT models thr
 
 </details>
 
-All tables, figures and the prompt examples of the paper are in [results/](results/README.md). One complete trajectory, the paper's case study, is in [outputs/examples/](outputs/examples/claude_sonnet_5_csp_medium_seed000/README.md).
+All tables, figures and the prompt examples of the paper are in [results/](results/README.md). One complete trajectory, GPT-5.6 Luna solving a fixed-charge transportation instance with Benders decomposition on its third attempt, is in [outputs/examples/](outputs/examples/gpt_5_6_luna_fctp_medium_seed000/README.md).
 
 ## Quick start
 

@@ -1,0 +1,57 @@
+{
+  "attempt": 2,
+  "status": "feasible_not_optimal",
+  "exec_ok": true,
+  "verify_ok": true,
+  "objective": 904.6569059228543,
+  "gold_objective": 697.3909219318721,
+  "gap_to_gold": 0.2972020103399482,
+  "issues": [],
+  "llm_verdict": "pass",
+  "llm_notes": "VERDICT: PASS\nNOTES:\n- Source-only review: `__main__` calls `solve()`, then writes its returned result to `output.json`; exceptions produce an error result. The solver was not executed.\n- `solve()` builds a master containing binary lane decisions `y` and recourse estimate `theta`, minimizing fixed costs plus `theta`. `fixed_subproblem()` optimizes only flows `x`, with lane decisions fixed through bounds `x[i, j] <= capacity[i, j] * y_value[i][j]`.\n- Initialization fixes every lane open in `seed_y` and solves that same flow-only subproblem. An optimal seed supplies a stored incumbent with its fixed costs, recourse cost, and matching decisions; this is not a separate full-original-model solve.\n- Each loop solves the master and passes its chosen `y_value` to the recourse LP. Optimal recourse supplies dual multipliers for `theta >= constant + sum(capacity * cap_con.Pi * y)`, which is added to the master before subsequent reoptimization. Infeasible recourse triggers feasibility feedback; because all subset cuts are already registered, the fallback excludes the infeasible binary pattern with `expr >= 1.0`.\n- Feasible recourse solutions update the stored incumbent. Matching optimal master bounds can terminate the loop immediately; the optional final solve reoptimizes only the existing `y`/`theta` master for a bound certificate. No reachable path builds or solves a separate model jointly optimizing the original lane and flow decisions.\n- The returned objective, `y`, and `x` come from the same stored incumbent, with status `optimal` when `proven` is set by the master-bound comparison and `feasible` otherwise. `result()` packages these values for the entry point's JSON write.",
+  "reused_from_previous": false,
+  "first_success_attempt": null,
+  "stdout": "Set parameter Username\nSet parameter ThreadLimit to value 1\nSet parameter Threads to value 1\nRead parameters from file gurobi.env\nLimit parameter Threads to value 1\nAcademic license - for non-commercial use only - expires 2026-12-17\n",
+  "stderr": "",
+  "feasibility_ok": true,
+  "metrics": {
+    "generation": {
+      "ok": true,
+      "returncode": 0,
+      "elapsed_seconds": 57.72254090199999,
+      "usage": {
+        "input_tokens": 95504,
+        "cached_input_tokens": 71424,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 5559,
+        "reasoning_output_tokens": 2156
+      },
+      "error": null,
+      "warnings": [],
+      "terminal_state": "completed",
+      "artifact_sha256": "7d6065323efbad06bf07ece6d9de1ea0d364a83549c06c358ab684fc4e1b6140",
+      "invocation_id": "a50eff247c10491585d59d03d13673ff"
+    },
+    "execution_seconds": 55.3922296250239,
+    "execution_timed_out": false,
+    "cooldown_seconds": 10,
+    "algorithm_verification": {
+      "ok": true,
+      "returncode": 0,
+      "elapsed_seconds": 26.163782595000043,
+      "usage": {
+        "input_tokens": 43993,
+        "cached_input_tokens": 38144,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 569,
+        "reasoning_output_tokens": 32
+      },
+      "error": null,
+      "warnings": [],
+      "terminal_state": "completed",
+      "artifact_sha256": "52def90927c516c675dd5faed87a70fe6b1f555b289b63945fd71f5e7f680cb2",
+      "invocation_id": "9b03eee07a1846ee80574e701bfac8f3"
+    },
+    "total_seconds": 151.47415137500502
+  }
+}

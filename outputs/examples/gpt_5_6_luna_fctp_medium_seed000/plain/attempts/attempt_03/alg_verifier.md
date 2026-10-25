@@ -1,0 +1,6 @@
+VERDICT: PASS
+NOTES:
+- Source-only review: the entry point calls main(), which repeatedly solves a master containing binary opening decisions yvar and recourse estimate theta, minimizing fixed opening costs plus theta.
+- With candidate_y fixed from the master, max_flow_cut() computes network feasibility; insufficient flow adds a capacity feasibility cut to the same master before the next solve. solve_subproblem() optimizes only continuous shipment variables x, with capacities fixed to capacity * candidate_y, and returns shipment cost and LP duals. Those duals generate theta >= cut_rhs optimality cuts used by subsequent master solves.
+- If the recourse solve returns None after the flow check, the reachable numerical_exclusion branch adds a master constraint and continues; it does not solve a separate full model. The only optimization models are the decomposition master and fixed-decision recourse LP; there is no monolithic initialization, final solve, or fallback.
+- Each improving feasible recourse result stores incumbent_obj, incumbent_y, and incumbent_x together. main() passes those stored values to write_output(), which writes output.json, marking the incumbent feasible unless the master bound establishes optimality. The no-incumbent and exception paths write empty results and perform no additional optimization.
