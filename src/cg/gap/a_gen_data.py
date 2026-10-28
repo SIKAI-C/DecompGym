@@ -163,3 +163,31 @@ def generate_gap_instance(
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
     return data
+
+
+# Extra-large scale-up tier (exploration; the paper sizes above are unchanged).
+# Chu-Beasley type D: resource and cost are inversely correlated and capacities are tight,
+# which keeps the instances hard for monolithic MIP.
+XL_CONFIG = {"n_machines_range": (10, 20), "jobs_per_machine": (10, 20), "resource_range": (1, 100), "cost_noise": 10, "capacity_share": 0.8}
+
+
+def generate_gap_xl_instance(seed: int, output_dir: str | Path | None = None) -> dict[str, Any]:
+    cfg = XL_CONFIG
+    rng = random.Random(seed)
+    n_machines = rng.randint(*cfg["n_machines_range"])
+    n_jobs = n_machines * rng.randint(*cfg["jobs_per_machine"])
+    a = [[rng.randint(*cfg["resource_range"]) for _ in range(n_machines)] for _ in range(n_jobs)]
+    c = [[float(111 - a[i][j] + rng.randint(-cfg["cost_noise"], cfg["cost_noise"])) for j in range(n_machines)] for i in range(n_jobs)]
+    capacities = [int(cfg["capacity_share"] * sum(a[i][j] for i in range(n_jobs)) / n_machines) for j in range(n_machines)]
+    machines = [GAPMachine(id=j, name=f"Plant_{j}", capacity=capacities[j]) for j in range(n_machines)]
+    jobs = [
+        GAPJob(id=i, name=f"Order_{i}", assignments=[GAPAssignment(machine_id=j, resource=a[i][j], cost=c[i][j]) for j in range(n_machines)])
+        for i in range(n_jobs)
+    ]
+    inst = GAPInstance(instance_size="xl", machines=machines, jobs=jobs)
+    data = inst.to_dict()
+    if output_dir is not None:
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        inst.to_json_file(out_dir / "data.json")
+    return data

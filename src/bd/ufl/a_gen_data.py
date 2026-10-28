@@ -206,3 +206,43 @@ def generate_ufl_instance(
         inst.to_json_file(out_dir / "data.json")
 
     return data
+
+
+# -----------------------
+# Extra-large scale-up variants (exploration; the paper sizes above are unchanged)
+# -----------------------
+
+XL_CONFIG = {
+    # The paper recipe, scaled up; fixed costs grow with n/m so that a similar share of sites opens.
+    "xl": {"m_range": (150, 200), "n_range": (600, 1000)},
+    # Koerkel-Ghosh type B: non-metric uniform costs, known to be hard for monolithic MIP.
+    "xl_kg": {"mn_range": (250, 400), "cost_range": (1000, 2000), "fixed_range": (1000, 2000)},
+}
+
+
+def generate_ufl_xl_instance(seed: int, variant: str = "xl", output_dir: str | Path | None = None) -> dict[str, Any]:
+    """Generate an extra-large UFL instance for the scale-up study."""
+    if variant not in XL_CONFIG:
+        raise ValueError(f"Unknown variant '{variant}'. Expected one of {list(XL_CONFIG)}.")
+    cfg = XL_CONFIG[variant]
+    rng = np.random.default_rng(seed)
+    if variant == "xl":
+        m = int(rng.integers(cfg["m_range"][0], cfg["m_range"][1] + 1))
+        n = int(rng.integers(cfg["n_range"][0], cfg["n_range"][1] + 1))
+        inst = UFLGenerator(seed=seed).generate_instance(m=m, n=n, seed=seed)
+        # The paper's large tier has about 30 sites and 90 customers.
+        inst.f = np.round(inst.f * (n / 90.0) * (30.0 / m), 2)
+    else:
+        m = n = int(rng.integers(cfg["mn_range"][0], cfg["mn_range"][1] + 1))
+        D = rng.integers(cfg["cost_range"][0], cfg["cost_range"][1] + 1, size=(m, n)).astype(float)
+        f = rng.integers(cfg["fixed_range"][0], cfg["fixed_range"][1] + 1, size=m).astype(float)
+        # Coordinates are placeholders for plotting only; costs are not geometric.
+        Xc = rng.random((n, 2))
+        Xf = rng.random((m, 2))
+        inst = UFLInstance(m=m, n=n, Xc=Xc, Xf=Xf, f=f, D=D)
+    data = inst.to_dict()
+    if output_dir is not None:
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        inst.to_json_file(out_dir / "data.json")
+    return data
