@@ -32,7 +32,7 @@ ARTIFICIAL_COST = 1e4
 
 class PartitionBranchAndPrice:
     def __init__(self, n_items: int, conflicts: list[tuple[int, int]], *, weights: list[int] | None = None, capacity: int | None = None,
-                 time_limit: float = 60.0, root_only: bool = False, max_columns_per_pricing: int = 10) -> None:
+                 time_limit: float = 60.0, root_only: bool = False, max_columns_per_pricing: int = 10, covering_master: bool = False) -> None:
         self.n = n_items
         self.conflicts = sorted({(min(a, b), max(a, b)) for a, b in conflicts if a != b})
         self.weights = weights
@@ -40,6 +40,11 @@ class PartitionBranchAndPrice:
         self.runtime = ReferenceRuntime(time_limit)
         self.root_only = root_only  # True: the price-and-branch shortcut (root CG + one integer master)
         self.k = max_columns_per_pricing
+        # Covering rows (>= 1) give the classical Mehrotra-Trick master; only the root-only shortcut may use it,
+        # because the Ryan-Foster decoding below needs partitioning rows.
+        if covering_master and not root_only:
+            raise ValueError("branching requires the set-partitioning master")
+        self.covering = covering_master
         self.adj = [set() for _ in range(n_items)]
         for a, b in self.conflicts:
             self.adj[a].add(b)
@@ -121,7 +126,8 @@ class PartitionBranchAndPrice:
             lp.Params.OutputFlag = 0
             lam = lp.addVars(len(cols), lb=0.0)
             art = lp.addVars(self.n, lb=0.0)
-            cover = [lp.addConstr(gp.quicksum(lam[k] for k, c in enumerate(cols) if i in c) + art[i] == 1) for i in range(self.n)]
+            rows = [gp.quicksum(lam[k] for k, c in enumerate(cols) if i in c) + art[i] for i in range(self.n)]
+            cover = [lp.addConstr(row >= 1) if self.covering else lp.addConstr(row == 1) for row in rows]
             lp.setObjective(lam.sum() + ARTIFICIAL_COST * art.sum(), GRB.MINIMIZE)
             self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
             duals = [c.Pi for c in cover]

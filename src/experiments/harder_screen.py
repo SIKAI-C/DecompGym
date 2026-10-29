@@ -92,13 +92,14 @@ def partition_setup(family):
             res = Mono(params={"TimeLimit": tl}).run(path)
             return res, {"solution": {key: res["groups"]}}
 
-        def solver(root_only):
+        def solver(root_only, covering=False):
             def run(path, tl):
-                res = BnP(time_limit=tl, root_only=root_only).run(path)
+                res = BnP(time_limit=tl, root_only=root_only, covering_master=covering).run(path)
                 return res, {"solution": {key: res[key]}}
             return run
 
-        return gen, verify, mono, {"reference": solver(False), "S1_root_cg_then_integer_rmp": solver(True)}
+        return gen, verify, mono, {"reference": solver(False), "S1_root_cg_then_integer_rmp": solver(True),
+                                   "S1c_covering_root_cg_then_integer_rmp": solver(True, covering=True)}
     return setup
 
 

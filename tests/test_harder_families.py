@@ -100,3 +100,33 @@ def test_nrp_integral_node_keeps_its_own_solution(monkeypatch, tmp_path):
 
     assert result["best_objective"] == NRPBaseline().run(str(tmp_path / "data.json"))["best_objective"]
     assert result["termination_reason"] == "optimal"
+
+
+def test_certificates_must_be_ordered_meeting_and_match_the_objective():
+    from src.utils.harder_suite import _certified
+
+    assert _certified({"global_lb": 10, "global_ub": 10, "best_objective": 10})
+    assert not _certified({"global_lb": 20, "global_ub": 10, "best_objective": 10})  # crossed
+    assert not _certified({"global_lb": 0, "global_ub": 0, "best_objective": 10})  # bound/objective mismatch
+    assert not _certified({"global_lb": None, "global_ub": 10, "best_objective": 10})
+
+
+def test_vrptw_reference_does_not_certify_an_infeasible_seed(tmp_path):
+    # Codex review 5, finding 2: depot opens at 50, the customer is 10 away and due at 55.
+    from src.cg.vrptw.a_gold_cg import BranchAndPrice
+
+    data = {"instance_size": "small", "n_customers": 1, "capacity": 10, "x": [0.0, 10.0], "y": [0.0, 0.0], "demand": [0, 1],
+            "ready": [50.0, 0.0], "due": [100.0, 55.0], "service": [0.0, 0.0]}
+    with pytest.raises(RuntimeError, match="no feasible routing plan"):
+        BranchAndPrice(time_limit=10).run(str(_write(tmp_path, "data.json", data)))
+
+
+def test_pdptw_shortcut_keeps_its_seed_plan(monkeypatch, tmp_path):
+    # Codex review 5, finding 3: the final master finding nothing must not lose the verified seed plan.
+    from src.cg.pdptw.a_gold_cg import PDPTWRootColumnGeneration
+
+    solver = PDPTWRootColumnGeneration(time_limit=10)
+    monkeypatch.setattr(solver, "_integer_master", lambda inst, pool, limit: (None, float("inf")))
+    result = solver.run(str(_write(tmp_path, "data.json", PDPTW_EDGE)))
+    assert result["routes"] == [[1, 3], [2, 4]]
+    assert result["best_objective"] < float("inf")

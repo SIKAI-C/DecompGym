@@ -8,6 +8,7 @@ Both plans are re-verified with the harness checks; an instance without a certif
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Callable
 
@@ -15,8 +16,12 @@ from src.utils.api import solve, verify
 
 
 def _certified(result: dict[str, Any], tol: float = 1e-6) -> bool:
-    lb, ub = result.get("global_lb"), result.get("global_ub")
-    return lb is not None and ub is not None and ub - lb <= tol * max(1.0, abs(ub))
+    """Finite, ordered bounds that meet, and an upper bound equal to the reported (verified) objective."""
+    lb, ub, obj = result.get("global_lb"), result.get("global_ub"), result.get("best_objective")
+    if any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in (lb, ub, obj)):
+        return False
+    scale = tol * max(1.0, abs(ub))
+    return lb <= ub + scale and ub - lb <= scale and abs(ub - obj) <= scale
 
 
 def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Callable, sizes, num_instances: int, out_root: str | Path,
@@ -27,6 +32,8 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
         for seed in range(seed_offset, seed_offset + num_instances):
             folder = f"{problem}_{size}_seed{seed:03d}"
             inst_dir = out_root / folder
+            # Old metadata must never survive a regeneration; it is published again only after validation.
+            (inst_dir / "meta.json").unlink(missing_ok=True)
             data = gen(seed, size, inst_dir)
             (inst_dir / "prompt.txt").write_text(render_prompt(data).rstrip() + "\n")
             path = inst_dir / "data.json"
@@ -44,7 +51,8 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
             mono, ref = gold["monolithic"], gold["decomposition"]
             if mono is not None and ref is not None and _certified(ref) and abs(mono["best_objective"] - ref["best_objective"]) > tol * max(1.0, abs(mono["best_objective"])):
                 raise RuntimeError(f"{folder}: certified reference {ref['best_objective']} differs from the MIP optimum {mono['best_objective']}")
-            if mono is not None:
+            # The MIP wrapper raises unless Gurobi reports OPTIMAL (default MIPGap, as for the paper's families).
+            if mono is not None and isinstance(mono.get("best_objective"), (int, float)) and math.isfinite(mono["best_objective"]):
                 truth, source = mono["best_objective"], "monolithic_mip"
             elif ref is not None and _certified(ref):
                 truth, source = ref["best_objective"], "decomposition_certificate"

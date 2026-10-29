@@ -54,7 +54,9 @@ def initialize(root, data, plan_path, runtime_path):
         _, size, seed = name.rsplit("_", 2)
         if problem not in families or size not in ("small", "medium", "large") or seed not in ("seed000", "seed001", "seed002"):
             raise ProtocolError("Dataset identity differs from the fixed 81")
-        hashes = {filename: digest(path.parent / filename) for filename in ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json")}
+        # A named cohort also freezes its decomposition reference, which may certify the gold value.
+        frozen_files = ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json") + ((f"gold_{suite}.json",) if "cohort" in plan else ())
+        hashes = {filename: digest(path.parent / filename) for filename in frozen_files}
         cases.append({"suite": suite, "problem": problem, "instance": name, "size": size, "seed": int(seed[4:]), "sha256": hashes})
     expected = {(p, s, k) for p in families for s in ("small", "medium", "large") for k in range(3)}
     if {(c["problem"], c["size"], c["seed"]) for c in cases} != expected:

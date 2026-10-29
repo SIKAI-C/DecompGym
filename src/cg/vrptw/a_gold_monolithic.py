@@ -6,6 +6,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 from src.cg.vrptw.a_gen_data import VRPTWInstance
+from src.cg.vrptw.a_gold_cg import time_grid
 from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
@@ -23,8 +24,9 @@ class VRPTWBaseline(BaseBaseline[VRPTWInstance, gp.Model]):
         n, Q = inst.n_customers, inst.capacity
         V, C = range(n + 1), range(1, n + 1)
         d = {(i, j): inst.dist(i, j) for i in V for j in V if i != j}
-        # Prune arcs that can never be time- or capacity-feasible.
-        arcs = [(i, j) for (i, j) in d if (i == 0 or j == 0 or (inst.ready[i] + inst.service[i] + d[i, j] <= inst.due[j] and inst.demand[i] + inst.demand[j] <= Q))]
+        # Prune arcs that can never be time- or capacity-feasible, on the exact 0.1 grid.
+        d10, R, D, S = time_grid(inst, n)
+        arcs = [(i, j) for (i, j) in d if (i == 0 or j == 0 or (R[i] + S[i] + d10[i][j] <= D[j] and inst.demand[i] + inst.demand[j] <= Q))]
         model = gp.Model("vrptw_monolithic")
         model.Params.OutputFlag = 1 if self.verbose else 0
         for k, v in self.params.items():

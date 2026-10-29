@@ -73,6 +73,10 @@ class PDPTWBranchAndPrice(BranchAndPrice):
     def initial_routes(self, inst):
         return [(k, inst.n_requests + k) for k in range(1, inst.n_requests + 1)]
 
+    def route_feasible(self, inst, route):
+        from src.cg.pdptw.d_verifier import route_issue
+
+        return route_issue(inst.to_dict(), list(route)) is None
 
 class PDPTWRootColumnGeneration(PDPTWBranchAndPrice):
     """The price-and-branch shortcut: root column generation, then one integer master over its routes."""
@@ -86,8 +90,12 @@ class PDPTWRootColumnGeneration(PDPTWBranchAndPrice):
         inst = self.instance_class.from_json_file(instance_name)
         n = self.n_nodes(inst)
         self.neighbors = {i: sorted((j for j in range(1, n + 1) if j != i), key=lambda j: inst.dist(i, j))[: self.n_neighbors] for i in range(n + 1)}
-        pool = self.initial_routes(inst)
+        seeds = self.initial_routes(inst)
+        pool = [r for r in seeds if self.route_feasible(inst, r)]
         self.seen = set(pool)
+        seed_plan = [list(r) for r in pool] if len(pool) == len(seeds) else None
+        from src.cg.vrptw.a_gold_cg import route_cost
+        seed_value = sum(route_cost(inst, r) for r in pool) if seed_plan is not None else math.inf
         self.runtime.stage_reserve = min(10.0, self.runtime.time_limit / 6)
         try:
             lp, _ = self._node_lp(inst, pool, frozenset())
@@ -98,5 +106,9 @@ class PDPTWRootColumnGeneration(PDPTWBranchAndPrice):
             lp, termination = None, "time_limit"  # keep the routes generated so far
         self.runtime.stage_reserve = 0.0
         routes, value = self._integer_master(inst, pool, self.runtime.remaining())
+        if routes is None or value > seed_value:
+            routes, value = seed_plan, seed_value  # keep the verified seed plan unless the master improves it
+        if routes is None:
+            raise RuntimeError("root column generation found no feasible routing plan")
         return {"best_objective": round(value, 6), "global_lb": math.ceil(lp * 10 - 1e-6) / 10 if lp is not None else None, "global_ub": round(value, 6), "termination_reason": termination,
                 "iters": 1, "n_columns": len(pool), "total_time": time.perf_counter() - started, "routes": routes}

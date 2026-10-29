@@ -95,6 +95,8 @@ def require_backend_readiness(value, backends):
             raise RuntimeEnvironmentError("Backend readiness evidence changed")
         report = json.loads(path.read_text())
         native_hash = hashlib.sha256(json.dumps(value["native_environment"], sort_keys=True).encode()).hexdigest()
+        if report.get("auth_volume", value.get("auth_volumes", {}).get(backend)) != value.get("auth_volumes", {}).get(backend):
+            raise RuntimeEnvironmentError(f"Readiness for {backend} was proved with another authentication volume; rerun `docker auth --verify`")
         if not report.get("passed") or report.get("backend") != backend or report.get("image_id") != value["image_id"] or report.get("worker_files_sha256") != value["worker_files_sha256"] or report.get("native_environment_sha256") != native_hash:
             raise RuntimeEnvironmentError(f"Backend readiness does not cover the frozen configuration: {backend}")
         call = path.parent / "call"
@@ -161,7 +163,7 @@ def verify_backend(backend, evidence_root, *, engine, image_id, credential):
     prompt = "Copy the following provided Python program into solver.py. This is a file-handoff diagnostic, not a benchmark task. Do not execute it. It will run later in a separate runtime directory with ../../data.json.\n\n" + program
     client = DockerCliClient(READINESS_MODELS[backend], backend=backend, image_id=image_id, runtime=engine, evidence_root=evidence_root, role="readiness", effort="high" if backend == "claude-code-cli" else "medium", credential_provider=lambda _: credential)
     result = client.edit_file(target, prompt, context=[case / "data.json"], log_dir=directory / "call", step="agent")
-    report = {"schema_version": 1, "backend": backend, "model": client.model, "image_id": image_id, "worker_files_sha256": worker_file_hashes(), "edit_ok": result.ok,
+    report = {"schema_version": 1, "backend": backend, "model": client.model, "image_id": image_id, "worker_files_sha256": worker_file_hashes(), "auth_volume": AUTH_VOLUMES[backend], "edit_ok": result.ok,
               "execution_ok": False, "passed": False, "purpose": "synthetic Docker-to-native file handoff", "benchmark_score": False, "campaign_started": False}
     if result.ok:
         frozen = json.loads((evidence_root / "runtime.json").read_text()) if (evidence_root / "runtime.json").exists() else None

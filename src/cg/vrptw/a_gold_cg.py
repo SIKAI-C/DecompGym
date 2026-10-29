@@ -162,6 +162,11 @@ class BranchAndPrice:
     def initial_routes(self, inst) -> list[tuple[int, ...]]:
         return [(i,) for i in range(1, self.n_nodes(inst) + 1)]
 
+    def route_feasible(self, inst, route: tuple[int, ...]) -> bool:
+        from src.cg.vrptw.d_verifier import route_check
+
+        return route_check(inst.to_dict(), list(route))[0] is None
+
     def _node_lp(self, inst, pool, forbidden):
         C = range(1, self.n_nodes(inst) + 1)
         while True:
@@ -205,9 +210,15 @@ class BranchAndPrice:
         inst = self.instance_class.from_json_file(instance_name)
         n = self.n_nodes(inst)
         self.neighbors = {i: sorted((j for j in range(1, n + 1) if j != i), key=lambda j: inst.dist(i, j))[: self.n_neighbors] for i in range(n + 1)}
-        pool: list[tuple[int, ...]] = self.initial_routes(inst)
+        # Seed routes enter the master and the incumbent only if feasible; otherwise phase I (the artificial
+        # columns) and pricing must cover the customers.
+        seeds = self.initial_routes(inst)
+        pool: list[tuple[int, ...]] = [r for r in seeds if self.route_feasible(inst, r)]
         self.seen = set(pool)
-        best, ub = [list(r) for r in pool], sum(route_cost(inst, r) for r in pool)
+        if len(pool) == len(seeds):
+            best, ub = [list(r) for r in pool], sum(route_cost(inst, r) for r in pool)
+        else:
+            best, ub = None, math.inf
         stack, root_lb, nodes, termination = [frozenset()], None, 0, "optimal"
         snap = lambda v: math.ceil(v * 10 - 1e-6) / 10
         try:
@@ -245,6 +256,8 @@ class BranchAndPrice:
             if "budget" not in str(exc).lower() and "time limit" not in str(exc).lower():
                 raise
             termination = "time_limit"
+        if best is None:
+            raise RuntimeError("branch-and-price found no feasible routing plan")
         proved = termination == "optimal" and not stack
         return {
             "best_objective": round(ub, 6), "global_lb": round(ub, 6) if proved else root_lb, "global_ub": round(ub, 6),
