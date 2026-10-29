@@ -21,9 +21,8 @@ from src.experiments.docker_setup import runtime
 from src.experiments.sandbox import NativeSandboxExecutor
 
 
-SUITES = {"lbbd": "bd", "sslp": "bd", "vrptw": "cg"}
+SUITES = {"lbbd": "bd", "vrptw": "cg", "pdptw": "cg", "gcol": "cg", "bppc": "cg", "nrp": "cg"}
 RUNTIME_RECORD = Path(__file__).resolve().parents[2] / "outputs/runtime/runtime.json"
-
 
 
 def main() -> None:

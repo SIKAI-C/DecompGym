@@ -58,7 +58,7 @@ def sslp_setup():
 
 def vrptw_setup():
     from src.cg.vrptw.a_gen_data import generate_vrptw_instance
-    from src.cg.vrptw.a_gold_cg import RootColumnGeneration
+    from src.cg.vrptw.a_gold_cg import BranchAndPrice, RootColumnGeneration
     from src.cg.vrptw.a_gold_monolithic import VRPTWBaseline
     from src.cg.vrptw.d_verifier import verify_solution
 
@@ -70,10 +70,73 @@ def vrptw_setup():
         res = RootColumnGeneration(time_limit=tl).run(path)
         return res, {"solution": {"routes": res["routes"]}}
 
-    return generate_vrptw_instance, verify_solution, mono, {"S1_root_cg_then_integer_rmp": price_and_branch}
+    def reference(path, tl):
+        res = BranchAndPrice(time_limit=tl).run(path)
+        return res, {"solution": {"routes": res["routes"]}}
+
+    return generate_vrptw_instance, verify_solution, mono, {"reference": reference, "S1_root_cg_then_integer_rmp": price_and_branch}
 
 
-SETUPS = {"lbbd": lbbd_setup, "sslp": sslp_setup, "vrptw": vrptw_setup}
+def partition_setup(family):
+    def setup():
+        import importlib
+        gen = getattr(importlib.import_module(f"src.cg.{family}.a_gen_data"), f"generate_{family}_instance")
+        verify = importlib.import_module(f"src.cg.{family}.d_verifier").verify_solution
+        mono_cls = {"gcol": "GraphColoringBaseline", "bppc": "BPPCBaseline"}[family]
+        bnp_cls = {"gcol": "GraphColoringBranchAndPrice", "bppc": "BPPCBranchAndPrice"}[family]
+        key = {"gcol": "color_classes", "bppc": "bins"}[family]
+        Mono = getattr(importlib.import_module(f"src.cg.{family}.a_gold_monolithic"), mono_cls)
+        BnP = getattr(importlib.import_module(f"src.cg.{family}.a_gold_cg"), bnp_cls)
+
+        def mono(path, tl):
+            res = Mono(params={"TimeLimit": tl}).run(path)
+            return res, {"solution": {key: res["groups"]}}
+
+        def solver(root_only):
+            def run(path, tl):
+                res = BnP(time_limit=tl, root_only=root_only).run(path)
+                return res, {"solution": {key: res[key]}}
+            return run
+
+        return gen, verify, mono, {"reference": solver(False), "S1_root_cg_then_integer_rmp": solver(True)}
+    return setup
+
+
+def pdptw_setup():
+    from src.cg.pdptw.a_gen_data import generate_pdptw_instance
+    from src.cg.pdptw.a_gold_cg import PDPTWBranchAndPrice, PDPTWRootColumnGeneration
+    from src.cg.pdptw.a_gold_monolithic import PDPTWBaseline
+    from src.cg.pdptw.d_verifier import verify_solution
+
+    def wrap(cls):
+        def run(path, tl):
+            res = cls(time_limit=tl).run(path) if cls is not PDPTWBaseline else cls(params={"TimeLimit": tl}).run(path)
+            return res, {"solution": {"routes": res["routes"]}}
+        return run
+
+    return generate_pdptw_instance, verify_solution, wrap(PDPTWBaseline), {"reference": wrap(PDPTWBranchAndPrice), "S1_root_cg_then_integer_rmp": wrap(PDPTWRootColumnGeneration)}
+
+
+def nrp_setup():
+    from src.cg.nrp.a_gen_data import generate_nrp_instance
+    from src.cg.nrp.a_gold_cg import NRPBranchAndPrice
+    from src.cg.nrp.a_gold_monolithic import NRPBaseline
+    from src.cg.nrp.d_verifier import verify_solution
+
+    def mono(path, tl):
+        res = NRPBaseline(params={"TimeLimit": tl}).run(path)
+        return res, {"solution": {"rosters": res["rosters"]}}
+
+    def solver(root_only):
+        def run(path, tl):
+            res = NRPBranchAndPrice(time_limit=tl, root_only=root_only).run(path)
+            return res, {"solution": {"rosters": res["rosters"]}}
+        return run
+
+    return generate_nrp_instance, verify_solution, mono, {"reference": solver(False), "S1_root_cg_then_integer_rmp": solver(True)}
+
+
+SETUPS = {"nrp": nrp_setup, "pdptw": pdptw_setup, "lbbd": lbbd_setup, "sslp": sslp_setup, "vrptw": vrptw_setup, "gcol": partition_setup("gcol"), "bppc": partition_setup("bppc")}
 
 
 def main() -> None:

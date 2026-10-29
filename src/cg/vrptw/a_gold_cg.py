@@ -23,8 +23,13 @@ def route_cost(inst: VRPTWInstance, route: tuple[int, ...]) -> float:
     return sum(inst.dist(a, b) for a, b in zip(nodes, nodes[1:]))
 
 
-def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, max_routes: int = 30) -> list[tuple[float, tuple[int, ...]]]:
-    """Exact elementary shortest path with time windows and capacity; returns negative reduced-cost routes."""
+def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, max_routes: int = 30, *, forbidden: frozenset = frozenset(),
+           neighbors: dict[int, list[int]] | None = None) -> list[tuple[float, tuple[int, ...]]]:
+    """Elementary shortest path with time windows and capacity; returns negative reduced-cost routes.
+
+    Exact unless `neighbors` restricts each extension to a few nearest customers (heuristic pricing).
+    `forbidden` holds arcs removed by branching (depot = 0).
+    """
     n, Q = inst.n_customers, inst.capacity
     d = [[inst.dist(i, j) for j in range(n + 1)] for i in range(n + 1)]
     # label: (reduced cost, time, load, visited bitmask, path)
@@ -32,7 +37,7 @@ def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, m
     queue: list[tuple[int, tuple[float, float, int, int, tuple[int, ...]]]] = []
     for j in range(1, n + 1):
         t = max(d[0][j], inst.ready[j])
-        if t <= inst.due[j] and inst.demand[j] <= Q:
+        if t <= inst.due[j] and inst.demand[j] <= Q and (0, j) not in forbidden:
             lab = (d[0][j] - duals[j], t, inst.demand[j], 1 << j, (j,))
             labels[j].append(lab)
             queue.append((j, lab))
@@ -46,10 +51,10 @@ def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, m
         if checks % 2000 == 0:
             runtime.check()
         back = rc + d[node][0]
-        if back < -1e-6:
+        if back < -1e-6 and (node, 0) not in forbidden:
             found.append((back, path))
-        for j in range(1, n + 1):
-            if mask >> j & 1 or load + inst.demand[j] > Q:
+        for j in (neighbors[node] if neighbors else range(1, n + 1)):
+            if mask >> j & 1 or load + inst.demand[j] > Q or (node, j) in forbidden:
                 continue
             tj = max(t + inst.service[node] + d[node][j], inst.ready[j])
             if tj > inst.due[j]:
@@ -112,4 +117,117 @@ class RootColumnGeneration:
             "best_objective": float(ip.ObjVal), "global_lb": math.ceil(lp_bound * 10 - 1e-6) / 10 if lp_bound is not None else None,
             "global_ub": float(ip.ObjVal), "root_lp": lp_bound, "termination_reason": termination, "iters": it,
             "n_columns": len(routes), "total_time": time.perf_counter() - started, "routes": chosen,
+        }
+
+
+class BranchAndPrice:
+    """Exact branch-and-price: set-partitioning master, heuristic-then-exact ESPPRC pricing, branching on arc flows.
+
+    Child x_ij = 0 forbids arc (i, j); child x_ij = 1 forbids every other arc leaving i and entering j
+    (depot arcs excepted). Node bounds are rounded up to the one-decimal distance grid.
+    """
+
+    instance_class = VRPTWInstance
+
+    def __init__(self, *, time_limit: float = 60.0, n_neighbors: int = 6) -> None:
+        self.runtime = ReferenceRuntime(time_limit)
+        self.n_neighbors = n_neighbors
+
+    def pricer(self, inst, duals, *, forbidden, neighbors):
+        return espprc(inst, duals, self.runtime, forbidden=forbidden, neighbors=neighbors)
+
+    def n_nodes(self, inst) -> int:
+        return inst.n_customers
+
+    def initial_routes(self, inst) -> list[tuple[int, ...]]:
+        return [(i,) for i in range(1, self.n_nodes(inst) + 1)]
+
+    def _node_lp(self, inst, pool, forbidden):
+        C = range(1, self.n_nodes(inst) + 1)
+        while True:
+            cols = [r for r in pool if not any(a in forbidden for a in zip((0, *r), (*r, 0)))]
+            lp = gp.Model("vrptw_node")
+            lp.Params.OutputFlag = 0
+            lam = lp.addVars(len(cols), lb=0.0)
+            art = lp.addVars(C, lb=0.0)
+            cover = lp.addConstrs(gp.quicksum(lam[k] for k, r in enumerate(cols) if i in r) + art[i] == 1 for i in C)
+            lp.setObjective(gp.quicksum(route_cost(inst, r) * lam[k] for k, r in enumerate(cols)) + 1e4 * art.sum(), GRB.MINIMIZE)
+            self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
+            duals = [0.0] + [cover[i].Pi for i in C]
+            new = [r for _, r in self.pricer(inst, duals, forbidden=forbidden, neighbors=self.neighbors) if r not in self.seen]
+            if not new:
+                new = [r for _, r in self.pricer(inst, duals, forbidden=forbidden, neighbors=None) if r not in self.seen]
+            if not new:
+                if any(art[i].X > 1e-6 for i in C):
+                    return None, {}
+                return float(lp.ObjVal), {cols[k]: lam[k].X for k in range(len(cols)) if lam[k].X > 1e-6}
+            for r in new:
+                self.seen.add(r)
+                pool.append(r)
+
+    def _integer_master(self, inst, pool, limit):
+        C = range(1, self.n_nodes(inst) + 1)
+        ip = gp.Model("vrptw_integer_master")
+        ip.Params.OutputFlag = 0
+        ip.Params.Threads = 1
+        ip.Params.TimeLimit = max(0.5, min(limit, self.runtime.remaining()))
+        lam = ip.addVars(len(pool), vtype=GRB.BINARY)
+        ip.addConstrs(gp.quicksum(lam[k] for k, r in enumerate(pool) if i in r) == 1 for i in C)
+        ip.setObjective(gp.quicksum(route_cost(inst, r) * lam[k] for k, r in enumerate(pool)), GRB.MINIMIZE)
+        ip.optimize()
+        if ip.SolCount == 0:
+            return None, math.inf
+        return [list(pool[k]) for k in range(len(pool)) if lam[k].X > 0.5], float(ip.ObjVal)
+
+    def run(self, instance_name: str) -> dict[str, Any]:
+        self.runtime.start()
+        started = time.perf_counter()
+        inst = self.instance_class.from_json_file(instance_name)
+        n = self.n_nodes(inst)
+        self.neighbors = {i: sorted((j for j in range(1, n + 1) if j != i), key=lambda j: inst.dist(i, j))[: self.n_neighbors] for i in range(n + 1)}
+        pool: list[tuple[int, ...]] = self.initial_routes(inst)
+        self.seen = set(pool)
+        best, ub = [list(r) for r in pool], sum(route_cost(inst, r) for r in pool)
+        stack, root_lb, nodes, termination = [frozenset()], None, 0, "optimal"
+        snap = lambda v: math.ceil(v * 10 - 1e-6) / 10
+        try:
+            while stack:
+                forbidden = stack.pop()
+                nodes += 1
+                lp, lam = self._node_lp(inst, pool, forbidden)
+                if lp is None or snap(lp) >= ub - 1e-9:
+                    root_lb = root_lb if root_lb is not None or lp is None else snap(lp)
+                    continue
+                root_lb = snap(lp) if root_lb is None else root_lb
+                routes, value = self._integer_master(inst, pool, 2.0)
+                if routes is not None and value < ub - 1e-9:
+                    best, ub = routes, value
+                if snap(lp) >= ub - 1e-9:
+                    continue
+                flow: dict[tuple[int, int], float] = {}
+                for r, v in lam.items():
+                    for a in zip((0, *r), (*r, 0)):
+                        flow[a] = flow.get(a, 0.0) + v
+                frac = [(abs(v - 0.5), a) for a, v in flow.items() if 1e-6 < v < 1 - 1e-6]
+                if not frac:
+                    routes = [list(r) for r, v in lam.items() if v > 0.5]
+                    value = sum(route_cost(inst, tuple(r)) for r in routes)
+                    if value < ub - 1e-9:
+                        best, ub = routes, value
+                    continue
+                i, j = min(frac)[1]
+                one = set(forbidden)
+                one |= {(i, k) for k in range(n + 1) if k != j and i != 0}
+                one |= {(k, j) for k in range(n + 1) if k != i and j != 0}
+                stack.append(forbidden | {(i, j)})
+                stack.append(frozenset(one))
+        except Exception as exc:
+            if "budget" not in str(exc).lower() and "time limit" not in str(exc).lower():
+                raise
+            termination = "time_limit"
+        proved = termination == "optimal" and not stack
+        return {
+            "best_objective": round(ub, 6), "global_lb": round(ub, 6) if proved else root_lb, "global_ub": round(ub, 6),
+            "root_lp": root_lb, "termination_reason": "optimal" if proved else termination, "iters": nodes,
+            "n_columns": len(pool), "total_time": time.perf_counter() - started, "routes": best,
         }
