@@ -101,22 +101,28 @@ class RootColumnGeneration:
         self.runtime.stage_reserve = min(10.0, self.runtime.time_limit / 6)
         inst = VRPTWInstance.from_json_file(instance_name)
         C = range(1, inst.n_customers + 1)
-        routes: list[tuple[int, ...]] = [(i,) for i in C]
+        from src.cg.vrptw.d_verifier import route_check
+
+        # Only feasible seed routes enter the master (the artificial-free LP then needs pricing to cover the rest).
+        routes: list[tuple[int, ...]] = [(i,) for i in C if route_check(inst.to_dict(), [i])[0] is None]
         lp_bound, termination, started, it = None, "max_iters", time.perf_counter(), 0
         try:
             for it in range(1, self.max_iters + 1):
                 lp = gp.Model("vrptw_rmp")
                 lp.Params.OutputFlag = 0
                 lam = lp.addVars(len(routes), lb=0.0)
-                cover = lp.addConstrs(gp.quicksum(lam[r] for r, route in enumerate(routes) if i in route) == 1 for i in C)
-                lp.setObjective(gp.quicksum(route_cost(inst, route) * lam[r] for r, route in enumerate(routes)), GRB.MINIMIZE)
+                art = lp.addVars(C, lb=0.0)
+                cover = lp.addConstrs(gp.quicksum(lam[r] for r, route in enumerate(routes) if i in route) + art[i] == 1 for i in C)
+                lp.setObjective(gp.quicksum(route_cost(inst, route) * lam[r] for r, route in enumerate(routes)) + artificial_cost(inst, len(C)) * art.sum(), GRB.MINIMIZE)
                 self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
                 duals = [0.0] + [cover[i].Pi for i in C]
                 new = [r for _, r in espprc(inst, duals, self.runtime) if r not in routes]
                 if self.verbose:
                     print(f"[cg {it}] lp={lp.ObjVal:.3f} new={len(new)}")
                 if not new:
-                    lp_bound, termination = float(lp.ObjVal), "lp_converged"
+                    # The LP value is a bound only when no artificial coverage remains.
+                    lp_bound = float(lp.ObjVal) if all(art[i].X <= 1e-6 for i in C) else None
+                    termination = "lp_converged"
                     break
                 routes.extend(new)
         except Exception as exc:

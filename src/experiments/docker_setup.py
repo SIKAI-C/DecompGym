@@ -95,7 +95,7 @@ def require_backend_readiness(value, backends):
             raise RuntimeEnvironmentError("Backend readiness evidence changed")
         report = json.loads(path.read_text())
         native_hash = hashlib.sha256(json.dumps(value["native_environment"], sort_keys=True).encode()).hexdigest()
-        if report.get("auth_volume", value.get("auth_volumes", {}).get(backend)) != value.get("auth_volumes", {}).get(backend):
+        if report.get("auth_volume") != value.get("auth_volumes", {}).get(backend):
             raise RuntimeEnvironmentError(f"Readiness for {backend} was proved with another authentication volume; rerun `docker auth --verify`")
         if not report.get("passed") or report.get("backend") != backend or report.get("image_id") != value["image_id"] or report.get("worker_files_sha256") != value["worker_files_sha256"] or report.get("native_environment_sha256") != native_hash:
             raise RuntimeEnvironmentError(f"Backend readiness does not cover the frozen configuration: {backend}")
