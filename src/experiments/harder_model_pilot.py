@@ -22,6 +22,7 @@ from src.experiments.sandbox import NativeSandboxExecutor
 
 
 SUITES = {"lbbd": "bd", "sslp": "bd", "vrptw": "cg"}
+RUNTIME_RECORD = Path(__file__).resolve().parents[2] / "outputs/runtime/runtime.json"
 
 
 
