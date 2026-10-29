@@ -37,7 +37,7 @@ Assume gurobipy and NumPy are available; the Python standard library is also all
 3) writes output.json with at least:
 {{
   "status": "optimal | feasible | infeasible | error",
-  "method": "benders",
+  "method": "benders_decomposition",
   "objective_value": <total processing cost + total weighted tardiness>,
   "solution": {{
     "assignments": [

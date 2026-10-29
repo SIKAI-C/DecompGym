@@ -5,6 +5,7 @@ import math
 
 
 OUTPUT_CONTRACT_POLICY = "strict-decomposition-output-contract-v2"
+LIST_SCHEMAS = {"gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters"}
 
 
 def finite_number(value):
@@ -52,6 +53,20 @@ def validate_output_contract(suite, problem, data, output):
         for idx, entry in enumerate(value):
             array(entry, shape[1:], f"{label}[{idx}]")
 
+    if suite == "bd" and problem == "lbbd":
+        # Schedule schema (harder-family cohort): one assignment object per task.
+        if require(output, "solution", lambda v: isinstance(v, dict), "an object"):
+            if require(output["solution"], "assignments", lambda v: isinstance(v, list), "an array", "solution."):
+                for idx, entry in enumerate(output["solution"]["assignments"]):
+                    label = f"solution.assignments[{idx}]"
+                    if not isinstance(entry, dict):
+                        issues.append(f"{label} must be an object")
+                        continue
+                    require(entry, "task_id", integer_value, "a finite integer JSON number", label + ".")
+                    require(entry, "machine_id", integer_value, "a finite integer JSON number", label + ".")
+                    require(entry, "start", finite_number, "a finite JSON number", label + ".")
+        return issues
+
     if suite == "bd":
         if problem in {"ufl", "km", "fctp"}:
             m, n = data.get("m", 0), data.get("n", 0)
@@ -73,6 +88,14 @@ def validate_output_contract(suite, problem, data, output):
     if suite != "cg":
         raise ValueError(f"Unknown suite: {suite}")
     if not require(output, "solution", lambda v: isinstance(v, dict), "an object"):
+        return issues
+    if problem in LIST_SCHEMAS:
+        # Harder-family cohort: the solution is a list of integer lists (classes, bins, routes or rosters).
+        collection = LIST_SCHEMAS[problem]
+        if require(output["solution"], collection, lambda v: isinstance(v, list), "an array", "solution."):
+            for idx, entry in enumerate(output["solution"][collection]):
+                if not isinstance(entry, list) or not all(integer_value(v) for v in entry):
+                    issues.append(f"solution.{collection}[{idx}] must be an array of finite integer JSON numbers")
         return issues
     collection, fields, nested = {
         "bp": ("bins", ("usage",), ("contents", ("item_id", "count"))),

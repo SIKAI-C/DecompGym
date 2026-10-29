@@ -76,7 +76,7 @@ class OutputVerifier:
             result = verifier.verify_solution(str(data_path), str(output_path), tol=tol)
             if not result.get("ok"):
                 return result
-            if suite == "bd":
+            if suite == "bd" and problem != "lbbd":  # LBBD schedules are fully checked by their own verifier
                 result = check_bd_solution(problem, data, output, tol)
             objective = result.get("objective_value")
             claimed, issues, _ = OutputVerifier.extract_objective(output)

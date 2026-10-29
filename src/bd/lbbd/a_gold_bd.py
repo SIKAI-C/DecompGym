@@ -120,10 +120,10 @@ class LBBDBenders:
         coef = {j: min(tstar, inst.weight[j] * max(0, H - inst.due[j])) for j in J}
         return theta[machine], tstar - gp.quicksum(coef[j] * (1 - x[machine, j]) for j in J)
 
-    def run_branch_and_check(self, instance_name: str) -> dict[str, Any]:
-        """One master branch-and-bound; each new master incumbent is checked by the machine subproblems,
-        and violated optimality cuts are added as lazy constraints."""
-        self.runtime.start()
+    def run(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        """Reference: one master branch-and-bound; each new master incumbent is checked by the machine
+        subproblems, and violated optimality cuts are added as lazy constraints (branch-and-check)."""
+        self.runtime.start(started_at)
         self._sched_cache = {}
         inst = self.load_instance(instance_name)
         M, N = range(inst.n_machines), range(inst.n_tasks)
@@ -176,8 +176,9 @@ class LBBDBenders:
             "iter_records": [], "assignments": best, "n_cuts": state["cuts"],
         }
 
-    def run(self, instance_name: str) -> dict[str, Any]:
-        self.runtime.start()
+    def run_outer_loop(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        """Outer-loop LBBD (re-solves the master each iteration); used for the screened shortcuts."""
+        self.runtime.start(started_at)
         self._sched_cache = {}
         inst = self.load_instance(instance_name)
         M, N = range(inst.n_machines), range(inst.n_tasks)
@@ -216,13 +217,19 @@ class LBBDBenders:
             if ub - lb <= 1e-6 * max(1.0, abs(ub)):
                 termination = "optimal"
                 break
+            stop = False
             for i in M:
                 tstar = solved[i][0]
                 if tstar <= theta[i].X + 1e-6:
                     continue
                 J = sets[i]
                 if self.strong_cuts:
-                    J, tstar = self._strengthen(inst, i, J, tstar)
+                    try:
+                        J, tstar = self._strengthen(inst, i, J, tstar)
+                    except Exception:
+                        # Budget exhausted while strengthening: keep the incumbent already stored in `best`.
+                        stop = True
+                        break
                     H = max(inst.release[j] for j in J) + sum(inst.proc_time[i][j] for j in J)
                     coef = {j: min(tstar, inst.weight[j] * max(0, H - inst.due[j])) for j in J}
                     master.addConstr(theta[i] >= tstar - gp.quicksum(coef[j] * (1 - x[i, j]) for j in J))
@@ -230,6 +237,9 @@ class LBBDBenders:
                     # Whole-set no-good: tardiness T* is only known for exactly this set (or a superset).
                     master.addConstr(theta[i] >= tstar * (1 - gp.quicksum(1 - x[i, j] for j in J)))
                 cuts += 1
+            if stop:
+                termination = "time_limit"
+                break
         if best is None:
             raise RuntimeError("LBBD stopped without a complete schedule")
         best.sort(key=lambda a: a["task_id"])

@@ -25,6 +25,8 @@ from src.utils.records import digest, identity, read, save
 
 
 SUITE_PROBLEMS = {"bd": ["tsso", "fctp", "km", "lrp", "ufl"], "cg": ["bp", "csp", "gap", "shift"]}
+# Harder-family cohort (exploration): accepted when named explicitly, never part of the default list.
+HARDER_SUITE_PROBLEMS = {"bd": ["lbbd"], "cg": ["gcol", "bppc", "vrptw", "pdptw", "nrp"]}
 
 
 @dataclass
@@ -72,7 +74,7 @@ class PairedRunner:
         self.runtime_environment = require_runtime_environment()
         self.model, self.suite = model, suite
         self.problems = list(problem) if problem else list(SUITE_PROBLEMS[suite])
-        if any(p not in SUITE_PROBLEMS[suite] for p in self.problems):
+        if any(p not in SUITE_PROBLEMS[suite] + HARDER_SUITE_PROBLEMS[suite] for p in self.problems):
             raise ValueError(f"Problems must belong to {suite}: {SUITE_PROBLEMS[suite]}")
         self.max_attempts, self.solver_timeout, self.solver_threads = max_attempts, solver_timeout, solver_threads
         self.solver_cooldown_seconds = solver_cooldown_seconds

@@ -22,22 +22,24 @@ def _result(ok: bool, message: str, objective_value: float | None = None) -> dic
     return {"ok": ok, "issues": [] if ok else [message], "objective_value": objective_value}
 
 
-def _dist(d: dict[str, Any], i: int, j: int) -> float:
-    return math.floor(10.0 * math.hypot(d["x"][i] - d["x"][j], d["y"][i] - d["y"][j])) / 10.0
+def route_check(d: dict[str, Any], route: list[int]) -> tuple[str | None, float]:
+    """Return (issue, length) for one route given as customers only (depot implied at both ends).
 
-
-def route_check(d: dict[str, Any], route: list[int], eps: float = 1e-6) -> tuple[str | None, float]:
-    """Return (issue, length) for one route given as customers only (depot implied at both ends)."""
+    Times are compared exactly in integer tenths: distances are floor(10 * euclidean) / 10 and the
+    windows and service times lie on the 0.1 grid. The vehicle leaves the depot at its opening time.
+    """
     if sum(d["demand"][c] for c in route) > d["capacity"]:
         return "capacity exceeded", 0.0
-    t, prev, length = 0.0, 0, 0.0
+    to10 = lambda v: int(round(10 * v))
+    dist10 = lambda i, j: math.floor(10.0 * math.hypot(d["x"][i] - d["x"][j], d["y"][i] - d["y"][j]))
+    t, prev, length10 = to10(d["ready"][0]), 0, 0
     for c in route + [0]:
-        length += _dist(d, prev, c)
-        t = max(t + (d["service"][prev] if prev else 0.0) + _dist(d, prev, c), d["ready"][c])
-        if t > d["due"][c] + eps:
+        length10 += dist10(prev, c)
+        t = max(t + (to10(d["service"][prev]) if prev else 0) + dist10(prev, c), to10(d["ready"][c]))
+        if t > to10(d["due"][c]):
             return f"time window of node {c} violated", 0.0
         prev = c
-    return None, length
+    return None, length10 / 10.0
 
 
 def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[str, Any]:

@@ -21,19 +21,20 @@ def _result(ok: bool, message: str, objective_value: float | None = None) -> dic
     return {"ok": ok, "issues": [] if ok else [message], "objective_value": objective_value}
 
 
-def verify_solution(data: Any, output: Any, tol: float | None = None, eps: float = 1e-6) -> dict[str, Any]:
+def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[str, Any]:
     _ = tol
     try:
         d, output = _load(data), _load(output)
         n = int(d["n_requests"])
     except Exception as exc:
         return _result(False, f"data load error: {exc}")
-    dist = lambda i, j: math.floor(10.0 * math.hypot(d["x"][i] - d["x"][j], d["y"][i] - d["y"][j])) / 10.0
+    dist10 = lambda i, j: math.floor(10.0 * math.hypot(d["x"][i] - d["x"][j], d["y"][i] - d["y"][j]))
+    to10 = lambda v: int(round(10 * v))
     solution = output.get("solution")
     if not isinstance(solution, dict) or not isinstance(solution.get("routes"), list):
         return _result(False, "solution.routes missing or not a list")
     seen: set[int] = set()
-    total = 0.0
+    total10 = 0
     for r, route in enumerate(solution["routes"]):
         if not isinstance(route, list) or not route or not all(integer_value(v) and 1 <= int(v) <= 2 * n for v in route):
             return _result(False, f"routes[{r}] must be a non-empty list of node indices 1..{2 * n}")
@@ -48,11 +49,12 @@ def verify_solution(data: Any, output: Any, tol: float | None = None, eps: float
                 return _result(False, f"routes[{r}]: node {v} without its paired node {mate}")
             if v <= n and pos[v] > pos[mate]:
                 return _result(False, f"routes[{r}]: delivery {mate} before pickup {v}")
-        t, load, prev = 0.0, 0, 0
+        # Exact timing in integer tenths (see the VRPTW checker); departure at the depot's opening time.
+        t, load, prev = to10(d["ready"][0]), 0, 0
         for v in route + [0]:
-            total += dist(prev, v)
-            t = max(t + (d["service"][prev] if prev else 0.0) + dist(prev, v), d["ready"][v])
-            if t > d["due"][v] + eps:
+            total10 += dist10(prev, v)
+            t = max(t + (to10(d["service"][prev]) if prev else 0) + dist10(prev, v), to10(d["ready"][v]))
+            if t > to10(d["due"][v]):
                 return _result(False, f"routes[{r}]: time window of node {v} violated")
             load += d["demand"][v]
             if load > d["capacity"] or load < 0:
@@ -60,4 +62,4 @@ def verify_solution(data: Any, output: Any, tol: float | None = None, eps: float
             prev = v
     if len(seen) != 2 * n:
         return _result(False, f"{2 * n - len(seen)} node(s) not served")
-    return _result(True, "ok", round(total, 6))
+    return _result(True, "ok", total10 / 10.0)

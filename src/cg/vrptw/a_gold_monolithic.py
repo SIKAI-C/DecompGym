@@ -34,9 +34,13 @@ class VRPTWBaseline(BaseBaseline[VRPTWInstance, gp.Model]):
         u = model.addVars(C, lb={i: inst.demand[i] for i in C}, ub=Q, name="u")
         model.addConstrs((x.sum(i, "*") == 1 for i in C), name="out")
         model.addConstrs((x.sum("*", j) == 1 for j in C), name="in")
-        model.addConstr(t[0] == 0)
+        model.addConstr(t[0] == inst.ready[0])
         for (i, j) in arcs:
             if j == 0:
+                if i != 0:
+                    over = inst.due[i] + inst.service[i] + d[i, j] - inst.due[0]
+                    if over > 0:
+                        model.addConstr(t[i] + inst.service[i] + d[i, j] <= inst.due[0] + over * (1 - x[i, j]))
                 continue
             big_m = inst.due[i] + inst.service[i] + d[i, j] - inst.ready[j]
             if big_m > 0:

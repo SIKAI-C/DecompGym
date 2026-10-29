@@ -17,6 +17,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 from src.cg.nrp.a_gen_data import NRPInstance
+from src.cg.nrp.d_verifier import evaluate
 from src.utils.reference_runtime import ReferenceRuntime
 
 
@@ -105,8 +106,8 @@ class NRPBranchAndPrice:
         chosen = {n: r for k, (n, r) in enumerate(cols) if lam[k].X > 0.5}
         return [list(chosen[n]) for n in N], float(round(ip.ObjVal))
 
-    def run(self, instance_name: str) -> dict[str, Any]:
-        self.runtime.start()
+    def run(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        self.runtime.start(started_at)
         started = time.perf_counter()
         inst = NRPInstance.from_json_file(instance_name)
         N = range(inst.n_nurses)
@@ -137,7 +138,15 @@ class NRPBranchAndPrice:
                             y[n, d, s] = y.get((n, d, s), 0.0) + v
                 frac = [(abs(v - 0.5), key) for key, v in y.items() if EPS < v < 1 - EPS]
                 if not frac:
-                    continue  # integral LP: the integer master above already found it
+                    # Integral LP: its own rosters are an integer solution of value lp; keep them explicitly.
+                    chosen = {n: r for (n, r), v in lam.items() if v > 0.5}
+                    if len(chosen) != inst.n_nurses:
+                        raise RuntimeError("integral LP without one roster per nurse")
+                    rosters = [list(chosen[n]) for n in N]
+                    value = evaluate(inst.to_dict(), rosters)
+                    if value < ub:
+                        best, ub = rosters, value
+                    continue
                 n, d, s = min(frac)[1]
                 stack.append((forced, banned | {(n, d, s)}))
                 stack.append(({**forced, (n, d): s}, banned))

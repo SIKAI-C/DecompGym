@@ -12,8 +12,8 @@ class GraphColoringBranchAndPrice:
     def __init__(self, *, time_limit: float = 60.0, root_only: bool = False) -> None:
         self.time_limit, self.root_only = time_limit, root_only
 
-    def run(self, path: str) -> dict[str, Any]:
+    def run(self, path: str, *, started_at: float | None = None) -> dict[str, Any]:
         inst = GraphColoringInstance.from_json_file(path)
-        res = PartitionBranchAndPrice(inst.n_vertices, [tuple(e) for e in inst.edges], time_limit=self.time_limit, root_only=self.root_only).run()
+        res = PartitionBranchAndPrice(inst.n_vertices, [tuple(e) for e in inst.edges], time_limit=self.time_limit, root_only=self.root_only).run(started_at=started_at)
         res["color_classes"] = res.pop("groups")
         return res

@@ -31,6 +31,19 @@ PROBLEMS = {
 }
 
 
+# Harder-family cohort (exploration): kept apart so `generate_dataset` and the paper's 81 instances are unchanged.
+HARDER_PROBLEMS = {
+    "bd": {"lbbd": ("a_gold_monolithic.LBBDBaseline", "a_gold_bd.LBBDBenders")},
+    "cg": {
+        "gcol": ("a_gold_monolithic.GraphColoringBaseline", "a_gold_cg.GraphColoringBranchAndPrice"),
+        "bppc": ("a_gold_monolithic.BPPCBaseline", "a_gold_cg.BPPCBranchAndPrice"),
+        "vrptw": ("a_gold_monolithic.VRPTWBaseline", "a_gold_cg.BranchAndPrice"),
+        "pdptw": ("a_gold_monolithic.PDPTWBaseline", "a_gold_cg.PDPTWBranchAndPrice"),
+        "nrp": ("a_gold_monolithic.NRPBaseline", "a_gold_cg.NRPBranchAndPrice"),
+    },
+}
+
+
 def generate_dataset(root: str | Path = "data", *, suites: tuple[str, ...] = ("bd", "cg"), num_instances: int = 3, sizes: tuple[str, ...] = ("small", "medium", "large")) -> list[dict[str, Any]]:
     records = []
     for suite in suites:
@@ -45,7 +58,7 @@ def solve(suite: str, problem: str, data_path: str | Path, *, method: str = "dec
     started = time.perf_counter()
     if method not in {"monolithic", "decomposition"}:
         raise ValueError("method must be monolithic or decomposition")
-    name = PROBLEMS[suite][problem][0 if method == "monolithic" else 1]
+    name = {**PROBLEMS[suite], **HARDER_PROBLEMS[suite]}[problem][0 if method == "monolithic" else 1]
     module_name, class_name = name.rsplit(".", 1)
     module = importlib.import_module(f"src.{suite}.{problem}.{module_name}")
     solver = getattr(module, class_name)(**solver_options)

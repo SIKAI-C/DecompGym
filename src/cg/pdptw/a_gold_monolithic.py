@@ -30,9 +30,12 @@ class PDPTWBaseline:
         r = m.addVars(C, lb=1, ub=N)
         m.addConstrs(x.sum(i, "*") == 1 for i in C)
         m.addConstrs(x.sum("*", j) == 1 for j in C)
-        m.addConstr(t[0] == 0)
+        m.addConstr(t[0] == inst.ready[0])
         for (i, j) in arcs:
             if j == 0:
+                over = inst.due[i] + inst.service[i] + d[i, j] - inst.due[0]
+                if over > 0:
+                    m.addConstr(t[i] + inst.service[i] + d[i, j] <= inst.due[0] + over * (1 - x[i, j]))
                 continue
             big = inst.due[i] + inst.service[i] + d[i, j] - inst.ready[j]
             if big > 0:

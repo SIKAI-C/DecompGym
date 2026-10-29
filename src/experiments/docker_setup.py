@@ -76,6 +76,8 @@ def load_execution_environment(path):
 def validate_execution_environment(value):
     if value.get("agent_policy") != DOCKER_EDIT_POLICY or value.get("cli_versions") != CLI_VERSIONS or value.get("worker_files_sha256") != worker_file_hashes():
         raise RuntimeEnvironmentError("Docker worker sources or CLI declarations differ from the prepared environment")
+    if value.get("auth_volumes") != AUTH_VOLUMES:
+        raise RuntimeEnvironmentError("Prepared runtime evidence names other authentication volumes; rerun `docker prepare` and `docker auth`")
     profile = SECCOMP_PROFILE
     if digest(profile) != value.get("seccomp_profile_sha256") or not same_environment(native_environment(), value.get("native_environment", {})):
         raise RuntimeEnvironmentError("The sandbox or native environment differs from its frozen evidence")

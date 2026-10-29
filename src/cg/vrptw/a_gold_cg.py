@@ -23,6 +23,25 @@ def route_cost(inst: VRPTWInstance, route: tuple[int, ...]) -> float:
     return sum(inst.dist(a, b) for a, b in zip(nodes, nodes[1:]))
 
 
+def time_grid(inst, n_nodes: int):
+    """Distances, windows and service times in integer tenths, so feasibility tests are exact.
+
+    Distances are floor(10 * euclidean) by definition; windows and service times must lie on the 0.1 grid.
+    """
+    to10 = lambda v: int(round(10 * v))
+    for v in (*inst.ready, *inst.due, *inst.service):
+        if abs(10 * v - round(10 * v)) > 1e-6:
+            raise ValueError("time data must lie on the 0.1 grid")
+    V = range(n_nodes + 1)
+    d10 = [[math.floor(10.0 * math.hypot(inst.x[i] - inst.x[j], inst.y[i] - inst.y[j])) for j in V] for i in V]
+    return d10, [to10(v) for v in inst.ready], [to10(v) for v in inst.due], [to10(v) for v in inst.service]
+
+
+def artificial_cost(inst, n_nodes: int) -> float:
+    """Exceeds the cost of any route set: every route costs at most twice its customers' depot distances (+ rounding)."""
+    return 1.0 + sum(2 * inst.dist(0, i) + 0.2 for i in range(1, n_nodes + 1)) * 2
+
+
 def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, max_routes: int = 30, *, forbidden: frozenset = frozenset(),
            neighbors: dict[int, list[int]] | None = None) -> list[tuple[float, tuple[int, ...]]]:
     """Elementary shortest path with time windows and capacity; returns negative reduced-cost routes.
@@ -31,13 +50,14 @@ def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, m
     `forbidden` holds arcs removed by branching (depot = 0).
     """
     n, Q = inst.n_customers, inst.capacity
-    d = [[inst.dist(i, j) for j in range(n + 1)] for i in range(n + 1)]
-    # label: (reduced cost, time, load, visited bitmask, path)
-    labels: dict[int, list[tuple[float, float, int, int, tuple[int, ...]]]] = {i: [] for i in range(1, n + 1)}
-    queue: list[tuple[int, tuple[float, float, int, int, tuple[int, ...]]]] = []
+    d10, R, D, S = time_grid(inst, n)
+    d = [[v / 10.0 for v in row] for row in d10]
+    # label: (reduced cost, time in tenths, load, visited bitmask, path)
+    labels: dict[int, list[tuple[float, int, int, int, tuple[int, ...]]]] = {i: [] for i in range(1, n + 1)}
+    queue: list[tuple[int, tuple[float, int, int, int, tuple[int, ...]]]] = []
     for j in range(1, n + 1):
-        t = max(d[0][j], inst.ready[j])
-        if t <= inst.due[j] and inst.demand[j] <= Q and (0, j) not in forbidden:
+        t = max(R[0] + d10[0][j], R[j])
+        if t <= D[j] and inst.demand[j] <= Q and (0, j) not in forbidden:
             lab = (d[0][j] - duals[j], t, inst.demand[j], 1 << j, (j,))
             labels[j].append(lab)
             queue.append((j, lab))
@@ -51,13 +71,13 @@ def espprc(inst: VRPTWInstance, duals: list[float], runtime: ReferenceRuntime, m
         if checks % 2000 == 0:
             runtime.check()
         back = rc + d[node][0]
-        if back < -1e-6 and (node, 0) not in forbidden:
+        if back < -1e-6 and (node, 0) not in forbidden and t + S[node] + d10[node][0] <= D[0]:
             found.append((back, path))
         for j in (neighbors[node] if neighbors else range(1, n + 1)):
             if mask >> j & 1 or load + inst.demand[j] > Q or (node, j) in forbidden:
                 continue
-            tj = max(t + inst.service[node] + d[node][j], inst.ready[j])
-            if tj > inst.due[j]:
+            tj = max(t + S[node] + d10[node][j], R[j])
+            if tj > D[j]:
                 continue
             new = (rc + d[node][j] - duals[j], tj, load + inst.demand[j], mask | 1 << j, path + (j,))
             bucket = labels[j]
@@ -76,8 +96,8 @@ class RootColumnGeneration:
         self.max_iters = max_iters
         self.verbose = verbose
 
-    def run(self, instance_name: str) -> dict[str, Any]:
-        self.runtime.start()
+    def run(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        self.runtime.start(started_at)
         self.runtime.stage_reserve = min(10.0, self.runtime.time_limit / 6)
         inst = VRPTWInstance.from_json_file(instance_name)
         C = range(1, inst.n_customers + 1)
@@ -151,7 +171,7 @@ class BranchAndPrice:
             lam = lp.addVars(len(cols), lb=0.0)
             art = lp.addVars(C, lb=0.0)
             cover = lp.addConstrs(gp.quicksum(lam[k] for k, r in enumerate(cols) if i in r) + art[i] == 1 for i in C)
-            lp.setObjective(gp.quicksum(route_cost(inst, r) * lam[k] for k, r in enumerate(cols)) + 1e4 * art.sum(), GRB.MINIMIZE)
+            lp.setObjective(gp.quicksum(route_cost(inst, r) * lam[k] for k, r in enumerate(cols)) + artificial_cost(inst, len(C)) * art.sum(), GRB.MINIMIZE)
             self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
             duals = [0.0] + [cover[i].Pi for i in C]
             new = [r for _, r in self.pricer(inst, duals, forbidden=forbidden, neighbors=self.neighbors) if r not in self.seen]
@@ -179,8 +199,8 @@ class BranchAndPrice:
             return None, math.inf
         return [list(pool[k]) for k in range(len(pool)) if lam[k].X > 0.5], float(ip.ObjVal)
 
-    def run(self, instance_name: str) -> dict[str, Any]:
-        self.runtime.start()
+    def run(self, instance_name: str, *, started_at: float | None = None) -> dict[str, Any]:
+        self.runtime.start(started_at)
         started = time.perf_counter()
         inst = self.instance_class.from_json_file(instance_name)
         n = self.n_nodes(inst)

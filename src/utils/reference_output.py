@@ -5,7 +5,17 @@ from collections import defaultdict
 from typing import Any
 
 
+HARDER_KEYS = {"lbbd": "assignments", "gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters"}
+
+
 def reference_output(suite: str, problem: str, data: dict, result: dict) -> dict[str, Any]:
+    if problem in HARDER_KEYS:
+        # Harder-family references return their plan directly (monolithic partition models as "groups").
+        key = HARDER_KEYS[problem]
+        plan = result.get(key, result.get("groups", (result.get("master_metadata") or {}).get(key)))
+        return {"status": result.get("status", "optimal" if result.get("termination_reason") in (None, "optimal") else "feasible"),
+                "method": "benders_decomposition" if suite == "bd" else "column_generation",
+                "objective_value": result["best_objective"], "solution": {key: plan}}
     output = {"objective_value": result["best_objective"]}
     if result.get("reference_policy"):
         output.update(status=result["status"], method="benders_decomposition" if suite == "bd" else "column_generation")

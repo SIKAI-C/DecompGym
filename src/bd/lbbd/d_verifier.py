@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from src.utils.output_contract import integer_value
+from src.utils.output_contract import finite_number, integer_value
 
 
 def _load(obj: Any) -> dict[str, Any]:
@@ -47,7 +47,7 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         task, machine, start = row.get("task_id"), row.get("machine_id"), row.get("start")
         if not integer_value(task) or not integer_value(machine):
             return _result(False, f"assignments[{idx}] task_id/machine_id must be integer JSON numbers")
-        if isinstance(start, bool) or not isinstance(start, (int, float)) or not math.isfinite(start):
+        if not finite_number(start):
             return _result(False, f"assignments[{idx}].start must be a finite number")
         task, machine = int(task), int(machine)
         if not 0 <= task < n or not 0 <= machine < m:
@@ -64,7 +64,13 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         for (s1, j1), (s2, j2) in zip(jobs, jobs[1:]):
             if s1 + data["proc_time"][i][j1] > s2 + eps:
                 return _result(False, f"tasks {j1} and {j2} overlap on machine {i}")
-    return _result(True, "ok", objective_of(data, plan))
+    try:
+        objective = objective_of(data, plan)
+    except OverflowError:
+        return _result(False, "start times are too large to evaluate")
+    if not math.isfinite(objective):
+        return _result(False, "objective is not finite")
+    return _result(True, "ok", objective)
 
 
 def main() -> None:

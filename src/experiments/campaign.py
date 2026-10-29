@@ -42,21 +42,24 @@ def initialize(root, data, plan_path, runtime_path):
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
     environment = require_runtime_environment()
     execution_environment = load_execution_environment(runtime_path)
+    # A plan may name another cohort (the harder-family exploration); without it, the paper's fixed 81.
+    families = plan.get("cohort", {}).get("families", FAMILIES)
+    n_cases = 9 * len(families)
     paths = list(data.glob("*/*/*/data.json"))
-    if len(paths) != 81:
-        raise ProtocolError("Exactly 81 existing fixed instances are required")
+    if len(paths) != n_cases:
+        raise ProtocolError(f"Exactly {n_cases} existing fixed instances are required")
     cases = []
     for path in paths:
         suite, problem, name = path.relative_to(data).parts[:3]
         _, size, seed = name.rsplit("_", 2)
-        if problem not in FAMILIES or size not in ("small", "medium", "large") or seed not in ("seed000", "seed001", "seed002"):
+        if problem not in families or size not in ("small", "medium", "large") or seed not in ("seed000", "seed001", "seed002"):
             raise ProtocolError("Dataset identity differs from the fixed 81")
         hashes = {filename: digest(path.parent / filename) for filename in ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json")}
         cases.append({"suite": suite, "problem": problem, "instance": name, "size": size, "seed": int(seed[4:]), "sha256": hashes})
-    expected = {(p, s, k) for p in FAMILIES for s in ("small", "medium", "large") for k in range(3)}
+    expected = {(p, s, k) for p in families for s in ("small", "medium", "large") for k in range(3)}
     if {(c["problem"], c["size"], c["seed"]) for c in cases} != expected:
         raise ProtocolError("Fixed dataset coverage mismatch")
-    cases.sort(key=lambda c: (["small", "medium", "large"].index(c["size"]), c["seed"], FAMILIES.index(c["problem"])))
+    cases.sort(key=lambda c: (["small", "medium", "large"].index(c["size"]), c["seed"], families.index(c["problem"])))
     if identity(cases) != plan["dataset_inventory_sha256"]:
         raise ProtocolError("Dataset differs from the fixed-81 inventory pinned in the plan")
     for case in cases:
@@ -79,7 +82,7 @@ def initialize(root, data, plan_path, runtime_path):
     for filename in ("pyproject.toml", ".python-version"):
         shutil.copyfile(REPOSITORY / filename, frozen / filename)
     hashes = {str(p.relative_to(frozen)): digest(p) for p in frozen.rglob("*") if p.is_file()}
-    manifest = {"schema_version": 3, "created_at": now(), "backend": "native", "scope": "existing_fixed_81",
+    manifest = {"schema_version": 3, "created_at": now(), "backend": "native", "scope": plan["cohort"]["name"] if "cohort" in plan else "existing_fixed_81",
                 "data_regenerated": False, "original_data_root": str(data), "modes": ["plain", "reflection"],
                 "resource_guard": {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3},
                 "license_route": "existing host local license", "python": sys.version, "runtime_environment": environment, "controller_sha256": hashes, "instances": cases,
@@ -91,7 +94,7 @@ def initialize(root, data, plan_path, runtime_path):
                     prompt_policies=plan["prompt_policies"], model_queue=queue,
                     reflection_policy=plan["reflection_policy"],
                     prompt_protocol=PROMPT_PROTOCOL, algorithm_judge_prompt_sha256=judge_prompt_hashes(),
-                    maximum_unique_generated_candidates=81 * len(queue) * 19, fresh_execution_pairs=81 * len(queue))
+                    maximum_unique_generated_candidates=n_cases * len(queue) * 19, fresh_execution_pairs=n_cases * len(queue))
     manifest["protocol_id"] = identity(manifest)
     save(root / "campaign.json", manifest)
     save(root / "pause_request.json", {"recorded_at": now(), "resume_requires_explicit_user_request": True,

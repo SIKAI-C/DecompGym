@@ -4,9 +4,10 @@ A group is feasible when no two of its items conflict and (if a capacity is give
 fits. Graph coloring (groups = independent sets, no capacity) and bin packing with conflicts
 (groups = conflict-free bins) are both of this form.
 
-Master (covering):  min sum_S lambda_S   s.t.  sum_{S contains i} lambda_S >= 1,  lambda >= 0.
-Feasible groups are closed under taking subsets, so a covering solution can always be turned into a
-partition by deleting repeated items.
+Node master (set partitioning):  min sum_S lambda_S  s.t.  sum_{S contains i} lambda_S = 1,  lambda >= 0,
+so the Ryan-Foster argument applies exactly: if every pair's joint coverage is 0 or 1, the LP solution
+is integral. The primal heuristic solves a covering integer master; feasible groups are closed under
+taking subsets, so a cover is trimmed into a partition.
 Pricing:  max sum_i pi_i z_i  over feasible groups (an independent-set / conflict-knapsack MIP);
 a column improves the LP iff its value exceeds 1.
 Branching (Ryan-Foster): pick items i, j whose joint coverage is fractional; one child requires them
@@ -120,7 +121,7 @@ class PartitionBranchAndPrice:
             lp.Params.OutputFlag = 0
             lam = lp.addVars(len(cols), lb=0.0)
             art = lp.addVars(self.n, lb=0.0)
-            cover = [lp.addConstr(gp.quicksum(lam[k] for k, c in enumerate(cols) if i in c) + art[i] >= 1) for i in range(self.n)]
+            cover = [lp.addConstr(gp.quicksum(lam[k] for k, c in enumerate(cols) if i in c) + art[i] == 1) for i in range(self.n)]
             lp.setObjective(lam.sum() + ARTIFICIAL_COST * art.sum(), GRB.MINIMIZE)
             self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
             duals = [c.Pi for c in cover]
@@ -158,8 +159,8 @@ class PartitionBranchAndPrice:
         return out
 
     # --- driver -----------------------------------------------------------------------------
-    def run(self) -> dict[str, Any]:
-        self.runtime.start()
+    def run(self, *, started_at: float | None = None) -> dict[str, Any]:
+        self.runtime.start(started_at)
         started = time.perf_counter()
         best = self.greedy()
         pool = list({frozenset([i]) for i in range(self.n)} | set(best))
@@ -195,9 +196,11 @@ class PartitionBranchAndPrice:
                         if EPS < together < 1 - EPS and abs(together - 0.5) < score:
                             pair, score = (i, j), abs(together - 0.5)
                 if pair is None:
-                    # LP integral up to repeated cover; the LP columns themselves form a solution.
-                    sol = self.to_partition([c for c, v in lam.items() if v > 0.5])
-                    if sum(len(g) for g in sol) == self.n and len(sol) < len(best):
+                    # Ryan-Foster: with partitioning rows and no fractional pair, the LP solution is integral.
+                    sol = [c for c, v in lam.items() if v > 0.5]
+                    if sorted(i for c in sol for i in c) != list(range(self.n)) or any(v < 1 - EPS for c, v in lam.items() if v > 0.5):
+                        raise RuntimeError("node LP has no fractional pair but does not decode into a partition")
+                    if len(sol) < len(best):
                         best = sol
                     continue
                 stack.append((same, differ + (pair,)))

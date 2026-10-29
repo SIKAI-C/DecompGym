@@ -25,12 +25,12 @@ def lbbd_setup():
 
     def solver(**kw):
         def run(path, tl):
-            res = LBBDBenders(time_limit=tl, **kw).run(path)
+            res = LBBDBenders(time_limit=tl, **kw).run_outer_loop(path)
             return res, {"solution": {"assignments": res["assignments"]}}
         return run
 
     def reference(path, tl):
-        res = LBBDBenders(time_limit=tl).run_branch_and_check(path)
+        res = LBBDBenders(time_limit=tl).run(path)
         return res, {"solution": {"assignments": res["assignments"]}}
 
     return generate_lbbd_instance, verify_solution, mono, {"reference": reference, "S2_outer_loop_strengthened": solver(), "S1_nogood_no_relax": solver(strong_cuts=False, relaxation=False), "S1b_nogood_with_relax": solver(strong_cuts=False)}
