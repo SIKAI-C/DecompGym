@@ -24,51 +24,6 @@ from src.experiments.sandbox import NativeSandboxExecutor
 SUITES = {"lbbd": "bd", "sslp": "bd", "vrptw": "cg"}
 
 
-class HostCodexClient:
-    """Fallback when the paper image's Codex CLI is rejected by the service (401 on workspace routing).
-
-    Runs the host `codex exec` in an empty work directory with a throwaway CODEX_HOME holding only the
-    login file and a minimal config: no web search, no user instructions, memories or skills. The prompt
-    text is the same workspace-rules + task + context composition the Docker client sends.
-    """
-
-    def __init__(self, model, *, effort, compose):
-        self.model, self.effort, self.compose = model, effort, compose
-
-    def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
-        import os
-        import subprocess
-        import tempfile
-        from types import SimpleNamespace
-
-        log_dir = Path(log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="dg-pilot-") as tmp:
-            home, work = Path(tmp) / "home", Path(tmp) / "work"
-            home.mkdir()
-            work.mkdir()
-            shutil.copyfile(Path.home() / ".codex/auth.json", home / "auth.json")
-            (home / "auth.json").chmod(0o600)
-            (home / "config.toml").write_text('web_search = "disabled"\n')
-            (work / target.name).write_text(target.read_text() if target.exists() else "")
-            text = self.compose(target.name, prompt, context)
-            (log_dir / f"{step}_prompt.md").write_text(text)
-            command = ["codex", "exec", "-m", self.model, "-c", f"model_reasoning_effort={self.effort}", "--sandbox", "workspace-write",
-                       "--skip-git-repo-check", "--ephemeral", "--json", "-C", str(work), "-"]
-            env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "DECOMPBENCH"))} | {"CODEX_HOME": str(home)}
-            try:
-                proc = subprocess.run(command, input=text, capture_output=True, text=True, timeout=900, env=env)
-                rc, out, err = proc.returncode, proc.stdout, proc.stderr
-            except subprocess.TimeoutExpired as exc:
-                rc, out, err = -9, exc.stdout or "", "timeout"
-            (log_dir / f"{step}_events.jsonl").write_text(out if isinstance(out, str) else out.decode(errors="replace"))
-            (log_dir / f"{step}_stderr.log").write_text(err if isinstance(err, str) else err.decode(errors="replace"))
-            produced = (work / target.name).read_text()
-            target.write_text(produced)
-        ok = rc == 0 and bool(produced.strip())
-        return SimpleNamespace(ok=ok, error=None if ok else f"codex exec returncode {rc}")
-RUNTIME_RECORD = Path(__file__).resolve().parents[3] / "DecompBench/outputs/runtime/runtime.json"
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -77,7 +32,6 @@ def main() -> None:
     parser.add_argument("--models", required=True, help="comma-separated Codex models")
     parser.add_argument("--out", required=True)
     parser.add_argument("--judge-model", default="gpt-6-astra")
-    parser.add_argument("--host-codex", action="store_true", help="use the host Codex CLI with a clean CODEX_HOME instead of the paper image")
     args = parser.parse_args()
 
     suite = SUITES[args.family]
@@ -93,15 +47,11 @@ def main() -> None:
         return DockerCliClient(model, backend="codex-cli", image_id=environment["image_id"], runtime=engine,
                                evidence_root=out_root / "diagnostics", role=role, effort=effort, timeout=900)
 
-    def make(model, role, effort):
-        client = docker(model, role, effort)
-        return HostCodexClient(model, effort=effort, compose=client.compose_prompt) if args.host_codex else client
-
-    judge = make(args.judge_model, "algorithm_judge", "high")
+    judge = docker(args.judge_model, "algorithm_judge", "high")
     screen = {r["instance"]: r for r in json.loads((Path(args.instances) / "screen.json").read_text())}
     rows = []
     for model in args.models.split(","):
-        client = make(model, "generation", "medium")
+        client = docker(model, "generation", "medium")
         for inst_dir in sorted(p for p in Path(args.instances).iterdir() if (p / "data.json").exists()):
             case = out_root / model / inst_dir.name
             attempt = case / "attempts" / "attempt_01"
@@ -116,7 +66,7 @@ def main() -> None:
             (case / "prompt.txt").write_text(prompt)
             started = time.perf_counter()
             gen = client.edit_file(attempt / "solver.py", prompt, context=[case / "data.json"], log_dir=attempt / "calls_agent", step="agent")
-            row = {"transport": "host-codex" if args.host_codex else "docker", "model": model, "instance": inst_dir.name, "generation_ok": bool(gen.ok), "generation_seconds": round(time.perf_counter() - started, 1)}
+            row = {"transport": "docker", "model": model, "instance": inst_dir.name, "generation_ok": bool(gen.ok), "generation_seconds": round(time.perf_counter() - started, 1)}
             if gen.ok and (attempt / "solver.py").read_text().strip():
                 exec_ok, _stdout, stderr, output = executor(attempt, 60, 1)
                 row["exec_ok"] = bool(exec_ok)
