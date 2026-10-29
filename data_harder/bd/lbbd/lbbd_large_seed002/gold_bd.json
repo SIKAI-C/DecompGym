@@ -1,0 +1,157 @@
+{
+  "best_objective": 302.0,
+  "global_lb": 302.0,
+  "global_ub": 302.0,
+  "gap": 0.0,
+  "termination_reason": "optimal",
+  "iters": 385,
+  "total_time": 11.546602292044554,
+  "iter_records": [],
+  "assignments": [
+    {
+      "task_id": 0,
+      "machine_id": 0,
+      "start": 11
+    },
+    {
+      "task_id": 1,
+      "machine_id": 2,
+      "start": 3
+    },
+    {
+      "task_id": 2,
+      "machine_id": 1,
+      "start": 8
+    },
+    {
+      "task_id": 3,
+      "machine_id": 2,
+      "start": 6
+    },
+    {
+      "task_id": 4,
+      "machine_id": 1,
+      "start": 4
+    },
+    {
+      "task_id": 5,
+      "machine_id": 2,
+      "start": 18
+    },
+    {
+      "task_id": 6,
+      "machine_id": 2,
+      "start": 28
+    },
+    {
+      "task_id": 7,
+      "machine_id": 1,
+      "start": 24
+    },
+    {
+      "task_id": 8,
+      "machine_id": 1,
+      "start": 15
+    },
+    {
+      "task_id": 9,
+      "machine_id": 0,
+      "start": 7
+    },
+    {
+      "task_id": 10,
+      "machine_id": 0,
+      "start": 14
+    },
+    {
+      "task_id": 11,
+      "machine_id": 0,
+      "start": 18
+    },
+    {
+      "task_id": 12,
+      "machine_id": 1,
+      "start": 12
+    }
+  ],
+  "n_cuts": 594,
+  "output": {
+    "status": "optimal",
+    "method": "benders_decomposition",
+    "objective_value": 302.0,
+    "solution": {
+      "assignments": [
+        {
+          "task_id": 0,
+          "machine_id": 0,
+          "start": 11
+        },
+        {
+          "task_id": 1,
+          "machine_id": 2,
+          "start": 3
+        },
+        {
+          "task_id": 2,
+          "machine_id": 1,
+          "start": 8
+        },
+        {
+          "task_id": 3,
+          "machine_id": 2,
+          "start": 6
+        },
+        {
+          "task_id": 4,
+          "machine_id": 1,
+          "start": 4
+        },
+        {
+          "task_id": 5,
+          "machine_id": 2,
+          "start": 18
+        },
+        {
+          "task_id": 6,
+          "machine_id": 2,
+          "start": 28
+        },
+        {
+          "task_id": 7,
+          "machine_id": 1,
+          "start": 24
+        },
+        {
+          "task_id": 8,
+          "machine_id": 1,
+          "start": 15
+        },
+        {
+          "task_id": 9,
+          "machine_id": 0,
+          "start": 7
+        },
+        {
+          "task_id": 10,
+          "machine_id": 0,
+          "start": 14
+        },
+        {
+          "task_id": 11,
+          "machine_id": 0,
+          "start": 18
+        },
+        {
+          "task_id": 12,
+          "machine_id": 1,
+          "start": 12
+        }
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 302.0
+  }
+}

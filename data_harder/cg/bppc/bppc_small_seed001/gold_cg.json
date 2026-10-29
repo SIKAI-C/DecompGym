@@ -1,0 +1,104 @@
+{
+  "best_objective": 9,
+  "global_lb": 9,
+  "global_ub": 9,
+  "root_bound": 9,
+  "termination_reason": "optimal",
+  "nodes": 1,
+  "n_columns": 97,
+  "total_time": 0.04308945900993422,
+  "bins": [
+    [
+      6,
+      9
+    ],
+    [
+      7,
+      18
+    ],
+    [
+      11,
+      15
+    ],
+    [
+      4,
+      10,
+      17
+    ],
+    [
+      1,
+      12
+    ],
+    [
+      8,
+      13,
+      14
+    ],
+    [
+      0,
+      16,
+      20
+    ],
+    [
+      5,
+      19
+    ],
+    [
+      2,
+      3
+    ]
+  ],
+  "output": {
+    "status": "optimal",
+    "method": "column_generation",
+    "objective_value": 9,
+    "solution": {
+      "bins": [
+        [
+          6,
+          9
+        ],
+        [
+          7,
+          18
+        ],
+        [
+          11,
+          15
+        ],
+        [
+          4,
+          10,
+          17
+        ],
+        [
+          1,
+          12
+        ],
+        [
+          8,
+          13,
+          14
+        ],
+        [
+          0,
+          16,
+          20
+        ],
+        [
+          5,
+          19
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 9.0
+  }
+}

@@ -12,7 +12,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-PY=${PY:-/Users/scheng326/Desktop/GT_ML_PhD/z_oo/code/DecompBench/.venv/bin/python}
+PY=${PY:-../DecompBench/.venv/bin/python}  # the main checkout's environment
 ROOT=${ROOT:-outputs/experiments/harder_small_all_20261029_r1}
 ROOT=$(cd "$ROOT" && pwd)
 

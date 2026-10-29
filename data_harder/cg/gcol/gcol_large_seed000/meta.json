@@ -1,0 +1,9 @@
+{
+  "seed": 0,
+  "size": "large",
+  "folder": "gcol_large_seed000",
+  "ground_truth_objective": 7.0,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 0.11602091597160324
+}

@@ -1,0 +1,112 @@
+{
+  "best_objective": 6,
+  "global_lb": 6,
+  "global_ub": 6,
+  "root_bound": 6,
+  "termination_reason": "optimal",
+  "nodes": 1,
+  "n_columns": 215,
+  "total_time": 0.08392099995398894,
+  "color_classes": [
+    [
+      5,
+      7,
+      11,
+      12,
+      30
+    ],
+    [
+      0,
+      16,
+      20,
+      23,
+      26,
+      29
+    ],
+    [
+      1,
+      15,
+      17,
+      22,
+      24
+    ],
+    [
+      2,
+      4,
+      13,
+      14,
+      25
+    ],
+    [
+      3,
+      9,
+      10,
+      19,
+      21,
+      28
+    ],
+    [
+      6,
+      8,
+      18,
+      27
+    ]
+  ],
+  "output": {
+    "status": "optimal",
+    "method": "column_generation",
+    "objective_value": 6,
+    "solution": {
+      "color_classes": [
+        [
+          5,
+          7,
+          11,
+          12,
+          30
+        ],
+        [
+          0,
+          16,
+          20,
+          23,
+          26,
+          29
+        ],
+        [
+          1,
+          15,
+          17,
+          22,
+          24
+        ],
+        [
+          2,
+          4,
+          13,
+          14,
+          25
+        ],
+        [
+          3,
+          9,
+          10,
+          19,
+          21,
+          28
+        ],
+        [
+          6,
+          8,
+          18,
+          27
+        ]
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 6.0
+  }
+}

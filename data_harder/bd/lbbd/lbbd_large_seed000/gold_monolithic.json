@@ -1,0 +1,226 @@
+{
+  "best_objective": 315.0,
+  "global_lb": 315.0,
+  "global_ub": 315.0,
+  "iters": 1,
+  "total_time": 0.052240916993469,
+  "iter_records": [],
+  "final_master_objective": 315.0,
+  "final_vars": {
+    "task_0": [
+      1,
+      5
+    ],
+    "task_1": [
+      0,
+      9
+    ],
+    "task_2": [
+      0,
+      16
+    ],
+    "task_3": [
+      2,
+      1
+    ],
+    "task_4": [
+      0,
+      18
+    ],
+    "task_5": [
+      1,
+      13
+    ],
+    "task_6": [
+      0,
+      1
+    ],
+    "task_7": [
+      1,
+      18
+    ],
+    "task_8": [
+      2,
+      7
+    ],
+    "task_9": [
+      0,
+      22
+    ],
+    "task_10": [
+      0,
+      13
+    ],
+    "task_11": [
+      1,
+      1
+    ],
+    "task_12": [
+      2,
+      20
+    ],
+    "task_13": [
+      0,
+      5
+    ]
+  },
+  "master_metadata": {
+    "assignments": [
+      {
+        "task_id": 0,
+        "machine_id": 1,
+        "start": 5
+      },
+      {
+        "task_id": 1,
+        "machine_id": 0,
+        "start": 9
+      },
+      {
+        "task_id": 2,
+        "machine_id": 0,
+        "start": 16
+      },
+      {
+        "task_id": 3,
+        "machine_id": 2,
+        "start": 1
+      },
+      {
+        "task_id": 4,
+        "machine_id": 0,
+        "start": 18
+      },
+      {
+        "task_id": 5,
+        "machine_id": 1,
+        "start": 13
+      },
+      {
+        "task_id": 6,
+        "machine_id": 0,
+        "start": 1
+      },
+      {
+        "task_id": 7,
+        "machine_id": 1,
+        "start": 18
+      },
+      {
+        "task_id": 8,
+        "machine_id": 2,
+        "start": 7
+      },
+      {
+        "task_id": 9,
+        "machine_id": 0,
+        "start": 22
+      },
+      {
+        "task_id": 10,
+        "machine_id": 0,
+        "start": 13
+      },
+      {
+        "task_id": 11,
+        "machine_id": 1,
+        "start": 1
+      },
+      {
+        "task_id": 12,
+        "machine_id": 2,
+        "start": 20
+      },
+      {
+        "task_id": 13,
+        "machine_id": 0,
+        "start": 5
+      }
+    ]
+  },
+  "sub_metadata": {},
+  "output": {
+    "status": "optimal",
+    "method": "benders_decomposition",
+    "objective_value": 315.0,
+    "solution": {
+      "assignments": [
+        {
+          "task_id": 0,
+          "machine_id": 1,
+          "start": 5
+        },
+        {
+          "task_id": 1,
+          "machine_id": 0,
+          "start": 9
+        },
+        {
+          "task_id": 2,
+          "machine_id": 0,
+          "start": 16
+        },
+        {
+          "task_id": 3,
+          "machine_id": 2,
+          "start": 1
+        },
+        {
+          "task_id": 4,
+          "machine_id": 0,
+          "start": 18
+        },
+        {
+          "task_id": 5,
+          "machine_id": 1,
+          "start": 13
+        },
+        {
+          "task_id": 6,
+          "machine_id": 0,
+          "start": 1
+        },
+        {
+          "task_id": 7,
+          "machine_id": 1,
+          "start": 18
+        },
+        {
+          "task_id": 8,
+          "machine_id": 2,
+          "start": 7
+        },
+        {
+          "task_id": 9,
+          "machine_id": 0,
+          "start": 22
+        },
+        {
+          "task_id": 10,
+          "machine_id": 0,
+          "start": 13
+        },
+        {
+          "task_id": 11,
+          "machine_id": 1,
+          "start": 1
+        },
+        {
+          "task_id": 12,
+          "machine_id": 2,
+          "start": 20
+        },
+        {
+          "task_id": 13,
+          "machine_id": 0,
+          "start": 5
+        }
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 315.0
+  }
+}

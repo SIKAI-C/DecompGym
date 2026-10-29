@@ -1,0 +1,53 @@
+{
+  "best_objective": 423.3,
+  "global_lb": 423.3,
+  "global_ub": 423.3,
+  "routes": [
+    [
+      4,
+      2,
+      8,
+      10,
+      5,
+      11
+    ],
+    [
+      6,
+      12,
+      1,
+      3,
+      9,
+      7
+    ]
+  ],
+  "output": {
+    "status": "optimal",
+    "method": "column_generation",
+    "objective_value": 423.3,
+    "solution": {
+      "routes": [
+        [
+          4,
+          2,
+          8,
+          10,
+          5,
+          11
+        ],
+        [
+          6,
+          12,
+          1,
+          3,
+          9,
+          7
+        ]
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 423.3
+  }
+}

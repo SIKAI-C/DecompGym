@@ -1,0 +1,9 @@
+{
+  "seed": 0,
+  "size": "medium",
+  "folder": "bppc_medium_seed000",
+  "ground_truth_objective": 15,
+  "ground_truth_source": "decomposition_certificate",
+  "reference_proved": true,
+  "reference_seconds": 0.08265354199102148
+}
