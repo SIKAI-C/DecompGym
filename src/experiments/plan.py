@@ -52,7 +52,7 @@ def main(argv=None):
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args(argv)
     plan = load_plan(args.config)
-    print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": 81 * len(plan["model_queue"]), "launch_performed": False}, indent=2))
+    print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": 9 * len(plan.get("cohort", {}).get("families", range(9))) * len(plan["model_queue"]), "launch_performed": False}, indent=2))
 
 
 if __name__ == "__main__":
