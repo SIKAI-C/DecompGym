@@ -1,0 +1,109 @@
+{
+  "schema_version": 2,
+  "name": "decompgym-harder-small-all-20261029",
+  "description": "Harder-family cohort, small scale (54 instances: LBBD, graph coloring, BPPC, VRPTW, PDPTW, nurse rostering), paper protocol, the twelve paper models from older to newer generations.",
+  "dataset_inventory_sha256": "4713b3796aed963ddae5e6d1c788506e3f4db97ee350b6c61c7589f03793186b",
+  "prompt_policies": {
+    "feedback": "qualitative-objective-feedback-v1",
+    "workspace": "existing-target-cwd-v2"
+  },
+  "prompt_protocol": {
+    "decomposition_contract": "strict-decomposition-20261013-v2",
+    "problem_templates": "instance-bound-decomposition-prompts-20261013-v3",
+    "runtime_location": "separate-edit-runtime-v1",
+    "algorithm_judge": "strict-decomposition-source-review-v2",
+    "output_contract": "strict-decomposition-output-contract-v2",
+    "reflection_delivery": "consume-reflection-opportunity-and-continue-v1"
+  },
+  "reflection_policy": "consume-reflection-opportunity-and-continue-v1",
+  "reference_policy": "strict-calibrated-references-20261013-v2",
+  "model_queue": [
+    {
+      "model": "gpt-5.6-luna",
+      "backend": "codex-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-fable-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-sonnet-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-opus-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "gpt-6-luna",
+      "backend": "codex-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "gpt-6-sol",
+      "backend": "codex-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "gpt-6-astra",
+      "backend": "codex-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "backend": "agy-cli",
+      "effort": "catalog-slug"
+    },
+    {
+      "model": "claude-haiku-5-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "backend": "codex-cli",
+      "effort": "medium"
+    }
+  ],
+  "execution": {
+    "workers": 2,
+    "max_attempts": 10,
+    "solver_timeout": 60,
+    "solver_threads": 1,
+    "solver_cooldown_seconds": 10,
+    "agent_timeout": 900,
+    "active_codex_invocation_limit": 2,
+    "active_agy_invocation_limit": 1,
+    "active_claude_invocation_limit": 1,
+    "shared_first_attempt": true,
+    "stop_after_success": true,
+    "gap_threshold": 0.01,
+    "judge_model": "gpt-6-astra",
+    "judge_effort": "high"
+  },
+  "cohort": {
+    "name": "harder_small_54_all_models_20261029",
+    "families": [
+      "lbbd",
+      "gcol",
+      "bppc",
+      "vrptw",
+      "pdptw",
+      "nrp"
+    ]
+  }
+}
