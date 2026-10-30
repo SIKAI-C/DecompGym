@@ -102,3 +102,21 @@ def test_gap_bound_allowance_never_exceeds_true_value():
     # The exact Lagrangian value is 1600 (u.sum() minus a knapsack value of 1600 * 9e-10).
     lag = u.sum() - knapsack(u - 1.0, np.ones(1600, dtype=int), 1600)[0]
     assert certified_bound(lag, u, True) <= 1600
+
+
+def test_replay_ignores_late_and_torn_records(tmp_path):
+    import json
+
+    import src.experiments.scaleup_calibration as cal
+
+    class Adapter:
+        def objective(self, sol):
+            return float(sum(sol))
+
+    lines = [json.dumps({"kind": "incumbent", "t": 1.0, "objective": 10.0, "solution": [10], "source": "a"}),
+             json.dumps({"kind": "incumbent", "t": 2.0, "objective": 7.0, "solution": [3], "source": "a"}),  # objective mismatch: rejected
+             json.dumps({"kind": "incumbent", "t": 11.0, "objective": 1.0, "solution": [1], "source": "a"}),  # after the deadline
+             json.dumps({"kind": "bound", "t": 3.0, "bound": 2.0, "source": "a"}), '{"kind": "incum']  # torn final line
+    (tmp_path / "j.jsonl").write_text("\n".join(lines))
+    rec = cal.replay(tmp_path / "j.jsonl", Adapter(), 10.0)
+    assert rec.best == 10.0 and len(rec.witnesses) == 1 and rec.bounds[-1]["bound"] == 2.0

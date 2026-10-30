@@ -45,7 +45,9 @@ CPU_MODEL=$(lscpu | sed -n 's/^Model name: *//p')
 if [[ "$CPU_MODEL" != "Intel(R) Xeon(R) Gold 6226 CPU @ 2.70GHz" ]]; then
   echo "abort: unexpected CPU model '$CPU_MODEL' (infrastructure; rerun this task)"; exit 3
 fi
-GRB_VERSION=$(mamba run -n pd python -c 'import gurobipy; print(".".join(map(str, gurobipy.gurobi.version())))')
+# The env's interpreter is called directly so that signal exit codes (137 = SIGKILL) reach this script.
+PY=$(mamba run -n pd python -c 'import sys; print(sys.executable)')
+GRB_VERSION=$("$PY" -c 'import gurobipy; print(".".join(map(str, gurobipy.gurobi.version())))')
 if [[ "$GRB_VERSION" != "13.0.1" ]]; then
   echo "abort: gurobipy $GRB_VERSION, expected 13.0.1"; exit 3
 fi
@@ -53,8 +55,11 @@ echo "cpu_model=$CPU_MODEL gurobi=$GRB_VERSION"
 echo "started=$(date -Is)"
 
 mkdir -p "$OUTPUT_PATH"
-mamba run -n pd python -m src.experiments.scaleup_calibration \
-  --family ufl --data "$BASE/instances/ufl/$INSTANCE/data.json" \
-  --method "$METHOD" --time-limit 3600 --out "$OUTPUT_PATH/${INSTANCE}_${METHOD}.json"
+ARGS=(--family ufl --data "$BASE/instances/ufl/$INSTANCE/data.json" --method "$METHOD" --time-limit 3600 --out "$OUTPUT_PATH/${INSTANCE}_${METHOD}.json")
+RC=0
+"$PY" -m src.experiments.scaleup_calibration "${ARGS[@]}" || RC=$?
+echo "solver_exit_code=$RC"
+# Postmortem: a hard-killed solver (e.g. cgroup OOM) is scored from its journal.
+"$PY" -m src.experiments.scaleup_calibration "${ARGS[@]}" --finalize --exit-code "$RC"
 
 echo "finished=$(date -Is)"

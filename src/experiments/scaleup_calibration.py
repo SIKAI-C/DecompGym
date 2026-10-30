@@ -214,20 +214,33 @@ def run_paper_reference(family: str, data: str, limit: float, rec: Recorder) -> 
                 rec.solution(assign, "paper_reference")
             return solution
 
+    from src.utils.reference_runtime import ReferenceLimit
+
     if remaining(limit) <= 0.01:
         return {"termination": "deadline_before_start"}
-    solver = {"ufl": PublishingUFLBenders, "gap": PublishingGAPColumnGeneration}[family](max_iters=10**6, time_limit=remaining(limit))
-    error = None
+    memory = {"SoftMemLimit": SOFT_MEM_GB}  # same memory guard as every other method
+    params = {"master_params": memory, "subproblem_params": memory} if family == "ufl" else {"master_params": memory}
+    solver = {"ufl": PublishingUFLBenders, "gap": PublishingGAPColumnGeneration}[family](max_iters=10**6, time_limit=remaining(limit), **params)
+    error, termination = None, None
     try:
         res = solver.run(data)
-    except Exception as exc:  # a reference that hits its budget may raise; keep the evidence
-        res, error = {}, f"{type(exc).__name__}: {exc}"
+    except ReferenceLimit as exc:  # the budget ran out before a completed result
+        res, error, termination = {}, f"ReferenceLimit: {exc}", "deadline"
+    except MemoryError as exc:
+        res, error, termination = {}, f"MemoryError: {exc}", "oom"
+    except gp.GurobiError as exc:
+        res, error = {}, f"GurobiError: {exc}"
+        termination = "memory_limit" if exc.errno == GRB.Error.OUT_OF_MEMORY or "memory" in str(exc).lower() else "crash"
+    except Exception as exc:  # keep the evidence
+        res, error, termination = {}, f"{type(exc).__name__}: {exc}", "crash"
+    if termination is None:
+        reason = str(res.get("termination_reason", ""))
+        termination = "deadline" if "time" in reason else "memory_limit" if "mem" in reason else "finished"
     if family == "ufl" and res.get("final_vars"):
         rec.solution([int(k.split("_")[1]) for k, v in res["final_vars"].items() if k.startswith("y_") and v > 0.5], "paper_reference_final")
     records = [{k: getattr(r, k) for k in ("iteration", "elapsed_time", "master_obj", "global_lb", "global_ub") if hasattr(r, k)} for r in getattr(solver, "iter_records", [])]
     # The paper's references report bounds per iteration on their own clock; they are kept as diagnostics only.
-    termination = "finished" if not error else "deadline" if "ReferenceLimit" in error else "crash"
-    return {"termination": termination, "claimed_objective": res.get("best_objective"), "claimed_lb": res.get("global_lb"), "iters": res.get("iters"),
+    return {"termination": termination, "reference_termination_reason": res.get("termination_reason"), "claimed_objective": res.get("best_objective"), "claimed_lb": res.get("global_lb"), "iters": res.get("iters"),
             "error": error, "iteration_records": records,
             }
 
@@ -259,6 +272,57 @@ def fingerprint(args) -> dict:
             "gurobi": ".".join(map(str, gp.gurobi.version()))}
 
 
+def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previous: list[Path], total: float | None, extra: dict | None = None) -> dict:
+    """Verify the best eligible witness and write the result atomically (score withdrawn unless verified)."""
+    journal, witnesses_path, solution_path = out.with_suffix(".journal.jsonl"), out.with_suffix(".witnesses.json"), out.with_suffix(".output.json")
+    result = {"fingerprint": fp, "complete": True, "family": args.family, "method": args.method, "data": args.data,
+              "time_limit": args.time_limit, "total_seconds": total, "termination": details.get("termination"),
+              "host": platform.node(), "slurm_job": os.environ.get("SLURM_JOB_ID"),
+              "slurm_array_task": os.environ.get("SLURM_ARRAY_TASK_ID"), "slurm_restart_count": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
+              "previous_attempts": [str(p) for p in previous],
+              "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
+              "best_bound": rec.bounds[-1]["bound"] if rec.bounds else None, "late_publications": rec.late, "infeasible_publications": rec.infeasible,
+              "details": details, "witness_count": len(rec.witnesses), "bounds": rec.bounds,
+              "incumbents": [{k: w[k] for k in ("t", "objective", "source")} for w in rec.witnesses]} | (extra or {})
+    verified = None
+    if rec.witnesses:
+        from src.experiments.verification import OutputVerifier
+        solution_path.write_text(json.dumps(rec.adapter.output(rec.witnesses[-1]["solution"])))
+        result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
+        verified = bool(result["verification"].get("ok"))
+        witnesses_path.write_text(json.dumps(rec.witnesses))
+    result["scored_objective"] = rec.best if verified else None
+    result["artifact_sha256"] = {str(p): sha256(p) for p in (journal, witnesses_path, solution_path) if p.exists()}
+    tmp = out.with_suffix(".tmp")
+    tmp.write_text(json.dumps(result, indent=1, default=str))
+    os.replace(tmp, out)
+    return result
+
+
+def replay(journal: Path, adapter, limit: float) -> Recorder:
+    """Rebuild a Recorder from a journal; incomplete trailing lines (a kill mid-write) are ignored."""
+    rec = Recorder(adapter, limit, Path(os.devnull))
+    for line in journal.read_text().splitlines() if journal.exists() else []:
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if r.get("kind") == "incumbent" and r["t"] < limit and adapter.objective(r["solution"]) == r["objective"] and r["objective"] < rec.best:
+            rec.best = r["objective"]
+            rec.witnesses.append({k: r[k] for k in ("t", "objective", "solution", "source")})
+        elif r.get("kind") == "bound" and r["t"] < limit:
+            rec.bounds.append({k: r[k] for k in ("t", "bound", "source")})
+    return rec
+
+
+def complete(out: Path, fp: dict) -> bool:
+    if not out.exists():
+        return False
+    prior = json.loads(out.read_text())
+    intact = all(Path(p).exists() and sha256(p) == h for p, h in prior.get("artifact_sha256", {}).items())
+    return prior.get("fingerprint") == fp and bool(prior.get("complete")) and intact
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--family", choices=sorted(ADAPTERS), required=True)
@@ -266,18 +330,28 @@ def main() -> None:
     parser.add_argument("--method", choices=sorted(METHODS), required=True)
     parser.add_argument("--time-limit", type=float, default=3600.0)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--finalize", action="store_true", help="Postmortem: score a killed attempt from its journal (run after the solver process exits)")
+    parser.add_argument("--exit-code", type=int, default=None, help="Exit code of the solver process (with --finalize)")
     args = parser.parse_args()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     fp = fingerprint(args)
-    journal, witnesses_path, solution_path = out.with_suffix(".journal.jsonl"), out.with_suffix(".witnesses.json"), out.with_suffix(".output.json")
-    if out.exists():
-        prior = json.loads(out.read_text())
-        intact = all(Path(p).exists() and sha256(p) == h for p, h in prior.get("artifact_sha256", {}).items())
-        if prior.get("fingerprint") == fp and prior.get("complete") and intact:
-            print(f"complete result exists: {out}")
+    journal = out.with_suffix(".journal.jsonl")
+    if complete(out, fp):
+        print(f"complete result exists: {out}")
+        return
+    if args.finalize:
+        # A hard kill (cgroup OOM, SIGKILL) skips the solver's own result; its journal still holds every
+        # eligible incumbent. SIGTERM (exit 143) is a Slurm preemption: left for the requeued run.
+        if args.exit_code in (0, 143, None) or not journal.exists():
             return
-    # An earlier attempt that did not finish (requeue, crash, kill) is archived, never resumed.
+        rec = replay(journal, ADAPTERS[args.family](args.data), args.time_limit)
+        termination = "oom_or_killed" if args.exit_code == 137 else "crash"
+        result = write_result(args, fp, out, rec, {"termination": termination, "exit_code": args.exit_code}, [], None, {"postmortem": True})
+        print(json.dumps({k: result[k] for k in ("family", "method", "termination", "scored_objective", "witness_count")}, default=str))
+        return
+    # An earlier attempt that did not finish (requeue/preemption) is archived, never resumed; it is
+    # an infrastructure interruption and this attempt starts with a fresh clock.
     previous = sorted(out.parent.glob(out.stem + ".attempt*.journal.jsonl"))
     if journal.exists():
         journal.rename(out.with_name(f"{out.stem}.attempt{len(previous) + 1}.journal.jsonl"))
@@ -290,30 +364,9 @@ def main() -> None:
     except Exception as exc:  # incumbents already journaled stay eligible
         details = {"termination": "crash", "error": f"{type(exc).__name__}: {exc}"}
     total = elapsed()
-    result = {"fingerprint": fp, "complete": True, "family": args.family, "method": args.method, "data": args.data,
-              "time_limit": args.time_limit, "total_seconds": total, "termination": details.get("termination"),
-              "host": platform.node(), "slurm_job": os.environ.get("SLURM_JOB_ID"),
-              "slurm_array_task": os.environ.get("SLURM_ARRAY_TASK_ID"), "slurm_restart_count": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
-              "previous_attempts": [str(p) for p in previous],
-              "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
-              "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 if platform.system() == "Linux" else 1024.0 ** 2),
-              "best_bound": rec.bounds[-1]["bound"] if rec.bounds else None, "late_publications": rec.late, "infeasible_publications": rec.infeasible,
-              "details": details, "witness_count": len(rec.witnesses), "bounds": rec.bounds,
-              "incumbents": [{k: w[k] for k in ("t", "objective", "source")} for w in rec.witnesses]}
-    verified = None
-    if rec.witnesses:
-        from src.experiments.verification import OutputVerifier
-        solution_path.write_text(json.dumps(rec.adapter.output(rec.witnesses[-1]["solution"])))
-        result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
-        verified = bool(result["verification"].get("ok"))
-        witnesses_path.write_text(json.dumps(rec.witnesses))
-    # The score is withdrawn unless the best witness passes the family verifier.
-    result["scored_objective"] = rec.best if verified else None
     rec.journal.close()
-    result["artifact_sha256"] = {str(p): sha256(p) for p in (journal, witnesses_path, solution_path) if p.exists()}
-    tmp = out.with_suffix(".tmp")
-    tmp.write_text(json.dumps(result, indent=1, default=str))
-    os.replace(tmp, out)
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 if platform.system() == "Linux" else 1024.0 ** 2)
+    result = write_result(args, fp, out, rec, details, previous, total, {"peak_rss_mb": peak})
     print(json.dumps({k: result[k] for k in ("family", "method", "termination", "total_seconds", "scored_objective", "best_bound", "witness_count", "late_publications")}, default=str))
 
 
