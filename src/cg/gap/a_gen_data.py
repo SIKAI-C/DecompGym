@@ -191,3 +191,34 @@ def generate_gap_xl_instance(seed: int, output_dir: str | Path | None = None) ->
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
     return data
+
+
+def gap_instance_from_arrays(cost: list[list[float]], resource: list[list[int]], capacity: list[int], size_label: str = "xl") -> GAPInstance:
+    """Build a GAPInstance from agent-major arrays cost[k][i], resource[k][i] (k = machine, i = job)."""
+    m, n = len(capacity), len(cost[0])
+    machines = [GAPMachine(id=k, name=f"Plant_{k}", capacity=int(capacity[k])) for k in range(m)]
+    jobs = [GAPJob(id=i, name=f"Order_{i}", assignments=[GAPAssignment(machine_id=k, resource=int(resource[k][i]), cost=float(cost[k][i])) for k in range(m)]) for i in range(n)]
+    return GAPInstance(instance_size=size_label, machines=machines, jobs=jobs)
+
+
+def load_orlib_gap_file(path: str | Path) -> list[GAPInstance]:
+    """Read an OR-Library / Yagiura GAP file: problem count (OR-Library only), then per problem m n, costs (m x n), resources (m x n), capacities (m)."""
+    tokens = [int(t) for t in Path(path).read_text().split()]
+    pos, out = 0, []
+    # OR-Library files start with the problem count; Yagiura's single-problem files start with m n.
+    count = 1
+    if len(tokens) > 2 and tokens[0] < 100 and len(tokens) != 2 + 2 * tokens[0] * tokens[1] + tokens[0]:
+        count, pos = tokens[0], 1
+    for _ in range(count):
+        m, n = tokens[pos], tokens[pos + 1]
+        pos += 2
+        cost = [tokens[pos + k * n: pos + (k + 1) * n] for k in range(m)]
+        pos += m * n
+        resource = [tokens[pos + k * n: pos + (k + 1) * n] for k in range(m)]
+        pos += m * n
+        capacity = tokens[pos: pos + m]
+        pos += m
+        out.append(gap_instance_from_arrays(cost, resource, capacity))
+    if pos != len(tokens):
+        raise ValueError(f"{path}: {len(tokens) - pos} trailing tokens")
+    return out

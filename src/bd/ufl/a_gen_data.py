@@ -246,3 +246,21 @@ def generate_ufl_xl_instance(seed: int, variant: str = "xl", output_dir: str | P
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
     return data
+
+
+def load_ufllib_instance(path: str | Path) -> UFLInstance:
+    """Read a UflLib "simple format" file (e.g. Koerkel-Ghosh): `FILE:` line, `m n 0`, then per facility `index opening_cost c_1 ... c_n`."""
+    lines = [line.split() for line in Path(path).read_text().splitlines() if line.strip() and not line.startswith("FILE")]
+    m, n = int(lines[0][0]), int(lines[0][1])
+    rows = lines[1:1 + m]
+    if len(rows) != m or any(len(r) != n + 2 for r in rows):
+        raise ValueError(f"{path}: expected {m} facility rows with {n + 2} fields")
+    f = np.array([float(r[1]) for r in rows])
+    D = np.array([[float(v) for v in r[2:]] for r in rows])
+    # Coordinates are placeholders; Koerkel-Ghosh costs are not geometric.
+    return UFLInstance(m=m, n=n, Xc=np.zeros((n, 2)), Xf=np.zeros((m, 2)), f=f, D=D)
+
+
+def read_ufllib_reference(path: str | Path) -> float:
+    """The objective value at the end of a UflLib `.opt` / `.bub` solution file."""
+    return float(Path(path).read_text().split()[-1])
