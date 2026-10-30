@@ -30,13 +30,14 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg"}
+SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd"}
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
                   "src/utils/base_data.py"]
 SOURCES = {
     "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
+    "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py"],
 }
 SOFT_MEM_GB = 12.0  # Gurobi SoftMemLimit, below the 16 GB job allocation with headroom for Python
 
@@ -94,7 +95,28 @@ class GAPAdapter:
                 "solution": {"assignments": [{"job_id": i, "machine_id": int(k)} for i, k in enumerate(assign)]}}
 
 
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter}
+class CLRPAdapter:
+    """Prodhon CLRP instance (a .dat file); solutions are route lists [{"depot", "customers"}]."""
+
+    def __init__(self, data: str) -> None:
+        from src.bd.clrp.a_data import load_prodhon
+        self.inst = load_prodhon(data)
+        self.cost = self.inst.travel("ceil")
+
+    @staticmethod
+    def normalize(routes: list) -> list:
+        return [{"depot": int(r["depot"]), "customers": [int(c) for c in r["customers"]]} for r in routes]
+
+    def objective(self, routes: list) -> float | None:
+        from src.bd.clrp.b_mip_xl import route_cost
+        return route_cost(self.inst, self.cost, self.normalize(routes))
+
+    def output(self, routes: list, status: str = "feasible") -> dict:
+        return {"status": status, "method": "decomposition", "objective_value": self.objective(routes), "routes": self.normalize(routes)}
+
+
+UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter}
 
 
 class Recorder:
@@ -128,7 +150,7 @@ class Recorder:
             self.infeasible += 1
         elif obj < self.best - 1e-9:
             self.best = obj
-            w = {"t": t, "objective": obj, "solution": [int(v) for v in sol], "source": source}
+            w = {"t": t, "objective": obj, "solution": self.adapter.normalize(sol), "source": source}
             self.witnesses.append(w)
             self._write({"kind": "incumbent", **w})
 
@@ -167,6 +189,15 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bo
             rec.solution(list(np.nonzero(y0 > 0.5)[0]), "mip_initializer")
             y.Start = y0
             x.Start = (np.arange(m)[:, None] == np.argmin(np.where(y0[:, None] > 0.5, a.D, np.inf), axis=0)[None, :]).astype(float)
+    elif family == "clrp":
+        from src.bd.clrp.b_mip_xl import build_clrp_mip, decode_routes
+        model.dispose()
+        model, v = build_clrp_mip(a.inst, a.cost)
+        model.Params.OutputFlag = 0
+        model.Params.Threads = 1
+        model.Params.SoftMemLimit = SOFT_MEM_GB
+        arcs, xv = v["arcs"], [v["x"][arc] for arc in v["arcs"]]
+        decode = lambda get: decode_routes(a.inst, dict(zip(arcs, get(xv))))
     else:
         m, n = a.cost.shape
         x = model.addMVar((m, n), vtype=GRB.BINARY)
@@ -187,7 +218,7 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bo
 
     model.optimize(callback)
     if model.SolCount:
-        rec.solution(decode(lambda v: v.X), "mip_final")
+        rec.solution(decode(lambda v: model.getAttr("X", v) if isinstance(v, list) else v.X), "mip_final")
     rec.bound(float(model.ObjBound), "mip_final")
     termination = {GRB.OPTIMAL: "finished", GRB.TIME_LIMIT: "deadline", GRB.MEM_LIMIT: "memory_limit"}.get(model.Status, f"status_{model.Status}")
     return {"termination": termination, "status": int(model.Status), "proved_optimal": model.Status == GRB.OPTIMAL, "build_seconds": build_seconds,
@@ -259,6 +290,9 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     if family == "ufl":
         from src.bd.ufl.b_ref_bd_xl import UFLBendersXL
         solver = UFLBendersXL(time_limit=remaining(limit), threads=1, **hooks)
+    elif family == "clrp":
+        from src.bd.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
+        solver = CLRPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
     else:
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
         solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -269,12 +303,16 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
 
 
 def run_heuristic_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
-    """UFL heuristic control without decomposition (fixed seed), same budget and verification."""
-    if family != "ufl":
-        raise ValueError("the heuristic control is defined for UFL only")
-    from src.bd.ufl.b_ref_bd_xl import iterated_local_search
+    """Heuristic control without decomposition (fixed seed), same budget and verification."""
     a = rec.adapter
     started = time.perf_counter()
+    if family == "clrp":
+        from src.bd.clrp.c_heuristic import depot_search
+        best, _ = depot_search(a.inst, a.cost, started + remaining(limit), 0, lambda plan: rec.solution(plan, "heuristic_control"))
+        return {"termination": "deadline", "heuristic_best": best, "seed": 0}
+    if family != "ufl":
+        raise ValueError("no heuristic control for this family")
+    from src.bd.ufl.b_ref_bd_xl import iterated_local_search
     best, _ = iterated_local_search(a.D, a.f, started + remaining(limit), seed=0, on_incumbent=lambda s: rec.solution(s, "heuristic_control"))
     return {"termination": "deadline", "heuristic_best": best, "seed": 0}
 
@@ -306,7 +344,11 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
     if rec.witnesses:
         from src.experiments.verification import OutputVerifier
         solution_path.write_text(json.dumps(rec.adapter.output(rec.witnesses[-1]["solution"])))
-        result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
+        if args.family == "clrp":  # not a paper family: its own independent verifier on the Prodhon file
+            from src.bd.clrp.d_verifier import verify_solution
+            result["verification"] = verify_solution(args.data, solution_path, 1e-6)
+        else:
+            result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
         verified = bool(result["verification"].get("ok"))
         witnesses_path.write_text(json.dumps(rec.witnesses))
     result["scored_objective"] = rec.best if verified else None

@@ -78,6 +78,8 @@ def test_recorder_rejects_late_publications_and_journals(tmp_path, monkeypatch):
     import src.experiments.scaleup_calibration as cal
 
     class Adapter:
+        normalize = staticmethod(list)
+
         def objective(self, sol):
             return float(sum(sol))
 
