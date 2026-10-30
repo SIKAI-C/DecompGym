@@ -16,6 +16,12 @@ cd "$(dirname "$0")/.."
 PY=${PY:-../DecompBench/.venv/bin/python}  # the main checkout's environment
 ROOT=${ROOT:-outputs/experiments/harder_small_all_20261029_r1}
 ROOT=$(cd "$ROOT" && pwd)
+# The Gemini keyring passphrase can live in the macOS Keychain (stored once with
+# `security add-generic-password -a "$USER" -s decompbench-agy-keyring -w`); it is never printed.
+if [ -z "${DECOMPBENCH_AGY_KEYRING_PASSPHRASE:-}" ]; then
+  DECOMPBENCH_AGY_KEYRING_PASSPHRASE=$(security find-generic-password -a "$USER" -s decompbench-agy-keyring -w 2>/dev/null || true)
+  export DECOMPBENCH_AGY_KEYRING_PASSPHRASE
+fi
 
 watchdog_pid() {
   # Print the live watchdog PID of this root, or nothing.
@@ -89,6 +95,10 @@ case "${1:-}" in
     [ -f "$ROOT/monitor/status.json" ] && "$PY" -c 'import json,sys; s=json.load(open(sys.argv[1])); print("resources:", s.get("state"), "cpu %.0f%%" % s.get("cpu_percent", 0), "rss %.0f MiB" % s.get("rss_mib", 0), "| peaks:", s.get("peaks"))' "$ROOT/monitor/status.json"
     [ -f "$ROOT/STOP" ] && echo "graceful stop pending"
     true
+    ;;
+  check-gemini)
+    [ -n "$DECOMPBENCH_AGY_KEYRING_PASSPHRASE" ] || { echo "No Gemini passphrase in the environment or the Keychain."; exit 1; }
+    "$PY" src/02_experiment.py docker auth --backend agy --verify
     ;;
   dashboard)
     nohup "$PY" src/02_experiment.py dashboard --root "$ROOT" >>"$ROOT/dashboard.log" 2>&1 &
