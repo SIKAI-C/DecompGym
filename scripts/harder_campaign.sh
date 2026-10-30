@@ -2,6 +2,7 @@
 # Start, stop and resume the harder-family campaign without losing finished work.
 #
 #   scripts/harder_campaign.sh start       # resume the campaign and supervise it in the background
+#   scripts/harder_campaign.sh start codex gemini   # only these backends (codex, claude, gemini), e.g. while Claude is rate-limited
 #   scripts/harder_campaign.sh stop        # graceful: start no new pair, finish the pairs in flight, then pause
 #   scripts/harder_campaign.sh stop-now    # immediate: kill the agents and solvers; the interrupted attempt resumes later
 #   scripts/harder_campaign.sh status      # progress per model, controller state and the last resource sample
@@ -27,11 +28,19 @@ watchdog_pid() {
 }
 
 models() {
-  # Config order; Gemini only with its keyring passphrase.
-  "$PY" - "$ROOT/campaign.json" <<'EOF'
+  # Config order, limited to the backends given as arguments (default: all); Gemini only with its keyring passphrase.
+  "$PY" - "$ROOT/campaign.json" "$@" <<'EOF'
 import json, os, sys
+names = {"codex": "codex-cli", "claude": "claude-code-cli", "gemini": "agy-cli"}
+unknown = [name for name in sys.argv[2:] if name not in names]
+if unknown:
+    sys.exit(f"Unknown backend(s) {unknown}; use codex, claude or gemini")
+selected = {names[name] for name in sys.argv[2:]} or set(names.values())
+if "agy-cli" in selected and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
+    print("Gemini skipped: DECOMPBENCH_AGY_KEYRING_PASSPHRASE is not set in this shell.", file=sys.stderr)
+    selected.discard("agy-cli")
 for item in json.load(open(sys.argv[1]))["model_queue"]:
-    if item["backend"] != "agy-cli" or os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
+    if item["backend"] in selected:
         print(item["model"])
 EOF
 }
@@ -42,8 +51,11 @@ case "${1:-}" in
       echo "Already running (watchdog PID $(watchdog_pid))."; exit 0
     fi
     docker info >/dev/null 2>&1 || { echo "Docker is not running; start Docker Desktop first."; exit 1; }
+    shift
+    selected=$(models "$@")
+    [ -n "$selected" ] || { echo "No model selected."; exit 1; }
     args=()
-    while read -r model; do args+=(--model "$model"); done < <(models)
+    while read -r model; do args+=(--model "$model"); done <<<"$selected"
     "$PY" src/02_experiment.py resume --root "$ROOT"
     nohup "$PY" src/02_experiment.py watch --root "$ROOT" "${args[@]}" >>"$ROOT/watch.log" 2>&1 &
     pid=$!
