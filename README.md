@@ -889,7 +889,19 @@ tests/                unit tests and paper-equivalence tests
 
 ## Citation
 
-*Beyond Formulation: DecompGym, an Executable Environment for LLM Agents Designing Decomposition Algorithms* (paper forthcoming on arXiv).
+If you use DecompGym, please cite the [paper](https://arxiv.org/abs/2610.38175):
+
+```bibtex
+@misc{cheng2026decompgymbenchmarkingllmagents,
+      title={DecompGym: Benchmarking LLM Agents on Designing Decomposition Algorithms},
+      author={Sikai Cheng and Tinghan Ye and Arnaud Deza and Xiaonan Qi and Miao Li and Litong Liu and Changkun Guan},
+      year={2026},
+      eprint={2610.38175},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2610.38175},
+}
+```
 
 ## License
 
