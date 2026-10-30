@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "solver_seconds": 10,
+  "methods": [
+    "monolithic",
+    "lp_benders",
+    "integer_benders"
+  ],
+  "cases": [
+    {
+      "name": "lrp_large_seed000",
+      "source": "data/bd/lrp/lrp_large_seed000/data.json"
+    },
+    {
+      "name": "lrp_large_seed001",
+      "source": "data/bd/lrp/lrp_large_seed001/data.json"
+    },
+    {
+      "name": "lrp_large_seed002",
+      "source": "data/bd/lrp/lrp_large_seed002/data.json"
+    },
+    {
+      "name": "lrp_medium_seed000",
+      "source": "data/bd/lrp/lrp_medium_seed000/data.json"
+    },
+    {
+      "name": "lrp_medium_seed001",
+      "source": "data/bd/lrp/lrp_medium_seed001/data.json"
+    },
+    {
+      "name": "lrp_medium_seed002",
+      "source": "data/bd/lrp/lrp_medium_seed002/data.json"
+    },
+    {
+      "name": "lrp_small_seed000",
+      "source": "data/bd/lrp/lrp_small_seed000/data.json"
+    },
+    {
+      "name": "lrp_small_seed001",
+      "source": "data/bd/lrp/lrp_small_seed001/data.json"
+    },
+    {
+      "name": "lrp_small_seed002",
+      "source": "data/bd/lrp/lrp_small_seed002/data.json"
+    }
+  ]
+}

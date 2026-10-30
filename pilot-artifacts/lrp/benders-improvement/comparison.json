@@ -1,0 +1,355 @@
+{
+  "campaigns": {
+    "lp-first": {
+      "runs": 36,
+      "statuses": {
+        "feasible": 18,
+        "optimal": 18
+      },
+      "verified": 36,
+      "watchdog_timeouts": 0
+    },
+    "repair": {
+      "runs": 18,
+      "statuses": {
+        "optimal": 12,
+        "feasible": 6
+      },
+      "verified": 18,
+      "watchdog_timeouts": 0
+    },
+    "lp-first-repeat-1": {
+      "runs": 12,
+      "statuses": {
+        "optimal": 12
+      },
+      "verified": 12,
+      "watchdog_timeouts": 0
+    },
+    "lp-first-repeat-2": {
+      "runs": 12,
+      "statuses": {
+        "optimal": 12
+      },
+      "verified": 12,
+      "watchdog_timeouts": 0
+    }
+  },
+  "same_original_inputs_budgets_threads_witnesses": true,
+  "cross_campaign_bound_contradictions": [],
+  "comparisons": [
+    {
+      "instance": "small_seed000",
+      "customers": 16,
+      "old_integer_seconds": 0.05198508396279067,
+      "lp_first_seconds": 0.0565488749416545,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": 0.9192947519544354,
+      "lp_first_upper_bound": 43.93360212501288,
+      "repair_upper_bound": 43.93360212501288,
+      "repair_incumbent_improvement_percent": 0.0,
+      "lp_first_gap_percent": 2.276162092581771e-06,
+      "repair_gap_percent": 2.276162092581771e-06
+    },
+    {
+      "instance": "small_seed001",
+      "customers": 16,
+      "old_integer_seconds": 0.05677029199432582,
+      "lp_first_seconds": 0.07275600009597838,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": 0.7802833019879527,
+      "lp_first_upper_bound": 55.946798174145584,
+      "repair_upper_bound": 55.946798174145584,
+      "repair_incumbent_improvement_percent": 0.0,
+      "lp_first_gap_percent": 0.0,
+      "repair_gap_percent": 0.0
+    },
+    {
+      "instance": "small_seed002",
+      "customers": 16,
+      "old_integer_seconds": 0.06891691696364433,
+      "lp_first_seconds": 0.08146412495989352,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": 0.8459787298712599,
+      "lp_first_upper_bound": 52.38850895508257,
+      "repair_upper_bound": 52.38850895508257,
+      "repair_incumbent_improvement_percent": 0.0,
+      "lp_first_gap_percent": 0.0,
+      "repair_gap_percent": 0.0
+    },
+    {
+      "instance": "medium_seed000",
+      "customers": 28,
+      "old_integer_seconds": 0.21748200000729412,
+      "lp_first_seconds": 0.23370724997948855,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": 0.930574468812506,
+      "lp_first_upper_bound": 39.714520014691296,
+      "repair_upper_bound": 39.714520014691296,
+      "repair_incumbent_improvement_percent": 0.0,
+      "lp_first_gap_percent": 0.0,
+      "repair_gap_percent": 0.0
+    },
+    {
+      "instance": "medium_seed001",
+      "customers": 28,
+      "old_integer_seconds": 6.8977364170132205,
+      "lp_first_seconds": 1.7954684169963002,
+      "old_integer_calls": 4,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": 3.8417475638767717,
+      "lp_first_upper_bound": 56.71052697852516,
+      "repair_upper_bound": 56.71052697852516,
+      "repair_incumbent_improvement_percent": 0.0,
+      "lp_first_gap_percent": 1.763341042226459e-06,
+      "repair_gap_percent": 1.763341042226459e-06
+    },
+    {
+      "instance": "medium_seed002",
+      "customers": 28,
+      "old_integer_seconds": 4.842188540962525,
+      "lp_first_seconds": 1.9636360000586137,
+      "old_integer_calls": 3,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": 2.4659298061443096,
+      "lp_first_upper_bound": 57.52287160327761,
+      "repair_upper_bound": 57.52287160327761,
+      "repair_incumbent_improvement_percent": 0.0,
+      "lp_first_gap_percent": 1.2599398643964886e-12,
+      "repair_gap_percent": 1.2599398643964886e-12
+    },
+    {
+      "instance": "large_seed000",
+      "customers": 40,
+      "old_integer_seconds": 20.010706500033848,
+      "lp_first_seconds": 20.010040000081062,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": null,
+      "lp_first_upper_bound": 215.42648424596763,
+      "repair_upper_bound": 116.53295746217263,
+      "repair_incumbent_improvement_percent": 45.905928015276565,
+      "lp_first_gap_percent": 57.24233319819011,
+      "repair_gap_percent": 20.956834579055222
+    },
+    {
+      "instance": "large_seed001",
+      "customers": 40,
+      "old_integer_seconds": 20.014304833021015,
+      "lp_first_seconds": 20.015800207969733,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": null,
+      "lp_first_upper_bound": 195.54748619392328,
+      "repair_upper_bound": 112.4518937361826,
+      "repair_incumbent_improvement_percent": 42.49381778057493,
+      "lp_first_gap_percent": 57.226988148981114,
+      "repair_gap_percent": 25.620150390420903
+    },
+    {
+      "instance": "large_seed002",
+      "customers": 40,
+      "old_integer_seconds": 20.014327500015497,
+      "lp_first_seconds": 20.0098357090028,
+      "old_integer_calls": 1,
+      "lp_first_integer_calls": 1,
+      "observed_optimal_runtime_ratio": null,
+      "lp_first_upper_bound": 207.98565870632004,
+      "repair_upper_bound": 118.73929527573105,
+      "repair_incumbent_improvement_percent": 42.90986406740989,
+      "lp_first_gap_percent": 60.17859236636153,
+      "repair_gap_percent": 30.248182136651252
+    }
+  ],
+  "repeated_timings": [
+    {
+      "instance": "small_seed000",
+      "integer_benders": {
+        "seconds": [
+          0.05198508396279067,
+          0.04843354201875627,
+          0.04746537504252046
+        ],
+        "median_seconds": 0.04843354201875627,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "integer_benders_lp_first": {
+        "seconds": [
+          0.0565488749416545,
+          0.06317254097666591,
+          0.060643000062555075
+        ],
+        "median_seconds": 0.060643000062555075,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "median_runtime_ratio": 0.7986666551588084
+    },
+    {
+      "instance": "small_seed001",
+      "integer_benders": {
+        "seconds": [
+          0.05677029199432582,
+          0.05833058408461511,
+          0.05594733403995633
+        ],
+        "median_seconds": 0.05677029199432582,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "integer_benders_lp_first": {
+        "seconds": [
+          0.07275600009597838,
+          0.07121225004084408,
+          0.06779787503182888
+        ],
+        "median_seconds": 0.07121225004084408,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "median_runtime_ratio": 0.7971984028276733
+    },
+    {
+      "instance": "small_seed002",
+      "integer_benders": {
+        "seconds": [
+          0.06891691696364433,
+          0.06564008397981524,
+          0.06876341602765024
+        ],
+        "median_seconds": 0.06876341602765024,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "integer_benders_lp_first": {
+        "seconds": [
+          0.08146412495989352,
+          0.08016008301638067,
+          0.0797322909347713
+        ],
+        "median_seconds": 0.08016008301638067,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "median_runtime_ratio": 0.8578261578596229
+    },
+    {
+      "instance": "medium_seed000",
+      "integer_benders": {
+        "seconds": [
+          0.21748200000729412,
+          0.21820083307102323,
+          0.2192474170587957
+        ],
+        "median_seconds": 0.21820083307102323,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "integer_benders_lp_first": {
+        "seconds": [
+          0.23370724997948855,
+          0.23783512506633997,
+          0.2352014579810202
+        ],
+        "median_seconds": 0.2352014579810202,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "median_runtime_ratio": 0.9277188795684724
+    },
+    {
+      "instance": "medium_seed001",
+      "integer_benders": {
+        "seconds": [
+          6.8977364170132205,
+          6.9659166659694165,
+          7.046398916048929
+        ],
+        "median_seconds": 6.9659166659694165,
+        "integer_calls": [
+          4,
+          4,
+          4
+        ]
+      },
+      "integer_benders_lp_first": {
+        "seconds": [
+          1.7954684169963002,
+          1.7880210001021624,
+          1.7884903330123052
+        ],
+        "median_seconds": 1.7884903330123052,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "median_runtime_ratio": 3.8948584386458016
+    },
+    {
+      "instance": "medium_seed002",
+      "integer_benders": {
+        "seconds": [
+          4.842188540962525,
+          4.892105875071138,
+          4.860679624951445
+        ],
+        "median_seconds": 4.860679624951445,
+        "integer_calls": [
+          3,
+          3,
+          3
+        ]
+      },
+      "integer_benders_lp_first": {
+        "seconds": [
+          1.9636360000586137,
+          1.9654027909273282,
+          1.9950172919780016
+        ],
+        "median_seconds": 1.9654027909273282,
+        "integer_calls": [
+          1,
+          1,
+          1
+        ]
+      },
+      "median_runtime_ratio": 2.4731213608677383
+    }
+  ],
+  "limits": [
+    "Exploratory runs, not a statistically established speedup.",
+    "HiGHS reference algorithms on sampled route pools; no agent or Gurobi results.",
+    "No 40-customer optimum is assumed known."
+  ]
+}

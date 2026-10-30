@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "solver_seconds": 10,
+  "max_iterations": 1000,
+  "methods": ["monolithic", "lp_benders", "integer_benders"],
+  "cases": [
+    {"name": "tiny_full", "depots": 3, "customers": 6, "max_stops": 3, "routes_per_depot": 50, "seeds": [0, 1]},
+    {"name": "small_sampled", "depots": 4, "customers": 12, "max_stops": 4, "routes_per_depot": 140, "seeds": [0, 1]}
+  ]
+}

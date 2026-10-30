@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "solver_seconds": 20,
+  "max_iterations": 2000,
+  "methods": ["monolithic", "lp_benders", "integer_benders"],
+  "cases": [
+    {"name": "small", "depots": 4, "customers": 16, "max_stops": 4, "routes_per_depot": 200, "seeds": [0, 1, 2]},
+    {"name": "medium", "depots": 6, "customers": 28, "max_stops": 4, "routes_per_depot": 400, "seeds": [0, 1, 2]},
+    {"name": "large", "depots": 8, "customers": 40, "max_stops": 5, "routes_per_depot": 600, "seeds": [0, 1, 2]}
+  ]
+}

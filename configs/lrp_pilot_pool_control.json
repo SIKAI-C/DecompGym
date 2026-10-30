@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "solver_seconds": 20,
+  "cases": [
+    {
+      "name": "complete_16",
+      "depots": 4,
+      "customers": 16,
+      "max_stops": 4,
+      "routes_per_depot": 2600,
+      "seeds": [
+        0
+      ]
+    }
+  ]
+}

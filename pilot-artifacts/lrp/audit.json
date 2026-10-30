@@ -1,0 +1,176 @@
+{
+  "solver_runs": 27,
+  "verified": 27,
+  "statuses": {
+    "optimal": 21,
+    "feasible": 6
+  },
+  "certificates": 9,
+  "original_dataset_hashes_checked": 81,
+  "identical_inputs_witnesses_budgets_threads": true,
+  "results": [
+    {
+      "instance": "small_seed000",
+      "customers": 16,
+      "optimum": 43.93360212501288,
+      "benders_lower_bound": 43.93360106701703,
+      "enumeration_lower_bound": 43.93360206701703,
+      "method_seconds": 0.04814970795996487,
+      "enumeration_seconds": 0.015284999972209334,
+      "patterns_total": 16,
+      "pattern_reasons": {
+        "insufficient_fleet": 5,
+        "exact_cover": 1,
+        "opening_cost_bound": 9,
+        "lp_bound": 1
+      },
+      "repair_objective": 43.93360212501288,
+      "repair_excess_cost_percent": 0.0
+    },
+    {
+      "instance": "small_seed001",
+      "customers": 16,
+      "optimum": 55.946798174145584,
+      "benders_lower_bound": 55.94679737865145,
+      "enumeration_lower_bound": 55.946798125790814,
+      "method_seconds": 0.05165300006046891,
+      "enumeration_seconds": 0.02152887498959899,
+      "patterns_total": 16,
+      "pattern_reasons": {
+        "insufficient_fleet": 5,
+        "opening_cost_bound": 7,
+        "lp_bound": 3,
+        "exact_cover": 1
+      },
+      "repair_objective": 55.946798174145584,
+      "repair_excess_cost_percent": 0.0
+    },
+    {
+      "instance": "small_seed002",
+      "customers": 16,
+      "optimum": 52.38850895508257,
+      "benders_lower_bound": 52.38850890725076,
+      "enumeration_lower_bound": 52.38850890725076,
+      "method_seconds": 0.04762779199518263,
+      "enumeration_seconds": 0.01875533303245902,
+      "patterns_total": 16,
+      "pattern_reasons": {
+        "insufficient_fleet": 5,
+        "lp_bound": 2,
+        "opening_cost_bound": 8,
+        "exact_cover": 1
+      },
+      "repair_objective": 52.38850895508257,
+      "repair_excess_cost_percent": 0.0
+    },
+    {
+      "instance": "medium_seed000",
+      "customers": 28,
+      "optimum": 39.714520014691296,
+      "benders_lower_bound": 39.714519905521534,
+      "enumeration_lower_bound": 39.714519905521534,
+      "method_seconds": 0.31879725004546344,
+      "enumeration_seconds": 0.28304474998731166,
+      "patterns_total": 64,
+      "pattern_reasons": {
+        "insufficient_fleet": 7,
+        "opening_cost_bound": 50,
+        "lp_bound": 6,
+        "exact_cover": 1
+      },
+      "repair_objective": 39.714520014691296,
+      "repair_excess_cost_percent": 0.0
+    },
+    {
+      "instance": "medium_seed001",
+      "customers": 28,
+      "optimum": 56.71052697852516,
+      "benders_lower_bound": 56.7105258872597,
+      "enumeration_lower_bound": 56.7105268872597,
+      "method_seconds": 0.5049698750954121,
+      "enumeration_seconds": 0.38246916595380753,
+      "patterns_total": 64,
+      "pattern_reasons": {
+        "insufficient_fleet": 7,
+        "lp_bound": 4,
+        "opening_cost_bound": 52,
+        "exact_cover": 1
+      },
+      "repair_objective": 56.71052697852516,
+      "repair_excess_cost_percent": 0.0
+    },
+    {
+      "instance": "medium_seed002",
+      "customers": 28,
+      "optimum": 57.52287160327761,
+      "benders_lower_bound": 57.522870506987324,
+      "enumeration_lower_bound": 57.52287150698732,
+      "method_seconds": 0.38012212503235787,
+      "enumeration_seconds": 0.4076760410098359,
+      "patterns_total": 64,
+      "pattern_reasons": {
+        "insufficient_fleet": 7,
+        "lp_bound": 14,
+        "opening_cost_bound": 42,
+        "exact_cover": 1
+      },
+      "repair_objective": 57.52287160327761,
+      "repair_excess_cost_percent": 0.0
+    },
+    {
+      "instance": "large_seed000",
+      "customers": 40,
+      "optimum": 94.68505782665498,
+      "benders_lower_bound": 94.68505765961056,
+      "enumeration_lower_bound": 94.68505765961056,
+      "method_seconds": 3.1188246669480577,
+      "enumeration_seconds": 3.756022041896358,
+      "patterns_total": 256,
+      "pattern_reasons": {
+        "insufficient_fleet": 93,
+        "opening_cost_bound": 134,
+        "lp_bound": 26,
+        "exact_cover": 3
+      },
+      "repair_objective": 116.53295746217263,
+      "repair_excess_cost_percent": 23.074284514369495
+    },
+    {
+      "instance": "large_seed001",
+      "customers": 40,
+      "optimum": 86.62911162777841,
+      "benders_lower_bound": 86.62911148599457,
+      "enumeration_lower_bound": 86.62911148599457,
+      "method_seconds": 1.178728999919258,
+      "enumeration_seconds": 1.9828323329566047,
+      "patterns_total": 256,
+      "pattern_reasons": {
+        "insufficient_fleet": 93,
+        "opening_cost_bound": 132,
+        "lp_bound": 30,
+        "exact_cover": 1
+      },
+      "repair_objective": 112.4518937361826,
+      "repair_excess_cost_percent": 29.808434628023907
+    },
+    {
+      "instance": "large_seed002",
+      "customers": 40,
+      "optimum": 86.01309392334198,
+      "benders_lower_bound": 86.0130932603318,
+      "enumeration_lower_bound": 86.01309377126195,
+      "method_seconds": 2.1687400420196354,
+      "enumeration_seconds": 2.5582072499673814,
+      "patterns_total": 256,
+      "pattern_reasons": {
+        "insufficient_fleet": 93,
+        "opening_cost_bound": 142,
+        "lp_bound": 19,
+        "exact_cover": 2
+      },
+      "repair_objective": 118.73929527573105,
+      "repair_excess_cost_percent": 38.047929518214815
+    }
+  ],
+  "scope": "Numerical optimality over saved sampled route pools. Enumeration avoids the Benders master but shares exact-cover engine; tiny tests use a separate exhaustive oracle."
+}
