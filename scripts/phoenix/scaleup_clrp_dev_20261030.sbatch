@@ -1,6 +1,6 @@
 #!/bin/bash
 # D1 scale-up calibration, CLRP (Prodhon) development screen (2026-10-30): compact MIP, branch-and-price reference and
-# heuristic control, 1 hour each on one thread, on the 18 development instances (variants 1-2; variant 3 is held out).
+# heuristic control and the naive root-CG + integer-RMP control, 1 hour each on one thread, on the 18 development instances (variants 1-2; variant 3 is held out).
 #SBATCH --account=gts-ae58-ups
 #SBATCH --job-name=dg-scaleup-clrp
 #SBATCH --nodes=1
@@ -11,7 +11,8 @@
 #SBATCH --qos=embers
 #SBATCH --time=01:20:00
 #SBATCH --output=/storage/home/hcoda1/1/scheng326/r-phentenryck3-0/decompgym-scaleup/scripts/out/%x-%A_%a.out
-#SBATCH --array=0-53
+# Submitted in two waves (Phoenix embers MaxSubmitJobs = 50): sbatch --array=0-35 ..., then sbatch --array=36-71 ...
+#SBATCH --array=0-35
 #SBATCH --requeue
 # One CPU model for every task: the 32-core cpu-small nodes are excluded, and the model is asserted below.
 #SBATCH --exclude=atl1-1-01-005-[21-36]-[1-2],atl1-1-01-002-[22-25]-[1-2]
@@ -32,57 +33,75 @@ TASKS=(
   "50-5-1 mip"
   "50-5-1 ref_xl"
   "50-5-1 ls"
+  "50-5-1 root_cg"
   "50-5-1b mip"
   "50-5-1b ref_xl"
   "50-5-1b ls"
+  "50-5-1b root_cg"
   "50-5-2 mip"
   "50-5-2 ref_xl"
   "50-5-2 ls"
+  "50-5-2 root_cg"
   "50-5-2b mip"
   "50-5-2b ref_xl"
   "50-5-2b ls"
+  "50-5-2b root_cg"
   "50-5-2BIS mip"
   "50-5-2BIS ref_xl"
   "50-5-2BIS ls"
+  "50-5-2BIS root_cg"
   "50-5-2bBIS mip"
   "50-5-2bBIS ref_xl"
   "50-5-2bBIS ls"
+  "50-5-2bBIS root_cg"
   "100-5-1 mip"
   "100-5-1 ref_xl"
   "100-5-1 ls"
+  "100-5-1 root_cg"
   "100-5-1b mip"
   "100-5-1b ref_xl"
   "100-5-1b ls"
+  "100-5-1b root_cg"
   "100-5-2 mip"
   "100-5-2 ref_xl"
   "100-5-2 ls"
+  "100-5-2 root_cg"
   "100-5-2b mip"
   "100-5-2b ref_xl"
   "100-5-2b ls"
+  "100-5-2b root_cg"
   "100-10-1 mip"
   "100-10-1 ref_xl"
   "100-10-1 ls"
+  "100-10-1 root_cg"
   "100-10-1b mip"
   "100-10-1b ref_xl"
   "100-10-1b ls"
+  "100-10-1b root_cg"
   "100-10-2 mip"
   "100-10-2 ref_xl"
   "100-10-2 ls"
+  "100-10-2 root_cg"
   "100-10-2b mip"
   "100-10-2b ref_xl"
   "100-10-2b ls"
+  "100-10-2b root_cg"
   "200-10-1 mip"
   "200-10-1 ref_xl"
   "200-10-1 ls"
+  "200-10-1 root_cg"
   "200-10-1b mip"
   "200-10-1b ref_xl"
   "200-10-1b ls"
+  "200-10-1b root_cg"
   "200-10-2 mip"
   "200-10-2 ref_xl"
   "200-10-2 ls"
+  "200-10-2 root_cg"
   "200-10-2b mip"
   "200-10-2b ref_xl"
   "200-10-2b ls"
+  "200-10-2b root_cg"
 )
 read -r INSTANCE METHOD <<< "${TASKS[$SLURM_ARRAY_TASK_ID]}"
 

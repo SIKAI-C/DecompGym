@@ -57,6 +57,10 @@ def verify_solution(data_path: str | Path, output_path: str | Path, tol: float =
     issues += [f"depot {k} load {load[k]} exceeds capacity {d['W'][k]}" for k in range(m) if load[k] > d["W"][k] + tol]
     total += sum(d["O"][k] for k in used)
     claimed = out.get("objective_value")
-    if not isinstance(claimed, (int, float)) or abs(claimed - total) > tol * max(1.0, abs(total)):
-        issues.append(f"objective mismatch: claimed {claimed}, recomputed {total}")
+    if isinstance(claimed, bool) or not isinstance(claimed, (int, float)) or not math.isfinite(claimed) or abs(claimed - total) > tol * max(1.0, abs(total)):
+        issues.append(f"objective mismatch or non-finite: claimed {claimed}, recomputed {total}")
+    if out.get("status") not in ("optimal", "feasible"):
+        issues.append("status must be 'optimal' or 'feasible' for a returned plan")
+    if not isinstance(out.get("method"), str):
+        issues.append("method missing")
     return {"ok": not issues, "issues": issues, "objective_value": total}

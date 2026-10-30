@@ -120,7 +120,8 @@ class NGPricer:
         return B1
 
     def price(self, p: np.ndarray, const: float, Cc: np.ndarray, c_out: np.ndarray, c_in: np.ndarray, *, exact: bool,
-              beam: int = 0, max_cols: int = 30, deadline: float = INF, tol: float = 1e-6, max_labels: int = 400_000) -> dict[str, Any]:
+              beam: int = 0, max_cols: int = 30, deadline: float = INF, tol: float = 1e-6, max_labels: int = 400_000,
+              max_extensions: int = 4_000_000) -> dict[str, Any]:
         """Labeling for one depot: customer prizes p, customer arc costs Cc, depot -> customer costs c_out and
         customer -> depot costs c_in (inf = forbidden; a customer the depot may not serve has c_out and its Cc column
         at inf), route constant const (vehicle cost minus constant duals). exact=True: all arcs, no beam; the minimum
@@ -184,6 +185,14 @@ class NGPricer:
                 if len(li):
                     jj = J[li, col]
                     parts.append((li + s, jj, cc[li, col], ld[li, col]))
+                    if sum(len(x[0]) for x in parts) > max_extensions:
+                        # Memory guard (at most max_extensions candidates per depth): keep the most promising
+                        # half; the round can no longer certify a bound.
+                        complete = False
+                        a = [np.concatenate([x[k] for x in parts]) for k in range(4)]
+                        score = a[2] + Bf[a[1] * W + (Q - a[3])]
+                        top = np.argpartition(score, max_extensions // 2 - 1)[:max_extensions // 2]
+                        parts = [tuple(x[top] for x in a)]
             if not parts:
                 break
             li = np.concatenate([x[0] for x in parts])
@@ -493,7 +502,12 @@ class CLRPColumnGenerationXL:
     def __init__(self, *, time_limit: float = 3600.0, threads: int = 1, on_incumbent: Callable | None = None,
                  on_bound: Callable | None = None, soft_mem_gb: float | None = None, seed: int = 0, ng: int = 8,
                  near: int = 12, beam: int = 3000, max_cols: int = 25, heuristic_pricing: bool | None = None,
-                 rcc: bool = True, verbose: bool = False) -> None:
+                 rcc: bool = True, verbose: bool = False, root_only: bool = False) -> None:
+        # root_only: the naive price-and-branch control (root column generation, then integer restricted masters;
+        # no branching, no cuts, no local-search polishing).
+        self.root_only = root_only
+        if root_only:
+            rcc = False
         self.time_limit = time_limit
         self.threads = threads
         self.on_incumbent = on_incumbent or (lambda routes: None)  # receives [{"depot", "customers"}] plans
@@ -1001,7 +1015,7 @@ class CLRPColumnGenerationXL:
                 if complete:
                     self.lagrangian(duals, ratio, priced, node, stage)
                 elif added == 0:
-                    self.max_labels *= 2
+                    self.max_labels = min(2 * self.max_labels, 1_600_000)  # bounded growth (memory)
             else:
                 since_exact += 1
                 heuristic_fail = added == 0
@@ -1031,7 +1045,7 @@ class CLRPColumnGenerationXL:
             self.on_incumbent(plan_routes(plan))
             self.log(stage)
             self.publish_bound(stage)
-        if polish and self.left() > 0:
+        if polish and not self.root_only and self.left() > 0:
             t = time.perf_counter()
             improved = self.ls.improve(plan, self.deadline)
             self.stats["ls_seconds"] += time.perf_counter() - t
@@ -1265,6 +1279,13 @@ class CLRPColumnGenerationXL:
                 self.current = None
                 self.publish_bound("prune")
                 continue
+            if root and self.root_only:
+                # The root stays open (not branched), so the global bound remains the root bound.
+                node["stuck"] = True
+                self.frontier.append(node)
+                self.current = None
+                self.publish_bound("root_only")
+                break
             kids = self.branch(node)  # reads the LP snapshot, so it comes before clean-up and primal steps
             if kids is None:
                 if not self.prunable(self.node_bound(node)):

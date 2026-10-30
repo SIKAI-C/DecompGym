@@ -121,6 +121,16 @@ def plan_for(inst: CLRPInstance, c: np.ndarray, open_: list[int], rng=None) -> l
     return routes
 
 
+def polish(inst: CLRPInstance, c: np.ndarray, plan: list[dict[str, Any]] | None, deadline: float) -> list[dict[str, Any]] | None:
+    """The branch-and-price reference's local search (relocate, swap, 2-opt*, route-to-depot moves, depot closing),
+    so that the control and the reference share one polishing neighbourhood."""
+    if not plan:
+        return plan
+    from src.bd.clrp.d_ref_cg_xl import LocalSearch, plan_routes
+    improved = plan_routes(LocalSearch(inst, c).improve([(r["depot"], list(r["customers"])) for r in plan], deadline))
+    return improved if route_cost(inst, c, improved) is not None and route_cost(inst, c, improved) <= route_cost(inst, c, plan) else plan
+
+
 def depot_search(inst: CLRPInstance, c: np.ndarray, deadline: float, seed: int, on_incumbent: Callable[[list], None]) -> tuple[float, list]:
     rng = np.random.default_rng(seed)
     m = inst.m
@@ -129,7 +139,7 @@ def depot_search(inst: CLRPInstance, c: np.ndarray, deadline: float, seed: int, 
     def evaluate(open_: tuple[int, ...]):
         if open_ in cache or inst.depot_capacity[list(open_)].sum() < inst.demand.sum():
             return None
-        plan = plan_for(inst, c, list(open_))
+        plan = polish(inst, c, plan_for(inst, c, list(open_)), deadline)
         cost = route_cost(inst, c, plan) if plan else None
         cache[open_] = cost if cost is not None else float("inf")
         return (cost, plan) if cost is not None else None
@@ -171,7 +181,7 @@ def depot_search(inst: CLRPInstance, c: np.ndarray, deadline: float, seed: int, 
                 cand = tuple(sorted(cand))
                 if not cand or inst.depot_capacity[list(cand)].sum() < inst.demand.sum():
                     continue
-                plan = plan_for(inst, c, list(cand), rng)
+                plan = polish(inst, c, plan_for(inst, c, list(cand), rng), deadline)
                 cost = route_cost(inst, c, plan) if plan else None
                 if cost is not None and cost < best_cost - 1e-9:
                     best_cost, best_plan, best_open = cost, plan, cand

@@ -142,3 +142,23 @@ def test_reference_bounds_and_incumbents_on_tiny_instances(tmp_path, seed):
     assert route_cost(inst, cost, out["routes"]) == pytest.approx(out["best_objective"])
     assert out["termination_reason"] == "optimal"
     assert out["best_objective"] == pytest.approx(opt)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_root_only_control_never_reports_a_bound_above_the_optimum(tmp_path, seed):
+    rng = np.random.default_rng(100 + seed)
+    n, m = int(rng.integers(4, 8)), int(rng.integers(2, 4))
+    inst = random_instance(rng, n, m, Q=int(rng.integers(25, 45)))
+    inst.depot_capacity = np.ceil(inst.demand.sum() * rng.uniform(0.4, 0.8, size=m))
+    if inst.depot_capacity.sum() < inst.demand.sum():
+        inst.depot_capacity[:] = inst.demand.sum()
+    write_prodhon(inst, tmp_path / "tiny.dat")
+    inst = load_prodhon(tmp_path / "tiny.dat")
+    cost = inst.travel("ceil")
+    opt = brute_force(inst, cost)
+    seen, bounds = [], []
+    out = CLRPColumnGenerationXL(time_limit=30, root_only=True, on_incumbent=lambda r: seen.append(route_cost(inst, cost, r)),
+                                 on_bound=bounds.append).run(str(tmp_path / "tiny.dat"))
+    assert all(v is not None and v >= opt - 1e-6 for v in seen)
+    assert all(b <= opt + 1e-6 for b in bounds)
+    assert out["global_lb"] <= opt + 1e-6
