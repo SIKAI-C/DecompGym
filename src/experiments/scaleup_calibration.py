@@ -144,7 +144,7 @@ class Recorder:
 
 # ---------------------------------------------------------------- methods
 
-def run_mip(family: str, data: str, limit: float, rec: Recorder) -> dict:
+def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bool = False) -> dict:
     a = rec.adapter
     model = gp.Model()
     model.Params.OutputFlag = 0
@@ -160,6 +160,13 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder) -> dict:
         model.addConstr(x <= y[:, None] * np.ones((1, n)))
         model.setObjective(a.f @ y + (a.D * x).sum(), GRB.MINIMIZE)
         decode = lambda get: list(np.nonzero(np.asarray(get(y)) > 0.5)[0])
+        if initializer:
+            # The engineered reference's own initial solution, to separate initializer from method effects.
+            from src.bd.ufl.b_ref_bd_xl import local_search
+            y0 = local_search(a.D, a.f, time.perf_counter() + min(60.0, 0.05 * limit))
+            rec.solution(list(np.nonzero(y0 > 0.5)[0]), "mip_initializer")
+            y.Start = y0
+            x.Start = (np.arange(m)[:, None] == np.argmin(np.where(y0[:, None] > 0.5, a.D, np.inf), axis=0)[None, :]).astype(float)
     else:
         m, n = a.cost.shape
         x = model.addMVar((m, n), vtype=GRB.BINARY)
@@ -261,7 +268,18 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     return {"termination": termination} | {k: v for k, v in res.items() if k not in ("trace", "assignment", "open")}
 
 
-METHODS = {"mip": run_mip, "ref": run_paper_reference, "ref_xl": run_engineered_reference}
+def run_heuristic_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
+    """UFL heuristic control without decomposition (fixed seed), same budget and verification."""
+    if family != "ufl":
+        raise ValueError("the heuristic control is defined for UFL only")
+    from src.bd.ufl.b_ref_bd_xl import iterated_local_search
+    a = rec.adapter
+    started = time.perf_counter()
+    best, _ = iterated_local_search(a.D, a.f, started + remaining(limit), seed=0, on_incumbent=lambda s: rec.solution(s, "heuristic_control"))
+    return {"termination": "deadline", "heuristic_best": best, "seed": 0}
+
+
+METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=True), "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
 
 
 # ---------------------------------------------------------------- driver

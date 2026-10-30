@@ -89,6 +89,70 @@ def local_search(D: np.ndarray, f: np.ndarray, deadline: float) -> np.ndarray:
     return y.astype(float)
 
 
+def descend(D: np.ndarray, f: np.ndarray, y: np.ndarray, deadline: float) -> np.ndarray:
+    """Best-improvement add/drop, then first-improvement swap (close i, open j), until no move improves."""
+    y = y.astype(bool).copy()
+    while time.perf_counter() < deadline:
+        sub = D[y]
+        open_idx = np.nonzero(y)[0]
+        best = sub.min(axis=0)
+        arg = sub.argmin(axis=0)
+        second = np.partition(sub, 1, axis=0)[1] if len(open_idx) > 1 else np.full(D.shape[1], np.inf)
+        add_delta = f + np.minimum(D - best[None, :], 0.0).sum(axis=1)
+        add_delta[y] = np.inf
+        drop_delta = np.full(len(y), np.inf)
+        if len(open_idx) > 1:
+            for pos, i in enumerate(open_idx):
+                mask = arg == pos
+                drop_delta[i] = (second[mask] - best[mask]).sum() - f[i]
+        i_add, i_drop = int(np.argmin(add_delta)), int(np.argmin(drop_delta))
+        if min(add_delta[i_add], drop_delta[i_drop]) < -1e-9:
+            if add_delta[i_add] <= drop_delta[i_drop]:
+                y[i_add] = True
+            else:
+                y[i_drop] = False
+            continue
+        moved = False
+        for pos, i in enumerate(open_idx):
+            # Cost of each customer once i closes, then the effect of also opening each candidate j.
+            base = np.where(arg == pos, second, best)
+            if not np.isfinite(base).all():
+                continue
+            delta = f - f[i] + (np.minimum(base[None, :], D) - best[None, :]).sum(axis=1)
+            delta[y] = np.inf
+            j = int(np.argmin(delta))
+            if delta[j] < -1e-9:
+                y[i], y[j] = False, True
+                moved = True
+                break
+        if not moved:
+            break
+    return y.astype(float)
+
+
+def iterated_local_search(D: np.ndarray, f: np.ndarray, deadline: float, seed: int, on_incumbent) -> tuple[float, np.ndarray]:
+    """Heuristic control without decomposition: add/drop/swap descent from the reference's initial
+    solution, then repeated random perturbations (flip 2-10 facilities) of the best solution."""
+    rng = np.random.default_rng(seed)
+    best_y = descend(D, f, local_search(D, f, deadline), deadline)
+    best = assignment_cost(D, f, best_y)
+    on_incumbent(np.nonzero(best_y > 0.5)[0].tolist())
+    restarts = 0
+    while time.perf_counter() < deadline:
+        y = best_y.astype(bool).copy()
+        flip = rng.choice(len(y), size=int(rng.integers(2, 11)), replace=False)
+        y[flip] = ~y[flip]
+        if not y.any():
+            continue
+        y = descend(D, f, y, deadline)
+        restarts += 1
+        cost = assignment_cost(D, f, y)
+        if cost < best - 1e-9:
+            best, best_y = cost, y
+            on_incumbent(np.nonzero(best_y > 0.5)[0].tolist())
+    return best, best_y
+
+
 class UFLBendersXL:
     """Engineered Benders branch-and-cut reference; see the module docstring."""
 
