@@ -213,6 +213,8 @@ def main() -> None:
     total = elapsed()
     result = {"fingerprint": fp, "complete": True, "family": args.family, "method": args.method, "data": args.data,
               "time_limit": args.time_limit, "total_seconds": total, "host": platform.node(), "slurm_job": os.environ.get("SLURM_JOB_ID"),
+              "slurm_array_task": os.environ.get("SLURM_ARRAY_TASK_ID"), "slurm_restart_count": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
+              "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
               "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 if platform.system() == "Linux" else 1024.0 ** 2),
               "best_objective": rec.best if rec.witnesses else None, "best_bound": rec.bounds[-1]["bound"] if rec.bounds else None,
               "details": details, "witness_count": len(rec.witnesses), "bounds": rec.bounds,
