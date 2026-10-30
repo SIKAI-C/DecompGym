@@ -120,3 +120,34 @@ def test_replay_ignores_late_and_torn_records(tmp_path):
     (tmp_path / "j.jsonl").write_text("\n".join(lines))
     rec = cal.replay(tmp_path / "j.jsonl", Adapter(), 10.0)
     assert rec.best == 10.0 and len(rec.witnesses) == 1 and rec.bounds[-1]["bound"] == 2.0
+
+
+def test_gap_lagrangian_bounds_and_neighborhood_search_are_valid():
+    import time
+
+    from src.cg.gap.b_ref_cg_xl import capacity_lagrangian, certified_bound, penalty_search, regret_assign, sub_gap
+
+    rng = np.random.default_rng(5)
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.start()
+    for _ in range(6):
+        m, n = 3, 7
+        res_ = rng.integers(1, 10, size=(m, n))
+        cost = (20 - res_ + rng.integers(-2, 3, size=(m, n))).astype(float)
+        cap = (0.8 * res_.sum(axis=1) / m).astype(int) + 3
+        feasible = [np.array(a) for a in itertools.product(range(m), repeat=n) if all(res_[k, np.array(a) == k].sum() <= cap[k] for k in range(m))]
+        opt = min(cost[a, np.arange(n)].sum() for a in feasible)
+        values = []
+        mu = capacity_lagrangian(cost, res_, cap, env, time.perf_counter() + 5, lambda g, terms: values.append(certified_bound(g, terms, True)))
+        assert max(values) <= opt
+        found = []
+        penalty_search(regret_assign(cost + mu[:, None] * res_, res_, cap), cost, res_, cap, np.full(m, 2.0), time.perf_counter() + 5, found.append)
+        for a in found:
+            assert all(res_[k, a == k].sum() <= cap[k] for k in range(m))
+        start = max(feasible, key=lambda a: cost[a, np.arange(n)].sum())
+        sub = sub_gap(cost, res_, cap, start, (cost + mu[:, None] * res_).min(axis=0), env, time.perf_counter() + 10, True)
+        if sub is not None:
+            assert all(res_[k, sub == k].sum() <= cap[k] for k in range(m))
+            assert opt <= cost[sub, np.arange(n)].sum() < cost[start, np.arange(n)].sum()
+    env.dispose()
