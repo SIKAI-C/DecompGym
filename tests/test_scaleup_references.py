@@ -70,3 +70,35 @@ def test_gap_reference_finds_optimum(tmp_path):
     out = GAPColumnGenerationXL(time_limit=30).run(str(tmp_path / "data.json"))
     assert out["global_lb"] <= best + 1e-6
     assert out["best_objective"] is None or out["best_objective"] >= best - 1e-6
+
+
+def test_recorder_rejects_late_publications_and_journals(tmp_path, monkeypatch):
+    import json
+
+    import src.experiments.scaleup_calibration as cal
+
+    class Adapter:
+        def objective(self, sol):
+            return float(sum(sol))
+
+    clock = {"t": 1.0}
+    monkeypatch.setattr(cal, "elapsed", lambda: clock["t"])
+    rec = cal.Recorder(Adapter(), 10.0, tmp_path / "j.jsonl")
+    rec.solution([5, 5], "a")
+    rec.bound(3.0, "a")
+    clock["t"] = 10.0  # at the deadline: not eligible
+    rec.solution([1], "late")
+    rec.bound(9.0, "late")
+    rec.journal.close()
+    assert rec.best == 10.0 and rec.late == 1 and rec.bounds[-1]["bound"] == 3.0
+    lines = [json.loads(line) for line in (tmp_path / "j.jsonl").read_text().splitlines()]
+    assert [r["kind"] for r in lines] == ["incumbent", "bound"]
+
+
+def test_gap_bound_allowance_never_exceeds_true_value():
+    from src.cg.gap.b_ref_cg_xl import certified_bound
+
+    u = np.full(1600, 1 + 9e-10)
+    # The exact Lagrangian value is 1600 (u.sum() minus a knapsack value of 1600 * 9e-10).
+    lag = u.sum() - knapsack(u - 1.0, np.ones(1600, dtype=int), 1600)[0]
+    assert certified_bound(lag, u, True) <= 1600

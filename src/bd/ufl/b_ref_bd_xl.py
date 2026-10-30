@@ -93,7 +93,8 @@ class UFLBendersXL:
     """Engineered Benders branch-and-cut reference; see the module docstring."""
 
     def __init__(self, *, time_limit: float = 3600.0, threads: int = 1, root_rounds: int = 200, inout_lambda: float = 0.3, verbose: bool = False,
-                 on_incumbent=None, on_bound=None) -> None:
+                 on_incumbent=None, on_bound=None, soft_mem_gb: float | None = None) -> None:
+        self.soft_mem_gb = soft_mem_gb  # Gurobi SoftMemLimit for graceful termination before the job's memory cap
         self.on_incumbent = on_incumbent or (lambda open_: None)  # receives the list of open facilities
         self.on_bound = on_bound or (lambda bound: None)  # receives every valid lower bound
         self.time_limit = time_limit
@@ -127,6 +128,8 @@ class UFLBendersXL:
         env = gp.Env(empty=True)
         env.setParam("OutputFlag", 1 if self.verbose else 0)
         env.setParam("Threads", self.threads)
+        if self.soft_mem_gb:
+            env.setParam("SoftMemLimit", self.soft_mem_gb)
         env.start()
         model = gp.Model(env=env)
         y = model.addMVar(m, lb=0.0, ub=1.0, name="y")
@@ -142,7 +145,7 @@ class UFLBendersXL:
         root_bound, stalled, rounds = -math.inf, 0, 0
         while rounds < self.root_rounds and time.perf_counter() < deadline:
             rounds += 1
-            model.Params.TimeLimit = max(1.0, deadline - time.perf_counter())
+            model.Params.TimeLimit = max(0.01, deadline - time.perf_counter())
             model.optimize()
             if model.Status != GRB.OPTIMAL:
                 break
@@ -167,12 +170,17 @@ class UFLBendersXL:
                     continue
                 break
         # Drop non-binding cuts so the branch-and-cut master stays small.
-        kept = len(cuts)
+        kept, resolved = len(cuts), False
         if cuts and time.perf_counter() < deadline:
+            model.Params.TimeLimit = max(0.01, deadline - time.perf_counter())
             model.optimize()  # the last round may have added cuts after the final solve
-            root_bound = max(root_bound, float(model.ObjVal)) if model.Status == GRB.OPTIMAL else root_bound
-        if cuts and model.Status == GRB.OPTIMAL:
-            loose = [c for c in cuts if c.Slack > 1e-6]
+            resolved = model.Status == GRB.OPTIMAL
+            if resolved:
+                root_bound = max(root_bound, float(model.ObjVal))
+                self._log(t0, best_obj, root_bound, "root_lp")
+        if resolved:  # slacks exist only for a solve that saw every cut
+            # Slack = rhs - lhs, so a satisfied, non-binding >= row has negative slack.
+            loose = [c for c in cuts if c.Slack < -1e-6]
             model.remove(loose)
             kept -= len(loose)
         root_seconds = time.perf_counter() - t0
@@ -181,7 +189,6 @@ class UFLBendersXL:
         y.Start = y_inc
         model.Params.LazyConstraints = 1
         model.Params.PreCrush = 1
-        model.Params.TimeLimit = max(1.0, deadline - time.perf_counter())
         stats = {"lazy": 0, "user": 0}
         yv = y.tolist()
         tv = theta.tolist()
@@ -189,12 +196,10 @@ class UFLBendersXL:
         def add_cut(j: int, ck: float, lazy: bool) -> None:
             idx, coef, const = sep.cut(j, ck)
             expr = tv[j] + gp.quicksum(float(c) * yv[int(i)] for i, c in zip(idx, coef))
-            if lazy:
-                model.cbLazy(expr >= const)
-                stats["lazy"] += 1
-            else:
-                model.cbCut(expr >= const)
-                stats["user"] += 1
+            # Benders cuts can cut off integer points of the incomplete master, so they are always lazy
+            # constraints (also at fractional root nodes), never user cuts.
+            model.cbLazy(expr >= const)
+            stats["lazy" if lazy else "user"] += 1
 
         def callback(cb_model: gp.Model, where: int) -> None:
             if where == GRB.Callback.MIPSOL:
@@ -216,14 +221,19 @@ class UFLBendersXL:
                 inc, bnd = cb_model.cbGet(GRB.Callback.MIP_OBJBST), cb_model.cbGet(GRB.Callback.MIP_OBJBND)
                 self._log(t0, inc if inc < GRB.INFINITY else None, bnd, "branch_and_cut")
 
-        if time.perf_counter() < deadline:
+        mip_ran = False
+        if deadline - time.perf_counter() > 0.01:
+            model.Params.TimeLimit = deadline - time.perf_counter()
             model.optimize(callback)
-        has_sol = model.SolCount > 0
-        y_best = np.round(y.X) if has_sol else y_inc
-        obj = assignment_cost(D, f, y_best)  # recomputed from y, never trusted from the master
-        if obj > best_obj:
-            obj, y_best = best_obj, y_inc
-        bound = max(root_bound, float(model.ObjBound)) if model.SolCount or model.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT) else root_bound
+            mip_ran = True
+        y_best, obj = y_inc, best_obj
+        if mip_ran and model.SolCount > 0 and np.round(y.X).sum() >= 1:
+            obj_mip = assignment_cost(D, f, np.round(y.X))  # recomputed from y, never trusted from the master
+            if obj_mip < obj:
+                obj, y_best = obj_mip, np.round(y.X)
+        bound = root_bound
+        if mip_ran and model.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.MEM_LIMIT, GRB.INTERRUPTED):
+            bound = max(root_bound, float(model.ObjBound))
         self._log(t0, obj, bound, "final")
         env.dispose()
         return {
@@ -232,7 +242,8 @@ class UFLBendersXL:
             "global_ub": obj,
             "gap": (obj - bound) / abs(obj) if obj else None,
             "status": int(model.Status),
-            "termination_reason": "optimal" if model.Status == GRB.OPTIMAL else ("time_limit" if model.Status == GRB.TIME_LIMIT else f"status_{model.Status}"),
+            "termination_reason": ("no_time_for_mip" if not mip_ran else "optimal" if model.Status == GRB.OPTIMAL else "time_limit" if model.Status == GRB.TIME_LIMIT
+                                   else "memory_limit" if model.Status == GRB.MEM_LIMIT else f"status_{model.Status}"),
             "open": np.nonzero(y_best > 0.5)[0].tolist(),
             "root_rounds": rounds,
             "root_bound": root_bound,
@@ -241,7 +252,7 @@ class UFLBendersXL:
             "root_cuts_kept": kept,
             "lazy_cuts": stats["lazy"],
             "user_cuts": stats["user"],
-            "node_count": float(model.NodeCount) if model.Status != GRB.LOADED else 0.0,
+            "node_count": float(model.NodeCount) if mip_ran else 0.0,
             "total_seconds": time.perf_counter() - t0,
             "trace": self.trace,
         }

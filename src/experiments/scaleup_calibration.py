@@ -1,10 +1,13 @@
 """Scale-up calibration: one solve (monolithic MIP or a decomposition reference) of one instance.
 
 Every method shares one wall clock started at process start, so model building, loading and imports
-count against the same budget T. Each new incumbent is stored as a solution witness whose objective is
-recomputed here, independently of the solver; the best witness is written in the family's output
-contract and checked with OutputVerifier. Results are written atomically with a fingerprint, and a
-complete result with the same fingerprint is not recomputed (safe under Slurm requeue).
+count against the same budget T; publications at or after T are not eligible. Each new incumbent is a
+solution witness whose objective is recomputed here, independently of the solver, and is journaled to
+disk (fsync) on receipt, so a crash or OOM kill keeps every incumbent found before it. The best witness
+is written in the family's output contract and checked with OutputVerifier; a failed check withdraws
+the score. Results are written atomically with a fingerprint over the dependency closure; a complete,
+matching result is not recomputed, and an interrupted attempt (e.g. a Slurm requeue) is archived and
+rerun with a fresh clock.
 
 Run as: python -m src.experiments.scaleup_calibration --family ufl --data path/data.json --method mip --time-limit 3600 --out result.json
 """
@@ -28,10 +31,14 @@ from gurobipy import GRB
 import numpy as np
 
 SUITE = {"ufl": "bd", "gap": "cg"}
+COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
+                  "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
+                  "src/utils/base_data.py"]
 SOURCES = {
-    "ufl": ["src/bd/ufl/b_gold_monolithic.py", "src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py"],
-    "gap": ["src/cg/gap/a_gold_monolithic.py", "src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py"],
+    "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
+    "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
 }
+SOFT_MEM_GB = 12.0  # Gurobi SoftMemLimit, below the 16 GB job allocation with headroom for Python
 
 
 def elapsed() -> float:
@@ -39,7 +46,8 @@ def elapsed() -> float:
 
 
 def remaining(limit: float) -> float:
-    return max(1.0, limit - elapsed())
+    """Seconds left of the budget (may be <= 0; callers must not start new work then)."""
+    return limit - elapsed()
 
 
 def sha256(path: str | Path) -> str:
@@ -90,25 +98,48 @@ ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter}
 
 
 class Recorder:
-    """Incumbent witnesses (objective recomputed here) and bound history on the shared clock."""
+    """Incumbent witnesses (objective recomputed here) and bound history on the shared clock.
 
-    def __init__(self, adapter) -> None:
-        self.adapter = adapter
+    A publication is timestamped on receipt; at or after the deadline it is counted but not eligible.
+    Eligible witnesses and bounds are appended to a journal and fsynced before the call returns.
+    """
+
+    def __init__(self, adapter, limit: float, journal: Path) -> None:
+        self.adapter, self.limit = adapter, limit
         self.witnesses: list[dict] = []
         self.bounds: list[dict] = []
         self.best: float = math.inf
+        self.late = 0
+        self.infeasible = 0
+        self.journal = journal.open("a")
+
+    def _write(self, record: dict) -> None:
+        self.journal.write(json.dumps(record) + "\n")
+        self.journal.flush()
+        os.fsync(self.journal.fileno())
 
     def solution(self, sol: list[int], source: str) -> None:
+        t = elapsed()
+        if t >= self.limit:
+            self.late += 1
+            return
         obj = self.adapter.objective(sol)
-        if obj is not None and obj < self.best - 1e-9:
+        if obj is None:
+            self.infeasible += 1
+        elif obj < self.best - 1e-9:
             self.best = obj
-            self.witnesses.append({"t": elapsed(), "objective": obj, "solution": [int(v) for v in sol], "source": source})
+            w = {"t": t, "objective": obj, "solution": [int(v) for v in sol], "source": source}
+            self.witnesses.append(w)
+            self._write({"kind": "incumbent", **w})
 
     def bound(self, value: float | None, source: str) -> None:
-        if value is None or not math.isfinite(value):
+        t = elapsed()
+        if value is None or not math.isfinite(value) or t >= self.limit:
             return
         if not self.bounds or value > self.bounds[-1]["bound"] + 1e-9 * max(1.0, abs(value)):
-            self.bounds.append({"t": elapsed(), "bound": float(value), "source": source})
+            b = {"t": t, "bound": float(value), "source": source}
+            self.bounds.append(b)
+            self._write({"kind": "bound", **b})
 
 
 # ---------------------------------------------------------------- methods
@@ -118,6 +149,7 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder) -> dict:
     model = gp.Model()
     model.Params.OutputFlag = 0
     model.Params.Threads = 1
+    model.Params.SoftMemLimit = SOFT_MEM_GB
     if family == "ufl":
         # Strong formulation; assignments may be continuous because, for fixed binary y, the
         # assignment LP is integral, and witnesses are decoded by nearest open facility.
@@ -136,6 +168,8 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder) -> dict:
         model.setObjective((a.cost * x).sum(), GRB.MINIMIZE)
         decode = lambda get: list(np.argmax(np.asarray(get(x)), axis=0))
     build_seconds = elapsed()
+    if remaining(limit) <= 0.01:
+        return {"termination": "deadline_during_build", "build_seconds": build_seconds}
     model.Params.TimeLimit = remaining(limit)
 
     def callback(cb, where):
@@ -148,7 +182,8 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder) -> dict:
     if model.SolCount:
         rec.solution(decode(lambda v: v.X), "mip_final")
     rec.bound(float(model.ObjBound), "mip_final")
-    return {"status": int(model.Status), "proved_optimal": model.Status == GRB.OPTIMAL, "build_seconds": build_seconds,
+    termination = {GRB.OPTIMAL: "finished", GRB.TIME_LIMIT: "deadline", GRB.MEM_LIMIT: "memory_limit"}.get(model.Status, f"status_{model.Status}")
+    return {"termination": termination, "status": int(model.Status), "proved_optimal": model.Status == GRB.OPTIMAL, "build_seconds": build_seconds,
             "node_count": float(model.NodeCount), "num_vars": int(model.NumVars), "num_constrs": int(model.NumConstrs)}
 
 
@@ -156,7 +191,19 @@ def run_paper_reference(family: str, data: str, limit: float, rec: Recorder) -> 
     """The paper's reference algorithm (naive at this scale), given the remaining budget."""
     from src.bd.ufl.b_gold_bd import UFLBenders
     from src.cg.gap.a_gold_cg import GAPColumnGeneration
-    solver = {"ufl": UFLBenders, "gap": GAPColumnGeneration}[family](max_iters=10**6, time_limit=remaining(limit))
+
+    class PublishingUFLBenders(UFLBenders):
+        """The paper's UFL Benders, unchanged, publishing each completed master/recourse pair's plan."""
+
+        def compute_iteration_bounds(self, inst, master, sub):
+            bounds = super().compute_iteration_bounds(inst, master, sub)
+            if sub.all_feasible:
+                rec.solution([int(k.split("_")[1]) for k, v in master.vars.items() if k.startswith("y_") and v > 0.5], "paper_reference")
+            return bounds
+
+    if remaining(limit) <= 0.01:
+        return {"termination": "deadline_before_start"}
+    solver = {"ufl": PublishingUFLBenders, "gap": GAPColumnGeneration}[family](max_iters=10**6, time_limit=remaining(limit))
     error = None
     try:
         res = solver.run(data)
@@ -166,20 +213,25 @@ def run_paper_reference(family: str, data: str, limit: float, rec: Recorder) -> 
         rec.solution([int(k.split("_")[1]) for k, v in res["final_vars"].items() if k.startswith("y_") and v > 0.5], "paper_reference_final")
     records = [{k: getattr(r, k) for k in ("iteration", "elapsed_time", "master_obj", "global_lb", "global_ub") if hasattr(r, k)} for r in getattr(solver, "iter_records", [])]
     # The paper's references report bounds per iteration on their own clock; they are kept as diagnostics only.
-    return {"claimed_objective": res.get("best_objective"), "claimed_lb": res.get("global_lb"), "iters": res.get("iters"),
+    return {"termination": "crash" if error and "Limit" not in error else "finished", "claimed_objective": res.get("best_objective"), "claimed_lb": res.get("global_lb"), "iters": res.get("iters"),
             "error": error, "iteration_records": records,
             "witness_note": None if family == "ufl" else "GAP paper reference exposes pattern usages only; objective unverified"}
 
 
 def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder) -> dict:
+    if remaining(limit) <= 0.01:
+        return {"termination": "deadline_before_start"}
+    hooks = {"on_incumbent": lambda s: rec.solution(s, "ref_xl"), "on_bound": lambda b: rec.bound(b, "ref_xl"), "soft_mem_gb": SOFT_MEM_GB}
     if family == "ufl":
         from src.bd.ufl.b_ref_bd_xl import UFLBendersXL
-        solver = UFLBendersXL(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "ref_xl"), on_bound=lambda b: rec.bound(b, "ref_xl"))
+        solver = UFLBendersXL(time_limit=remaining(limit), threads=1, **hooks)
     else:
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
-        solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "ref_xl"), on_bound=lambda b: rec.bound(b, "ref_xl"))
+        solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
     res = solver.run(data)
-    return {k: v for k, v in res.items() if k not in ("trace", "assignment", "open")}
+    reason = res.get("termination_reason", "")
+    termination = "memory_limit" if reason == "memory_limit" else "finished" if reason == "optimal" else "deadline"
+    return {"termination": termination} | {k: v for k, v in res.items() if k not in ("trace", "assignment", "open")}
 
 
 METHODS = {"mip": run_mip, "ref": run_paper_reference, "ref_xl": run_engineered_reference}
@@ -189,7 +241,7 @@ METHODS = {"mip": run_mip, "ref": run_paper_reference, "ref_xl": run_engineered_
 
 def fingerprint(args) -> dict:
     return {"family": args.family, "method": args.method, "time_limit": args.time_limit, "data_sha256": sha256(args.data),
-            "source_sha256": {p: sha256(p) for p in SOURCES[args.family] + ["src/experiments/scaleup_calibration.py"]},
+            "source_sha256": {p: sha256(p) for p in COMMON_SOURCES + SOURCES[args.family]},
             "gurobi": ".".join(map(str, gp.gurobi.version()))}
 
 
@@ -202,37 +254,53 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     fp = fingerprint(args)
+    journal, witnesses_path, solution_path = out.with_suffix(".journal.jsonl"), out.with_suffix(".witnesses.json"), out.with_suffix(".output.json")
     if out.exists():
         prior = json.loads(out.read_text())
-        if prior.get("fingerprint") == fp and prior.get("complete"):
+        intact = all(Path(p).exists() and sha256(p) == h for p, h in prior.get("artifact_sha256", {}).items())
+        if prior.get("fingerprint") == fp and prior.get("complete") and intact:
             print(f"complete result exists: {out}")
             return
-    rec = Recorder(ADAPTERS[args.family](args.data))
-    details = METHODS[args.method](args.family, args.data, args.time_limit, rec)
+    # An earlier attempt that did not finish (requeue, crash, kill) is archived, never resumed.
+    previous = sorted(out.parent.glob(out.stem + ".attempt*.journal.jsonl"))
+    if journal.exists():
+        journal.rename(out.with_name(f"{out.stem}.attempt{len(previous) + 1}.journal.jsonl"))
+        previous = sorted(out.parent.glob(out.stem + ".attempt*.journal.jsonl"))
+    rec = Recorder(ADAPTERS[args.family](args.data), args.time_limit, journal)
+    try:
+        details = METHODS[args.method](args.family, args.data, args.time_limit, rec)
+    except MemoryError:
+        details = {"termination": "oom"}
+    except Exception as exc:  # incumbents already journaled stay eligible
+        details = {"termination": "crash", "error": f"{type(exc).__name__}: {exc}"}
     total = elapsed()
     result = {"fingerprint": fp, "complete": True, "family": args.family, "method": args.method, "data": args.data,
-              "time_limit": args.time_limit, "total_seconds": total, "host": platform.node(), "slurm_job": os.environ.get("SLURM_JOB_ID"),
+              "time_limit": args.time_limit, "total_seconds": total, "termination": details.get("termination"),
+              "host": platform.node(), "slurm_job": os.environ.get("SLURM_JOB_ID"),
               "slurm_array_task": os.environ.get("SLURM_ARRAY_TASK_ID"), "slurm_restart_count": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
+              "previous_attempts": [str(p) for p in previous],
               "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
               "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 if platform.system() == "Linux" else 1024.0 ** 2),
-              "best_objective": rec.best if rec.witnesses else None, "best_bound": rec.bounds[-1]["bound"] if rec.bounds else None,
+              "best_bound": rec.bounds[-1]["bound"] if rec.bounds else None, "late_publications": rec.late, "infeasible_publications": rec.infeasible,
               "details": details, "witness_count": len(rec.witnesses), "bounds": rec.bounds,
               "incumbents": [{k: w[k] for k in ("t", "objective", "source")} for w in rec.witnesses]}
+    verified = None
     if rec.witnesses:
         from src.experiments.verification import OutputVerifier
-        best = rec.witnesses[-1]
-        out.parent.mkdir(parents=True, exist_ok=True)
-        sol_path = out.with_suffix(".output.json")
-        sol_path.write_text(json.dumps(rec.adapter.output(best["solution"])))
-        result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), sol_path, 1e-6)
-        result["witnesses_path"] = str(out.with_suffix(".witnesses.json"))
-        out.with_suffix(".witnesses.json").write_text(json.dumps(rec.witnesses))
-    out.parent.mkdir(parents=True, exist_ok=True)
+        solution_path.write_text(json.dumps(rec.adapter.output(rec.witnesses[-1]["solution"])))
+        result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
+        verified = bool(result["verification"].get("ok"))
+        witnesses_path.write_text(json.dumps(rec.witnesses))
+    # The score is withdrawn unless the best witness passes the family verifier.
+    result["scored_objective"] = rec.best if verified else None
+    rec.journal.close()
+    result["artifact_sha256"] = {str(p): sha256(p) for p in (journal, witnesses_path, solution_path) if p.exists()}
     tmp = out.with_suffix(".tmp")
     tmp.write_text(json.dumps(result, indent=1, default=str))
     os.replace(tmp, out)
-    print(json.dumps({k: result[k] for k in ("family", "method", "total_seconds", "best_objective", "best_bound", "witness_count")} | {"verified": result.get("verification", {}).get("ok")}, default=str))
+    print(json.dumps({k: result[k] for k in ("family", "method", "termination", "total_seconds", "scored_objective", "best_bound", "witness_count", "late_publications")}, default=str))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@
 #SBATCH --output=/storage/home/hcoda1/1/scheng326/r-phentenryck3-0/decompgym-scaleup/scripts/out/%x-%A_%a.out
 #SBATCH --array=0-26
 #SBATCH --requeue
+# One CPU model for every task: the 32-core cpu-small nodes are excluded, and the model is asserted below.
+#SBATCH --exclude=atl1-1-01-005-[21-36]-[1-2],atl1-1-01-002-[22-25]-[1-2]
 
 set -euo pipefail
 
@@ -39,6 +41,15 @@ git status --short
 lscpu | grep -E "Model name|^CPU\(s\)" || true
 echo "nproc=$(nproc) affinity=$(taskset -cp $$ 2>/dev/null || true)"
 cat /proc/self/cgroup 2>/dev/null | head -3 || true
+CPU_MODEL=$(lscpu | sed -n 's/^Model name: *//p')
+if [[ "$CPU_MODEL" != "Intel(R) Xeon(R) Gold 6226 CPU @ 2.70GHz" ]]; then
+  echo "abort: unexpected CPU model '$CPU_MODEL' (infrastructure; rerun this task)"; exit 3
+fi
+GRB_VERSION=$(mamba run -n pd python -c 'import gurobipy; print(".".join(map(str, gurobipy.gurobi.version())))')
+if [[ "$GRB_VERSION" != "13.0.1" ]]; then
+  echo "abort: gurobipy $GRB_VERSION, expected 13.0.1"; exit 3
+fi
+echo "cpu_model=$CPU_MODEL gurobi=$GRB_VERSION"
 echo "started=$(date -Is)"
 
 mkdir -p "$OUTPUT_PATH"
