@@ -201,9 +201,22 @@ def run_paper_reference(family: str, data: str, limit: float, rec: Recorder) -> 
                 rec.solution([int(k.split("_")[1]) for k, v in master.vars.items() if k.startswith("y_") and v > 0.5], "paper_reference")
             return bounds
 
+    class PublishingGAPColumnGeneration(GAPColumnGeneration):
+        """The paper's GAP CG, unchanged, publishing its integer restricted master's assignment.
+        That master runs once, after column generation, so this is when the paper's method has a plan."""
+
+        def solve_integer_master(self, inst, patterns):
+            solution = super().solve_integer_master(inst, patterns)
+            assign = [-1] * len(inst.jobs)
+            for a in solution.metadata.get("assignments", []):
+                assign[a["job_id"]] = a["machine_id"]
+            if min(assign) >= 0:
+                rec.solution(assign, "paper_reference")
+            return solution
+
     if remaining(limit) <= 0.01:
         return {"termination": "deadline_before_start"}
-    solver = {"ufl": PublishingUFLBenders, "gap": GAPColumnGeneration}[family](max_iters=10**6, time_limit=remaining(limit))
+    solver = {"ufl": PublishingUFLBenders, "gap": PublishingGAPColumnGeneration}[family](max_iters=10**6, time_limit=remaining(limit))
     error = None
     try:
         res = solver.run(data)
@@ -213,9 +226,10 @@ def run_paper_reference(family: str, data: str, limit: float, rec: Recorder) -> 
         rec.solution([int(k.split("_")[1]) for k, v in res["final_vars"].items() if k.startswith("y_") and v > 0.5], "paper_reference_final")
     records = [{k: getattr(r, k) for k in ("iteration", "elapsed_time", "master_obj", "global_lb", "global_ub") if hasattr(r, k)} for r in getattr(solver, "iter_records", [])]
     # The paper's references report bounds per iteration on their own clock; they are kept as diagnostics only.
-    return {"termination": "crash" if error and "Limit" not in error else "finished", "claimed_objective": res.get("best_objective"), "claimed_lb": res.get("global_lb"), "iters": res.get("iters"),
+    termination = "finished" if not error else "deadline" if "ReferenceLimit" in error else "crash"
+    return {"termination": termination, "claimed_objective": res.get("best_objective"), "claimed_lb": res.get("global_lb"), "iters": res.get("iters"),
             "error": error, "iteration_records": records,
-            "witness_note": None if family == "ufl" else "GAP paper reference exposes pattern usages only; objective unverified"}
+            }
 
 
 def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder) -> dict:
