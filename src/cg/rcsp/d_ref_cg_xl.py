@@ -413,13 +413,20 @@ class RCSPColumnGenerationXL:
             m.addLConstr(cover[t], GRB.GREATER_EQUAL, 1.0)
         m.Params.Cutoff = self.ub - 0.5
         m.Params.TimeLimit = max(0.01, self.left())
+        # Costs are integral: an absolute gap below one unit (and no relative tolerance) makes OPTIMAL a real proof.
+        m.Params.MIPGap = 0.0
+        m.Params.MIPGapAbs = 0.5
         m.optimize()
         if m.SolCount:
             x = m.getAttr("X", xs)
             self.offer([d for d, v in zip(duties, x) if v > 0.5], stage)
-        if m.Status in (GRB.OPTIMAL, GRB.INFEASIBLE, GRB.CUTOFF, GRB.INF_OR_UNBD):
+        if m.Status in (GRB.INFEASIBLE, GRB.CUTOFF, GRB.INF_OR_UNBD):
+            # No plan below UB - 0.5 among the enumerated duties (all duties that can improve on UB): UB is optimal.
             self.stats["enumeration_proof"] = True
             self.raise_bound(self.ub, stage)
+        elif m.Status == GRB.OPTIMAL:
+            self.stats["enumeration_proof"] = True
+            self.raise_bound(min(self.ub, float(math.ceil(m.ObjBound - 1e-6))), stage)
         elif m.Status == GRB.TIME_LIMIT and math.isfinite(m.ObjBound) and m.ObjBound > -1e90:
             self.raise_bound(float(math.ceil(m.ObjBound - 1e-6)), stage)
         m.dispose()

@@ -515,8 +515,18 @@ METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=
 
 # ---------------------------------------------------------------- driver
 
+def referenced_inputs(args) -> dict:
+    """Hashes of input files referenced by a spec (RCSP specs point to an instance directory)."""
+    if args.family != "rcsp":
+        return {}
+    from src.cg.rcsp.a_data import read_spec
+    directory, _ = read_spec(args.data)
+    return {str(f.relative_to(directory)): sha256(f) for f in sorted(Path(directory).iterdir()) if f.is_file()}
+
+
 def fingerprint(args) -> dict:
     return {"family": args.family, "method": args.method, "time_limit": args.time_limit, "data_sha256": sha256(args.data),
+            "referenced_inputs_sha256": referenced_inputs(args),
             "source_sha256": {p: sha256(p) for p in COMMON_SOURCES + SOURCES[args.family]},
             "gurobi": ".".join(map(str, gp.gurobi.version()))}
 

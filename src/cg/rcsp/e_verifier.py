@@ -101,7 +101,8 @@ def verify_solution(spec_path: str | Path, output_path: str | Path, tol: float =
     if missing:
         issues.append(f"{len(missing)} tasks uncovered (e.g. {sorted(missing)[:5]})")
     claimed = out.get("objective_value")
-    if isinstance(claimed, bool) or not isinstance(claimed, (int, float)) or not math.isfinite(claimed) or abs(claimed - total) > tol * max(1.0, abs(total)):
+    # Costs are integral (seconds plus a fixed charge per duty): the claimed objective must match exactly.
+    if isinstance(claimed, bool) or not isinstance(claimed, (int, float)) or not math.isfinite(claimed) or abs(claimed - total) > 1e-6:
         issues.append(f"objective mismatch or non-finite: claimed {claimed}, recomputed {total}")
     if out.get("status") not in ("optimal", "feasible"):
         issues.append("status must be 'optimal' or 'feasible' for a returned plan")
