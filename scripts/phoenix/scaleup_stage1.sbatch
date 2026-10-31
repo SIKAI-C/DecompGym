@@ -11,7 +11,7 @@
 #SBATCH --qos=embers
 #SBATCH --time=01:20:00
 #SBATCH --output=/storage/home/hcoda1/1/scheng326/r-phentenryck3-0/decompgym-scaleup/scripts/out/%x-%A_%a.out
-# Submit with: sbatch --array=0-<N-1> --export=ALL,TASKS_FILE=scripts/phoenix/tasks/<file> (N <= 50, Phoenix embers MaxSubmitJobs)
+# Submit with: sbatch --array=0-<N-1> --export=ALL,TASKS_FILE=scripts/phoenix/tasks/<file> ,CODE_ROOT=$BASE/code_<sha> (N <= 50 including queued jobs, Phoenix embers MaxSubmitJobs)
 #SBATCH --requeue
 # One CPU model for every task: the 32-core cpu-small nodes are excluded, and the model is asserted below.
 #SBATCH --exclude=atl1-1-01-005-[21-36]-[1-2],atl1-1-01-002-[22-25]-[1-2]
@@ -19,7 +19,8 @@
 set -euo pipefail
 
 BASE="/storage/home/hcoda1/1/scheng326/r-phentenryck3-0/decompgym-scaleup"
-CODE_ROOT="$BASE/code"
+# Each job runs from its own checkout pinned to one commit (submit with CODE_ROOT=$BASE/code_<sha>).
+CODE_ROOT="${CODE_ROOT:-$BASE/code}"
 
 cd "$CODE_ROOT"
 module load gurobi/13.0.1
