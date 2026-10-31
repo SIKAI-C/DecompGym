@@ -1,0 +1,8 @@
+rcsp rcsp/s5_t501_single.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s5_t501_multi.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s6_t580_single.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s6_t580_multi.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s7_t681_single.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s7_t681_multi.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s8_t694_single.json mip 900 stage1_rcsp_mcf_t900_20261031
+rcsp rcsp/s8_t694_multi.json mip 900 stage1_rcsp_mcf_t900_20261031
