@@ -30,13 +30,14 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd"}
+SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd", "rcsp": "cg"}
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
                   "src/utils/base_data.py"]
 SOURCES = {
     "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
+    "rcsp": ["src/cg/rcsp/a_data.py", "src/cg/rcsp/pricing.py", "src/cg/rcsp/b_mip_xl.py", "src/cg/rcsp/c_naive_cg.py", "src/cg/rcsp/d_ref_cg_xl.py", "src/cg/rcsp/e_verifier.py"],
     "hub": ["src/bd/hub/a_data.py", "src/bd/hub/b_mip_xl.py", "src/bd/hub/c_naive_bd.py", "src/bd/hub/d_ref_bd_xl.py", "src/bd/hub/e_verifier.py"],
     "mcnd": ["src/bd/mcnd/a_data.py", "src/bd/mcnd/b_mip_xl.py", "src/bd/mcnd/c_naive_bd.py", "src/bd/mcnd/d_ref_bd_xl.py", "src/bd/mcnd/e_verifier.py"],
     "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
@@ -175,8 +176,29 @@ class HubAdapter:
         return hub_output(self.inst, self.normalize(hubs), status=status)
 
 
+class RCSPAdapter:
+    """Railway crew scheduling (JSON spec {"dir", "variant"}); solutions are duty lists [{"depot", "tasks"}]."""
+
+    def __init__(self, data: str) -> None:
+        from src.cg.rcsp.a_data import load_rcsp
+        self.inst = load_rcsp(data)
+
+    @staticmethod
+    def normalize(duties: list) -> list:
+        from src.cg.rcsp.b_mip_xl import normalize_plan
+        return normalize_plan(duties)
+
+    def objective(self, duties: list) -> float | None:
+        from src.cg.rcsp.b_mip_xl import plan_cost
+        return plan_cost(self.inst, self.normalize(duties))
+
+    def output(self, duties: list, status: str = "feasible") -> dict:
+        from src.cg.rcsp.b_mip_xl import rcsp_output
+        return rcsp_output(self.inst, self.normalize(duties), status=status)
+
+
 UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter}
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter, "rcsp": RCSPAdapter}
 
 
 class Recorder:
@@ -243,7 +265,22 @@ class Recorder:
 
 # ---------------------------------------------------------------- methods
 
+def run_rcsp_mip(data: str, limit: float, rec: Recorder) -> dict:
+    """The RCSP compact MIP needs its own lazy pairing-cut callback; every integer solution is decoded and
+    rechecked before it is published."""
+    from src.cg.rcsp.b_mip_xl import RCSPCompactMIP
+    if remaining(limit) <= 0.01:
+        return {"termination": "deadline_before_start"}
+    res = RCSPCompactMIP(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "mip"),
+                         on_bound=lambda b: rec.bound(b, "mip"), soft_mem_gb=SOFT_MEM_GB).run(data)
+    reason = res.get("termination_reason", "")
+    termination = "finished" if reason == "optimal" else "memory_limit" if "mem" in reason else "deadline"
+    return {"termination": termination} | {k: v for k, v in res.items() if k not in ("trace", "duties")}
+
+
 def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bool = False) -> dict:
+    if family == "rcsp":
+        return run_rcsp_mip(data, limit, rec)
     a = rec.adapter
     model = gp.Model()
     model.Params.OutputFlag = 0
@@ -406,6 +443,9 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     elif family == "hub":
         from src.bd.hub.d_ref_bd_xl import HubBendersXL
         solver = HubBendersXL(time_limit=remaining(limit), threads=1, **hooks)
+    elif family == "rcsp":
+        from src.cg.rcsp.d_ref_cg_xl import RCSPColumnGenerationXL
+        solver = RCSPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
     else:
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
         solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -459,10 +499,13 @@ def run_naive_bd_control(family: str, data: str, limit: float, rec: Recorder) ->
 def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
     """Naive textbook column generation control (protocol v3.1): root CG with one best column per depot, then an
     integer restricted master in the last 20% of the budget (CLRP)."""
-    if family != "clrp":
-        raise ValueError("the naive CG control is defined for CLRP only")
-    from src.bd.clrp.e_naive_cg import CLRPNaiveCG
-    res = CLRPNaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
+    if family not in ("clrp", "rcsp"):
+        raise ValueError("the naive CG control is defined for CLRP and RCSP only")
+    if family == "rcsp":
+        from src.cg.rcsp.c_naive_cg import RCSPNaiveCG as NaiveCG
+    else:
+        from src.bd.clrp.e_naive_cg import CLRPNaiveCG as NaiveCG
+    res = NaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
                       on_bound=lambda b: rec.bound(b, "naive_cg"), soft_mem_gb=SOFT_MEM_GB).run(data)
     return {"termination": "deadline"} | {k: v for k, v in res.items() if k != "routes"}
 
@@ -502,6 +545,9 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
         elif args.family == "hub":
             from src.bd.hub.e_verifier import verify_solution
+            result["verification"] = verify_solution(args.data, solution_path, 1e-6)
+        elif args.family == "rcsp":
+            from src.cg.rcsp.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
         else:
             result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
