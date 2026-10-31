@@ -585,3 +585,29 @@ def test_tabu_repair_tracks_the_penalty_exactly(tmp_path):
                 bins = [np.flatnonzero(res == t).tolist() for t in range(len(plan) - 1)]
                 assert bin_count(inst, public([b for b in bins if b])) is not None
         assert tr.log and tr.iterations > 0
+
+
+def test_pricing_bounds_keep_tiny_positive_profits():
+    """Review 34: an oracle that drops tiny positive profits reports a bound below the true pricing optimum, and
+    Farley's bound sum(pi) / bound then exceeds the optimum. Both exact oracles must bound the full profit vector."""
+    import math
+    gp = pytest.importorskip("gurobipy")
+    from src.cg.bppc.heuristic import edge_clique_cover
+    from src.cg.bppc.pricing import KPCOracle, SmallBinOracle
+    # 21 unit items, capacity 21, no conflicts: one bin holds everything, so the packing optimum is 1.
+    n = 21
+    w, adj = np.ones(n, dtype=np.int64), np.zeros((n, n), dtype=bool)
+    p = np.array([1.0] + [9e-7] * (n - 1))
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.start()
+    res = KPCOracle(w, n, adj, edge_clique_cover(adj), env).solve(p)
+    assert res["bound"] is not None and res["bound"] >= p.sum() - 1e-12
+    assert math.ceil(p.sum() / max(1.0, res["bound"] * (1 + 1e-9) + 1e-9) - 1e-6) <= 1
+    env.dispose()
+    # Triplet-size bins for the enumeration oracle: capacity 3, unit items.
+    q = np.array([1.0, 4e-10, 4e-10, 0.2, 0.1, 0.05])
+    orc = SmallBinOracle(np.ones(6, dtype=np.int64), 3, np.zeros((6, 6), dtype=bool))
+    res = orc.solve(q)
+    best = max(q[list(c)].sum() for k in (1, 2, 3) for c in __import__("itertools").combinations(range(6), k))
+    assert res["bound"] is not None and res["bound"] >= best - 1e-12

@@ -5,7 +5,8 @@ when its value exceeds 1 (reduced cost 1 - value < 0).
 
 KPCOracle is the exact oracle shared by the naive and the engineered column generation: a Gurobi MIP built once per
 conflict graph, with the conflicts written as clique rows sum_{i in K} z_i <= 1 over an edge clique cover (they imply
-every edge row). Items with p_i <= tol are fixed to 0 (they cannot raise the value). MIPGap 0; Cutoff at the
+every edge row). Items with p_i <= 0 are fixed to 0 (they cannot raise the value); every strictly positive profit is
+kept, however small, so that `bound` bounds the optimum of the full profit vector (review 34). MIPGap 0; Cutoff at the
 threshold (1 + tol), so the search looks only for improving bins and, when there is none, ends with the proof that
 the optimum is at most the threshold. Every returned bin is re-checked (capacity, conflicts). `bound` is a valid upper
 bound on the optimum whenever it is not None (Gurobi's best bound, or the threshold after a cutoff), also when the
@@ -64,7 +65,7 @@ class KPCOracle:
         if left is not None and left <= 1e-3:
             return out
         md, z = self.model, self.z
-        pos = p > self.tol
+        pos = p > 0.0  # never drop small positive profits: the bound feeds Farley's bound and pruning
         if not pos.any() or float(np.sort(p[pos])[::-1].sum()) <= thr:
             # Even all positive-profit items together cannot exceed the threshold.
             out.update(complete=True, bound=float(p[pos].sum()) if pos.any() else 0.0, seconds=time.perf_counter() - t)
@@ -176,7 +177,7 @@ class SmallBinOracle:
         t = time.perf_counter()
         thr = 1.0 + 1e-6 if threshold is None else threshold
         p = np.asarray(p, dtype=float)
-        pos = p > 1e-9
+        pos = p > 0.0  # never drop small positive profits (see KPCOracle)
         if banned is not None:
             pos &= ~banned
         cand = np.flatnonzero(pos)
