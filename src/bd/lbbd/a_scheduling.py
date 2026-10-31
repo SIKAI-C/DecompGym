@@ -179,12 +179,14 @@ def sgs_any(inst: PSInstance, i: int, jobs: list[int]) -> dict[int, int] | None:
 
 # ---------------------------------------------------------------- exact enumeration for small sets
 
-def small_exact(inst: PSInstance, i: int, jobs: list[int], node_limit: int = 20000) -> tuple[str, dict[int, int] | None]:
+def small_exact(inst: PSInstance, i: int, jobs: list[int], node_limit: int = 20000,
+                deadline: float | None = None) -> tuple[str, dict[int, int] | None]:
     """Exact feasibility of a small job set on facility i by depth-first search over serial-SGS job orders.
     Active schedules (every job at its earliest feasible start given the jobs placed before it, over all orders)
     contain a feasible schedule whenever one exists (deadlines = maximum lateness <= 0, a regular objective). A node
     where some remaining job has no feasible start is dead (loads only grow below it); nodes are memoized on (load
-    profile, remaining jobs). UNKNOWN when `node_limit` nodes are exceeded."""
+    profile, remaining jobs). UNKNOWN when `node_limit` nodes are exceeded or the absolute `deadline`
+    (time.perf_counter() clock) passes; the clock is read at the first node and every 64 nodes."""
     cap = int(inst.capacity[i])
     H = inst.horizon
     P = {j: int(inst.proc[i, j]) for j in jobs}
@@ -212,6 +214,8 @@ def small_exact(inst: PSInstance, i: int, jobs: list[int], node_limit: int = 200
             return True
         nodes[0] += 1
         if nodes[0] > node_limit:
+            return None
+        if deadline is not None and nodes[0] % 64 == 1 and time.perf_counter() >= deadline:
             return None
         key = (tuple(prof), rest)
         if key in seen:
@@ -254,9 +258,13 @@ CUMULATIVE_PARAMS = ("use_timetable_edge_finding_in_cumulative", "use_overload_c
                      "use_hard_precedences_in_cumulative")
 
 
-def cpsat_check(inst: PSInstance, i: int, jobs: list[int], time_limit: float, seed: int = 0,
-                hint: dict[int, int] | None = None) -> tuple[str, dict[int, int] | None]:
-    """Exact feasibility of jobs on facility i by CP-SAT (one worker)."""
+def cpsat_check(inst: PSInstance, i: int, jobs: list[int], time_limit: float | None = None, seed: int = 0,
+                hint: dict[int, int] | None = None, deadline: float | None = None) -> tuple[str, dict[int, int] | None]:
+    """Exact feasibility of jobs on facility i by CP-SAT (one worker). The allowance is one absolute deadline
+    (time.perf_counter() clock; `deadline`, or entry time + `time_limit`): model construction consumes it, and the
+    solver's limit is the time left immediately before Solve() (UNKNOWN without solving when none is left)."""
+    if deadline is None:
+        deadline = time.perf_counter() + float(time_limit if time_limit is not None else 0.0)
     from ortools.sat.python import cp_model
     model = cp_model.CpModel()
     starts, intervals, demands = {}, [], []
@@ -273,13 +281,16 @@ def cpsat_check(inst: PSInstance, i: int, jobs: list[int], time_limit: float, se
     model.add_cumulative(intervals, demands, int(inst.capacity[i]))
     solver = cp_model.CpSolver()
     solver.parameters.num_workers = 1
-    solver.parameters.max_time_in_seconds = max(0.001, float(time_limit))
     solver.parameters.random_seed = int(seed)
     for name in CUMULATIVE_PARAMS:  # stronger cumulative propagation (infeasibility proofs of tight packings)
         try:
             setattr(solver.parameters, name, True)
         except (AttributeError, ValueError):
             pass
+    left = deadline - time.perf_counter()  # recomputed immediately before Solve(): construction time is consumed
+    if left <= 0:
+        return UNKNOWN, None
+    solver.parameters.max_time_in_seconds = left
     status = solver.solve(model)
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         out = {j: int(solver.value(s)) for j, s in starts.items()}
@@ -339,7 +350,10 @@ class FacilityOracle:
 
     def check(self, i: int, mask: int, time_limit: float, exact: bool = True) -> tuple[str, dict[int, int] | None]:
         """FEASIBLE with a schedule {job: start}, INFEASIBLE, or UNKNOWN (out of time, or exact=False and the cheap
-        tests did not decide)."""
+        tests did not decide). The allowance `time_limit` becomes one absolute deadline at entry; every step (cache,
+        relaxation, SGS, enumeration, CP model construction) consumes it, and CP-SAT gets only what is left right
+        before it solves."""
+        deadline = time.perf_counter() + max(0.0, float(time_limit))
         self.stats["checks"] += 1
         status, starts = self.lookup(i, mask)
         if status != UNKNOWN:
@@ -357,11 +371,11 @@ class FacilityOracle:
             self.stats["sgs"] += 1
             self._store_feasible(i, mask, starts)
             return FEASIBLE, starts
-        if not exact or time_limit <= 0:
+        if not exact or time.perf_counter() >= deadline:
             return UNKNOWN, None
         if len(jobs) <= self.small_size:
             t = time.perf_counter()
-            status, starts = small_exact(self.inst, i, jobs, self.small_nodes)
+            status, starts = small_exact(self.inst, i, jobs, self.small_nodes, deadline=deadline)
             self.stats["small_seconds"] += time.perf_counter() - t
             if status != UNKNOWN:
                 self.stats[f"small_{status}"] += 1
@@ -370,8 +384,10 @@ class FacilityOracle:
                 else:
                     self._store_infeasible(i, mask)
                 return status, starts
+        if time.perf_counter() >= deadline:
+            return UNKNOWN, None
         t = time.perf_counter()
-        status, starts = cpsat_check(self.inst, i, jobs, time_limit, self.seed)
+        status, starts = cpsat_check(self.inst, i, jobs, seed=self.seed, deadline=deadline)
         self.stats["cp_calls"] += 1
         self.stats["cp_seconds"] += time.perf_counter() - t
         self.stats[f"cp_{status}"] += 1

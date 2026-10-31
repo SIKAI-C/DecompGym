@@ -723,11 +723,20 @@ def referenced_inputs(args) -> dict:
     return {str(f.relative_to(directory)): sha256(f) for f in sorted(Path(directory).iterdir()) if f.is_file()}
 
 
+FROZEN_ORTOOLS = "9.14.6206"  # the CP-SAT version of the LBBD oracle and control (review 37)
+
+
 def fingerprint(args) -> dict:
-    return {"family": args.family, "method": args.method, "time_limit": args.time_limit, "data_sha256": sha256(args.data),
-            "referenced_inputs_sha256": referenced_inputs(args),
-            "source_sha256": {p: sha256(p) for p in COMMON_SOURCES + SOURCES[args.family]},
-            "gurobi": ".".join(map(str, gp.gurobi.version()))}
+    fp = {"family": args.family, "method": args.method, "time_limit": args.time_limit, "data_sha256": sha256(args.data),
+          "referenced_inputs_sha256": referenced_inputs(args),
+          "source_sha256": {p: sha256(p) for p in COMMON_SOURCES + SOURCES[args.family]},
+          "gurobi": ".".join(map(str, gp.gurobi.version()))}
+    if args.family == "lbbd":
+        import ortools
+        if ortools.__version__ != FROZEN_ORTOOLS:
+            raise SystemExit(f"abort: OR-Tools {ortools.__version__}, expected {FROZEN_ORTOOLS}")
+        fp["ortools"] = ortools.__version__
+    return fp
 
 
 def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previous: list[Path], total: float | None, extra: dict | None = None) -> dict:

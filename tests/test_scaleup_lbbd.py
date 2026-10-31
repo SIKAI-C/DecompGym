@@ -524,3 +524,144 @@ def test_callback_errors_are_not_swallowed(tmp_path):
 
     with pytest.raises(RuntimeError, match="oracle failure"):
         Failing(time_limit=30, warm_start=False).run(path)
+
+
+# ---------------------------------------------------------------- review 37: certification, publication, time allowances
+
+import src.bd.lbbd.a_scheduling as sched_mod  # noqa: E402
+import src.bd.lbbd.f_heuristic as heur_mod  # noqa: E402
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """A controlled clock: time.perf_counter() plus an offset the test can jump (Gurobi and CP-SAT keep their own
+    clocks, so the solvers run on; only the methods' deadline checks see the jump)."""
+    state = {"offset": 0.0}
+    real = time.perf_counter
+    monkeypatch.setattr(time, "perf_counter", lambda: real() + state["offset"])
+
+    def jump():
+        state["offset"] += 1e6
+
+    return jump
+
+
+def improvable(tmp_path) -> tuple[PSInstance, str, int, int]:
+    """A tiny instance whose shared initializer is feasible but not optimal."""
+    for s in range(40):
+        inst, path = tiny(s, tmp_path)
+        g = greedy_solution(inst)
+        opt = brute_optimum(path)
+        if g is not None and opt is not None and g[1] > opt:
+            return inst, path, g[1], opt
+    pytest.skip("no tiny instance with a suboptimal initializer")
+
+
+def test_naive_does_not_certify_a_schedule_published_after_the_deadline(tmp_path, clock):
+    """Review 37 (high): the master optimum is schedulable but its publication comes after the deadline; the retained
+    incumbent is the initializer, so the run must end as a timeout, not as 'optimal'."""
+    inst, path, greedy_cost, opt = improvable(tmp_path)
+
+    class Late(PSNaiveLBBD):
+        def publish(self, sol, stage):
+            if stage == "master_optimum":
+                clock()  # the deadline passes just before the proved optimum is published
+            return super().publish(sol, stage)
+
+    seen = []
+    res = Late(time_limit=60, on_incumbent=lambda s: seen.append(schedule_cost(inst, s))).run(path)
+    assert res["termination_reason"] == "time_limit", res["termination_reason"]
+    assert res["best_objective"] == greedy_cost > opt and seen == [greedy_cost]
+    assert res["global_lb"] is None or res["global_lb"] <= opt + 1e-6
+    # without the clock jump the same run certifies the optimum
+    res = PSNaiveLBBD(time_limit=60).run(path)
+    assert res["termination_reason"] == "optimal" and res["best_objective"] == opt
+
+
+def test_engineered_does_not_certify_a_schedule_published_after_the_deadline(tmp_path, clock):
+    inst, path, greedy_cost, opt = improvable(tmp_path)
+    state = {"jumped": False, "ub": None}
+
+    class Late(PSBendersXL):
+        def offer(self, sol, stage):
+            if stage == "branch_and_check" and not state["jumped"]:
+                state["jumped"], state["ub"] = True, self.ub
+                clock()
+            return super().offer(sol, stage)
+
+    res = Late(time_limit=60, repair=False, warm_start=False).run(path)
+    assert state["jumped"] and state["ub"] == greedy_cost
+    assert res["termination_reason"] != "optimal" and res["best_objective"] == greedy_cost, res["termination_reason"]
+    assert res["termination_reason"] in ("time_limit", "stuck")
+
+
+def test_cpsat_does_not_certify_a_solution_found_after_the_deadline(tmp_path, clock, monkeypatch):
+    inst, path, greedy_cost, opt = improvable(tmp_path)
+    original = heur_mod._Publisher.offer
+
+    def offer(self, sol, stage):
+        if stage == "cpsat":
+            clock()  # every CP-SAT solution arrives after the deadline
+        return original(self, sol, stage)
+
+    monkeypatch.setattr(heur_mod._Publisher, "offer", offer)
+    res = PSCPSatMonolithic(time_limit=60).run(path)
+    assert res["termination_reason"] == "time_limit" and res["best_objective"] == greedy_cost, res["termination_reason"]
+
+
+def test_local_search_publishes_an_improvement_before_the_descent_ends(mid_instance, clock):
+    """Review 37 (medium): the first improving move happens before the deadline, the deadline passes in the middle of
+    the descent; the improvement must already be published (previously only the end of a descent published)."""
+    inst = load_instance(mid_instance)
+
+    class Spy(PSLocalSearch):
+        def run(self, data_path):
+            self.records = []
+            return super().run(data_path)
+
+        def after_move(self, stage):
+            self.records.append(self.cost())
+            super().after_move(stage)
+            if len(self.records) == 1:
+                clock()
+
+    seen = []
+    ls = Spy(time_limit=60, on_incumbent=lambda s: seen.append(schedule_cost(inst, s)))
+    res = ls.run(mid_instance)
+    assert ls.records and seen[0] > ls.records[0]
+    assert seen == [seen[0], ls.records[0]] and res["best_objective"] == ls.records[0]
+
+
+def test_oracle_uses_one_absolute_deadline(mid_instance, monkeypatch):
+    """Review 37 (medium): time spent before CP-SAT (enumeration here) is consumed from the same allowance; CP-SAT is
+    not called once the allowance is gone; an expired deadline gives UNKNOWN without solving."""
+    inst = load_instance(mid_instance)
+    calls = []
+
+    def slow_small(inst_, i, jobs, node_limit=20000, deadline=None):
+        time.sleep(0.3)
+        return UNKNOWN, None
+
+    def fake_cp(inst_, i, jobs, time_limit=None, seed=0, hint=None, deadline=None):
+        calls.append(deadline)
+        return UNKNOWN, None
+
+    monkeypatch.setattr(sched_mod, "small_exact", slow_small)
+    monkeypatch.setattr(sched_mod, "cpsat_check", fake_cp)
+    monkeypatch.setattr(sched_mod, "sgs_any", lambda *a, **k: None)
+    oracle = FacilityOracle(inst, small_size=100)
+    monkeypatch.setattr(oracle.relax, "violated", lambda i, x: None)
+    jobs = [j for j in range(inst.n) if inst.eligible[0, j]][:6]
+    t0 = time.perf_counter()
+    st, _ = oracle.check(0, to_mask(jobs), 1.0)
+    assert st == UNKNOWN and len(calls) == 1
+    assert calls[0] <= t0 + 1.0 + 1e-3 and calls[0] - time.perf_counter() < 0.75  # the 0.3 s were consumed
+    st, _ = oracle.check(0, to_mask(jobs[:5]), 0.2)  # the enumeration alone exceeds the allowance
+    assert st == UNKNOWN and len(calls) == 1
+    # a real CP-SAT check with an expired deadline returns at once, unsolved
+    monkeypatch.undo()
+    t1 = time.perf_counter()
+    assert cpsat_check(inst, 0, jobs, deadline=time.perf_counter() - 1.0)[0] == UNKNOWN
+    assert time.perf_counter() - t1 < 0.5
+    st, _ = small_exact(inst, 0, jobs, deadline=time.perf_counter() - 1.0)
+    assert st == UNKNOWN

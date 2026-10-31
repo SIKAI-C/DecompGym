@@ -222,9 +222,11 @@ class PSTimeIndexedMIP:
                     offer(model.getAttr("X", xl), "mip_final")
                 if status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.INTERRUPTED, GRB.MEM_LIMIT):
                     bound(float(model.ObjBound))
-                if status == GRB.OPTIMAL:
-                    reason = "optimal"
-                elif status == GRB.TIME_LIMIT or (status == GRB.INTERRUPTED and best["deadline_stop"]):
+                unit = 1.0 if integral_costs(inst) else 1e-6
+                if status == GRB.OPTIMAL and best["sol"] is not None and best["obj"] <= float(model.ObjVal) + 0.5 * unit:
+                    reason = "optimal"  # the retained incumbent (published before the deadline) attains the optimum
+                elif status == GRB.TIME_LIMIT or (status == GRB.INTERRUPTED and best["deadline_stop"]) or \
+                        (status in (GRB.OPTIMAL, GRB.INFEASIBLE, GRB.INF_OR_UNBD) and time.perf_counter() >= deadline):
                     reason = "time_limit"
                 else:
                     reason = {GRB.INTERRUPTED: "interrupted", GRB.MEM_LIMIT: "memory_limit", GRB.INFEASIBLE: "infeasible",

@@ -275,9 +275,15 @@ class PSBendersXL:
         if md.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.INTERRUPTED, GRB.MEM_LIMIT) and md.SolCount:
             self.publish_bound(float(md.ObjBound), "final")
         if md.Status == GRB.OPTIMAL:
-            return "optimal"
+            # Gurobi's incumbent passed every facility check, so it is optimal; it certifies optimality only if the
+            # retained incumbent (published strictly before the deadline) attains its value
+            if self.ub < INF and self.ub <= float(md.ObjVal) + 0.5 * self.unit:
+                return "optimal"
+            return "time_limit" if self.left() <= 0.5 else "stuck"
         if md.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
-            return "infeasible"
+            if self.ub < INF:
+                raise RuntimeError("master infeasible although a verified schedule exists: invalid cut")
+            return "infeasible" if self.left() > 0 else "time_limit"
         if md.Status == GRB.MEM_LIMIT:
             return "memory_limit"
         if md.Status == GRB.TIME_LIMIT or (md.Status == GRB.INTERRUPTED and self.left() <= 0.5):

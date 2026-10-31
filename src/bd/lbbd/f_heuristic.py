@@ -14,6 +14,7 @@ complete schedule, and have the solver interface of the decomposition methods.
   schedulability test is the same exact facility oracle the LBBD methods use (a_scheduling.FacilityOracle: caches,
   relaxation, SGS, then CP-SAT capped at `check_cap` seconds per test; an UNKNOWN answer rejects the move). Kicks move
   2-5 random jobs to random facilities with room; the walk returns to the best solution when a kick does not improve.
+  Every new global incumbent is published as soon as a move produces it (not only at the end of a descent).
   There is no master problem and no cut: the search never learns from infeasible sets beyond the oracle's cache.
 """
 from __future__ import annotations
@@ -128,11 +129,14 @@ class PSCPSatMonolithic:
                     and time.perf_counter() < deadline and abs(bnd) < 1e18:
                 state["bound"] = bnd
                 self.on_bound(bnd)
-        if status == cp_model.OPTIMAL:
-            reason = "optimal"
-        elif status == cp_model.INFEASIBLE:
+        out_of_time = time.perf_counter() >= deadline - 0.5
+        if status == cp_model.OPTIMAL and pub.best is not None and pub.ub <= float(solver.objective_value) + 0.5 * pub.unit:
+            reason = "optimal"  # the retained incumbent (published before the deadline) attains the proved optimum
+        elif status == cp_model.INFEASIBLE and pub.best is not None:
+            raise RuntimeError("CP-SAT reports infeasible although a verified schedule exists")
+        elif status == cp_model.INFEASIBLE and time.perf_counter() < deadline:
             reason = "infeasible"
-        elif status is None or time.perf_counter() >= deadline - 0.5:
+        elif status is None or out_of_time or status in (cp_model.OPTIMAL, cp_model.INFEASIBLE):
             reason = "time_limit"
         else:
             reason = f"cpsat_status_{solver.status_name(status)}"
@@ -289,10 +293,17 @@ class PSLocalSearch:
                         return True
         return False
 
+    def after_move(self, stage: str) -> None:
+        """Publish the current solution at once when it is a new global incumbent (so an improvement found before
+        the deadline is never lost to a descent that crosses it)."""
+        if self.cost() < self.pub.ub - 0.5 * self.pub.unit:
+            self.pub.offer(self.solution(), stage)
+
     def descend(self) -> None:
         while self.left() > 0:
             if self.relocate() or self.swap() or (self.ejection and self.eject()):
                 self.stats["moves"] += 1
+                self.after_move("descent")
                 continue
             break
 
@@ -307,6 +318,7 @@ class PSLocalSearch:
                 sv = self.feasible(v, self.masks[v] | (1 << j))
                 if sv is not None:
                     self.move(j, v, sv)
+                    self.after_move("kick")
                     break
 
     def snapshot(self):
@@ -322,14 +334,13 @@ class PSLocalSearch:
         self.rng = np.random.default_rng(self.seed)
         self.oracle = FacilityOracle(inst, Relaxation(inst), seed=self.seed)
         self.stats = {"moves": 0, "kicks": 0, "improving_kicks": 0}
-        pub = _Publisher(inst, self.on_incumbent, self.deadline)
+        self.pub = pub = _Publisher(inst, self.on_incumbent, self.deadline)
         reason = "time_limit"
         if not self.construct():
             reason = "no_solution"
         else:
             pub.offer(self.solution(), "initializer")
-            self.descend()
-            pub.offer(self.solution(), "descent")
+            self.descend()  # every new global incumbent is published inside the descent (after_move)
             best, best_cost = self.snapshot(), self.cost()
             while self.left() > 0:
                 self.kick()
@@ -339,7 +350,7 @@ class PSLocalSearch:
                 if c < best_cost:
                     best, best_cost = self.snapshot(), c
                     self.stats["improving_kicks"] += 1
-                    pub.offer(self.solution(), "ils")
+                    pub.offer(self.solution(), "ils")  # normally already published by after_move
                 elif c > best_cost or self.rng.random() < 0.5:
                     self.restore(best)
         return {"best_objective": pub.ub if pub.best is not None else None, "global_lb": None,

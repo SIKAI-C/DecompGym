@@ -135,7 +135,9 @@ class PSNaiveLBBD:
             self.on_bound(value)
             self.log("bound")
 
-    def publish(self, sol: list[list[int]], stage: str) -> None:
+    def publish(self, sol: list[list[int]], stage: str) -> float:
+        """Offer a verified schedule; returns its cost (the retained incumbent changes only strictly before the
+        deadline)."""
         value = schedule_cost(self.inst, sol)
         if value is None:
             raise RuntimeError("naive LBBD built an infeasible schedule")
@@ -143,6 +145,12 @@ class PSNaiveLBBD:
             self.ub, self.best, self.best_stage = value, [list(v) for v in sol], stage
             self.on_incumbent(self.best)
             self.log(stage)
+        return value
+
+    def certified(self, optimum: float) -> str:
+        """Termination after a proved optimum value: "optimal" only if the retained (published before the deadline)
+        incumbent attains it; otherwise the proof came too late for the score and the label is a timeout."""
+        return "optimal" if self.ub < INF and self.ub <= optimum + 0.5 * self.unit else "time_limit"
 
     def closed(self) -> bool:
         return self.ub < INF and self.lb > self.ub - self.unit
@@ -190,7 +198,11 @@ class PSNaiveLBBD:
                 self.stats["iterations"] += 1
                 self.stats["last_master_status"] = int(md.Status)
                 if md.Status in (GRB.INFEASIBLE, GRB.INF_OR_UNBD):
-                    return "infeasible"  # no assignment is schedulable (every cut is valid; binaries: never unbounded)
+                    if self.ub < INF:
+                        raise RuntimeError("master infeasible although a verified schedule exists: invalid cut")
+                    # no assignment is schedulable (every cut is valid; binaries: never unbounded); a proof that
+                    # arrives after the deadline is not a result
+                    return "infeasible" if self.left() > 0 else "time_limit"
                 if md.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.INTERRUPTED, GRB.MEM_LIMIT) and math.isfinite(md.ObjBound):
                     self.publish_bound(float(md.ObjBound))
                 if md.Status == GRB.TIME_LIMIT:
@@ -218,7 +230,8 @@ class PSNaiveLBBD:
                     else:
                         return "time_limit"  # the oracle ran out of time
                 if ok:
-                    self.publish(solution_from_schedules(inst, assign, schedules), "master_optimum")
-                    return "optimal"
+                    # the master optimum is schedulable, hence optimal; it certifies optimality only if it was retained
+                    value = self.publish(solution_from_schedules(inst, assign, schedules), "master_optimum")
+                    return self.certified(value)
         finally:
             master.dispose()
