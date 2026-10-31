@@ -183,3 +183,22 @@ def test_naive_cg_control_bounds_and_plans(tmp_path, seed):
     assert seen and all(v is not None and v >= opt - 1e-6 for v in seen)
     assert all(b <= opt + 1e-6 for b in bounds)
     assert out["best_objective"] >= opt - 1e-6
+
+
+def test_naive_cg_discards_incomplete_pricing_rounds(tmp_path, monkeypatch):
+    import src.bd.clrp.e_naive_cg as naive
+
+    rng = np.random.default_rng(7)
+    inst = random_instance(rng, 6, 2, Q=40)
+    inst.depot_capacity[:] = inst.demand.sum()
+    write_prodhon(inst, tmp_path / "tiny.dat")
+    real = naive.NGPricer.price
+
+    def truncated(self, *args, **kwargs):
+        res = real(self, *args, **kwargs)
+        return {**res, "complete": False}  # as if a resource guard had cut the round short
+
+    monkeypatch.setattr(naive.NGPricer, "price", truncated)
+    out = naive.CLRPNaiveCG(time_limit=10).run(str(tmp_path / "tiny.dat"))
+    assert out["cg_stop_reason"] == "pricing_resource_limit"
+    assert out["cg_iterations"] == 1 and not out["cg_converged"] and out["global_lb"] is None

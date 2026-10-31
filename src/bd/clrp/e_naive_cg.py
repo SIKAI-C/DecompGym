@@ -6,7 +6,7 @@ Root column generation plus an integer restricted master:
 - deterministic seed columns: one single-customer route per (depot, customer) and the routes of the shared
   basic initializer (regret assignment + savings on the cheapest-capacity depot set, unpolished);
 - pricing: the exact ng-route labeling oracle per depot, returning one best negative column per depot per
-  iteration;
+  iteration (strict: a pricing round that is not completed exactly is discarded and stops column generation);
 - a lower bound is published only when a full exact pricing round finds no negative column (the converged
   master LP over an ng-relaxation is a valid relaxation);
 - the last 20% of the budget is an integer restricted master over the elementary columns; a covering
@@ -103,7 +103,7 @@ class CLRPNaiveCG:
             add(r["depot"], r["customers"])
 
         pricer = NGPricer(inst, cost, ng=self.ng)
-        iters, converged, bound = 0, False, None
+        iters, converged, bound, stop_reason = 0, False, None, "deadline"
         while time.perf_counter() < cg_deadline:
             lp.Params.TimeLimit = max(0.01, cg_deadline - time.perf_counter())
             lp.optimize()
@@ -112,18 +112,23 @@ class CLRPNaiveCG:
             iters += 1
             pi = np.array(lp.getAttr("Pi", cover))
             nu = np.array(lp.getAttr("Pi", capr))
-            added, complete = 0, True
+            # Strict exact pricing: a round cut short by the deadline or the pricer's resource guards (which would
+            # fall back to a beam) is discarded entirely, and column generation stops there.
+            found = []
             for d in range(m):
                 res = pricer.price(pi + nu[d] * q, F, pricer.C, pricer.c_out[d], pricer.c_in[d], exact=True,
                                    max_cols=1, deadline=cg_deadline)
-                complete &= res["complete"]
-                for rc, path in res["routes"]:
-                    if rc < -1e-6:
-                        added += add(d, path)
+                if not res["complete"]:
+                    found = None
+                    stop_reason = "deadline" if time.perf_counter() >= cg_deadline else "pricing_resource_limit"
+                    break
+                found += [(d, path) for rc, path in res["routes"] if rc < -1e-6]
+            if found is None:
+                break
+            added = sum(add(d, path) for d, path in found)
             if added == 0:
-                if complete:
-                    converged, bound = True, float(lp.ObjVal)
-                    self.on_bound(bound)
+                converged, bound, stop_reason = True, float(lp.ObjVal), "converged"
+                self.on_bound(bound)
                 break
 
         # Integer restricted master over the elementary columns with the remaining budget.
@@ -153,5 +158,5 @@ class CLRPNaiveCG:
             mip.dispose()
         env.dispose()
         return {"best_objective": best["obj"] if best["routes"] else None, "global_lb": bound,
-                "termination_reason": "time_limit", "cg_iterations": iters, "cg_converged": converged,
+                "termination_reason": "time_limit", "cg_iterations": iters, "cg_converged": converged, "cg_stop_reason": stop_reason,
                 "columns": len(cols), "routes": best["routes"], "total_seconds": time.perf_counter() - t0}
