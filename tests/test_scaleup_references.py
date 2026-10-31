@@ -163,3 +163,33 @@ def test_preview_keeps_structure_and_reports_lengths():
     assert p["m"] == 4 and p["name"] == "x"
     assert p["f"] == [1, 2, "... (4 items in total)"]
     assert p["D"] == [[1, 2, "... (5 items in total)"], [1, 2, "... (5 items in total)"], "... (4 items in total)"]
+
+
+def test_deferred_publications_keep_their_times_and_replay(tmp_path, monkeypatch):
+    import json
+
+    import src.experiments.scaleup_calibration as cal
+
+    class Deferred:
+        deferred = True
+        normalize = staticmethod(lambda s: sorted(s))
+        calls = 0
+
+        def objective(self, sol):
+            Deferred.calls += 1
+            return None if 99 in sol else float(sum(sol))
+
+    clock = {"t": 1.0}
+    monkeypatch.setattr(cal, "elapsed", lambda: clock["t"])
+    rec = cal.Recorder(Deferred(), 10.0, tmp_path / "j.jsonl")
+    rec.solution([5, 5], "a")
+    clock["t"] = 2.0
+    rec.solution([99], "a")  # infeasible
+    clock["t"] = 3.0
+    rec.solution([1, 2], "a")
+    assert Deferred.calls == 0 and not rec.witnesses  # nothing evaluated while the solver runs
+    rec.evaluate_pending()
+    rec.journal.close()
+    assert [(w["t"], w["objective"]) for w in rec.witnesses] == [(1.0, 10.0), (3.0, 3.0)] and rec.infeasible == 1
+    again = cal.replay(tmp_path / "j.jsonl", Deferred(), 10.0)
+    assert [(w["t"], w["objective"]) for w in again.witnesses] == [(1.0, 10.0), (3.0, 3.0)]

@@ -30,13 +30,14 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd"}
+SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd"}
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
                   "src/utils/base_data.py"]
 SOURCES = {
     "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
+    "mcnd": ["src/bd/mcnd/a_data.py", "src/bd/mcnd/b_mip_xl.py", "src/bd/mcnd/c_naive_bd.py", "src/bd/mcnd/d_ref_bd_xl.py", "src/bd/mcnd/e_verifier.py"],
     "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
 }
 SOFT_MEM_GB = 12.0  # Gurobi SoftMemLimit, below the 16 GB job allocation with headroom for Python
@@ -115,8 +116,36 @@ class CLRPAdapter:
         return {"status": status, "method": "decomposition", "objective_value": self.objective(routes), "routes": self.normalize(routes)}
 
 
+class MCNDAdapter:
+    """MCND (.dow file); solutions are designs (open arc indices). Evaluating a design solves a multicommodity flow
+    LP, so evaluation is deferred: publications are timestamped and journaled on receipt and evaluated after the
+    run (the solver is not charged for the evaluation)."""
+
+    deferred = True
+
+    def __init__(self, data: str) -> None:
+        from src.bd.mcnd.a_data import load_dow
+        self.inst = load_dow(data)
+        self._cache: dict[tuple[int, ...], float | None] = {}
+
+    @staticmethod
+    def normalize(design: list) -> list:
+        return sorted({int(a) for a in design})
+
+    def objective(self, design: list) -> float | None:
+        from src.bd.mcnd.b_mip_xl import design_cost
+        key = tuple(self.normalize(design))
+        if key not in self._cache:
+            self._cache[key] = design_cost(self.inst, list(key))
+        return self._cache[key]
+
+    def output(self, design: list, status: str = "feasible") -> dict:
+        from src.bd.mcnd.b_mip_xl import design_output
+        return design_output(self.inst, self.normalize(design), method="benders_decomposition", status=status)
+
+
 UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter}
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter}
 
 
 class Recorder:
@@ -133,6 +162,7 @@ class Recorder:
         self.best: float = math.inf
         self.late = 0
         self.infeasible = 0
+        self.pending: list[dict] = []  # deferred publications (adapter.deferred), evaluated by evaluate_pending()
         self.journal = journal.open("a")
 
     def _write(self, record: dict) -> None:
@@ -145,6 +175,11 @@ class Recorder:
         if t >= self.limit:
             self.late += 1
             return
+        if getattr(self.adapter, "deferred", False):
+            pub = {"t": t, "solution": self.adapter.normalize(sol), "source": source}
+            self.pending.append(pub)
+            self._write({"kind": "publication", **pub})
+            return
         obj = self.adapter.objective(sol)
         if obj is None:
             self.infeasible += 1
@@ -153,6 +188,17 @@ class Recorder:
             w = {"t": t, "objective": obj, "solution": self.adapter.normalize(sol), "source": source}
             self.witnesses.append(w)
             self._write({"kind": "incumbent", **w})
+
+    def evaluate_pending(self) -> None:
+        """Evaluate deferred publications in arrival order; each keeps its publication time."""
+        for pub in self.pending:
+            obj = self.adapter.objective(pub["solution"])
+            if obj is None:
+                self.infeasible += 1
+            elif obj < self.best - 1e-9:
+                self.best = obj
+                self.witnesses.append({"t": pub["t"], "objective": obj, "solution": pub["solution"], "source": pub["source"]})
+        self.pending = []
 
     def bound(self, value: float | None, source: str) -> None:
         t = elapsed()
@@ -189,6 +235,16 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bo
             rec.solution(list(np.nonzero(y0 > 0.5)[0]), "mip_initializer")
             y.Start = y0
             x.Start = (np.arange(m)[:, None] == np.argmin(np.where(y0[:, None] > 0.5, a.D, np.inf), axis=0)[None, :]).astype(float)
+    elif family == "mcnd":
+        from src.bd.mcnd.b_mip_xl import build_mcnd_mip
+        model.dispose()
+        model, v = build_mcnd_mip(a.inst)
+        model.Params.OutputFlag = 0
+        model.Params.Threads = 1
+        model.Params.SoftMemLimit = SOFT_MEM_GB
+        yv = v["y"]
+        # Only the design is published; the runner recomputes optimal flows for it (the MIP's own flows need not be).
+        decode = lambda get: list(np.nonzero(np.asarray(get(yv)) > 0.5)[0])
     elif family == "clrp":
         from src.bd.clrp.b_mip_xl import build_clrp_mip, decode_routes
         model.dispose()
@@ -293,6 +349,9 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     elif family == "clrp":
         from src.bd.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
         solver = CLRPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
+    elif family == "mcnd":
+        from src.bd.mcnd.d_ref_bd_xl import MCNDBendersXL
+        solver = MCNDBendersXL(time_limit=remaining(limit), threads=1, **hooks)
     else:
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
         solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -329,6 +388,17 @@ def run_root_cg_control(family: str, data: str, limit: float, rec: Recorder) -> 
     return {"termination": "memory_limit" if reason == "memory_limit" else "finished" if reason == "optimal" else "deadline"} | {k: v for k, v in res.items() if k not in ("trace", "routes")}
 
 
+def run_naive_bd_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
+    """Naive textbook Benders control (protocol v3.1): outer-loop integer master, one aggregate cut per iteration (MCND)."""
+    if family != "mcnd":
+        raise ValueError("the naive BD control is defined for MCND only")
+    from src.bd.mcnd.c_naive_bd import MCNDNaiveBenders
+    res = MCNDNaiveBenders(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_bd"),
+                           on_bound=lambda b: rec.bound(b, "naive_bd"), soft_mem_gb=SOFT_MEM_GB).run(data)
+    reason = res.get("termination_reason", "")
+    return {"termination": "finished" if reason == "optimal" else "deadline"} | {k: v for k, v in res.items() if k not in ("trace", "open")}
+
+
 def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
     """Naive textbook column generation control (protocol v3.1): root CG with one best column per depot, then an
     integer restricted master in the last 20% of the budget (CLRP)."""
@@ -340,7 +410,7 @@ def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) ->
     return {"termination": "deadline"} | {k: v for k, v in res.items() if k != "routes"}
 
 
-METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
+METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "naive_bd": run_naive_bd_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
 
 
 # ---------------------------------------------------------------- driver
@@ -370,6 +440,9 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
         if args.family == "clrp":  # not a paper family: its own independent verifier on the Prodhon file
             from src.bd.clrp.d_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
+        elif args.family == "mcnd":
+            from src.bd.mcnd.e_verifier import verify_solution
+            result["verification"] = verify_solution(args.data, solution_path, 1e-6)
         else:
             result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
         verified = bool(result["verification"].get("ok"))
@@ -393,8 +466,11 @@ def replay(journal: Path, adapter, limit: float) -> Recorder:
         if r.get("kind") == "incumbent" and r["t"] < limit and adapter.objective(r["solution"]) == r["objective"] and r["objective"] < rec.best:
             rec.best = r["objective"]
             rec.witnesses.append({k: r[k] for k in ("t", "objective", "solution", "source")})
+        elif r.get("kind") == "publication" and r["t"] < limit:
+            rec.pending.append({k: r[k] for k in ("t", "solution", "source")})
         elif r.get("kind") == "bound" and r["t"] < limit:
             rec.bounds.append({k: r[k] for k in ("t", "bound", "source")})
+    rec.evaluate_pending()
     return rec
 
 
@@ -447,6 +523,7 @@ def main() -> None:
     except Exception as exc:  # incumbents already journaled stay eligible
         details = {"termination": "crash", "error": f"{type(exc).__name__}: {exc}"}
     total = elapsed()
+    rec.evaluate_pending()  # after the clock stops: evaluation is not charged to the solver
     rec.journal.close()
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 if platform.system() == "Linux" else 1024.0 ** 2)
     result = write_result(args, fp, out, rec, details, previous, total, {"peak_rss_mb": peak})
