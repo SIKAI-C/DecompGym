@@ -37,7 +37,7 @@ COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/ver
 SOURCES = {
     "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
-    "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py"],
+    "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
 }
 SOFT_MEM_GB = 12.0  # Gurobi SoftMemLimit, below the 16 GB job allocation with headroom for Python
 
@@ -329,7 +329,18 @@ def run_root_cg_control(family: str, data: str, limit: float, rec: Recorder) -> 
     return {"termination": "memory_limit" if reason == "memory_limit" else "finished" if reason == "optimal" else "deadline"} | {k: v for k, v in res.items() if k not in ("trace", "routes")}
 
 
-METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
+def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
+    """Naive textbook column generation control (protocol v3.1): root CG with one best column per depot, then an
+    integer restricted master in the last 20% of the budget (CLRP)."""
+    if family != "clrp":
+        raise ValueError("the naive CG control is defined for CLRP only")
+    from src.bd.clrp.e_naive_cg import CLRPNaiveCG
+    res = CLRPNaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
+                      on_bound=lambda b: rec.bound(b, "naive_cg"), soft_mem_gb=SOFT_MEM_GB).run(data)
+    return {"termination": "deadline"} | {k: v for k, v in res.items() if k != "routes"}
+
+
+METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
 
 
 # ---------------------------------------------------------------- driver

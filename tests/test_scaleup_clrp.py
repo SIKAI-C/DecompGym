@@ -162,3 +162,24 @@ def test_root_only_control_never_reports_a_bound_above_the_optimum(tmp_path, see
     assert all(v is not None and v >= opt - 1e-6 for v in seen)
     assert all(b <= opt + 1e-6 for b in bounds)
     assert out["global_lb"] <= opt + 1e-6
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_naive_cg_control_bounds_and_plans(tmp_path, seed):
+    from src.bd.clrp.e_naive_cg import CLRPNaiveCG
+
+    rng = np.random.default_rng(200 + seed)
+    n, m = int(rng.integers(4, 8)), int(rng.integers(2, 4))
+    inst = random_instance(rng, n, m, Q=int(rng.integers(25, 45)))
+    inst.depot_capacity = np.ceil(inst.demand.sum() * rng.uniform(0.4, 0.8, size=m))
+    if inst.depot_capacity.sum() < inst.demand.sum():
+        inst.depot_capacity[:] = inst.demand.sum()
+    write_prodhon(inst, tmp_path / "tiny.dat")
+    inst = load_prodhon(tmp_path / "tiny.dat")
+    cost = inst.travel("ceil")
+    opt = brute_force(inst, cost)
+    seen, bounds = [], []
+    out = CLRPNaiveCG(time_limit=20, on_incumbent=lambda r: seen.append(route_cost(inst, cost, r)), on_bound=bounds.append).run(str(tmp_path / "tiny.dat"))
+    assert seen and all(v is not None and v >= opt - 1e-6 for v in seen)
+    assert all(b <= opt + 1e-6 for b in bounds)
+    assert out["best_objective"] >= opt - 1e-6
