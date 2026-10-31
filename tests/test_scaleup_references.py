@@ -153,3 +153,13 @@ def test_gap_lagrangian_bounds_and_neighborhood_search_are_valid():
             assert all(res_[k, sub == k].sum() <= cap[k] for k in range(m))
             assert opt <= cost[sub, np.arange(n)].sum() < cost[start, np.arange(n)].sum()
     env.dispose()
+
+
+def test_preview_keeps_structure_and_reports_lengths():
+    from src.experiments.xl_inputs import preview
+
+    data = {"m": 4, "f": [1, 2, 3, 4], "D": [[1, 2, 3, 4, 5]] * 4, "name": "x"}
+    p = preview(data, keep=2)
+    assert p["m"] == 4 and p["name"] == "x"
+    assert p["f"] == [1, 2, "... (4 items in total)"]
+    assert p["D"] == [[1, 2, "... (5 items in total)"], [1, 2, "... (5 items in total)"], "... (4 items in total)"]

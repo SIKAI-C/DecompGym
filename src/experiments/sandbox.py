@@ -99,6 +99,9 @@ def seatbelt_profile(case, work, environment, license_file):
 
 
 class NativeSandboxExecutor:
+    # Bytes kept from the end of each of stdout and stderr (the paper's 12 000; the scale-up protocol uses 20 000).
+    stream_tail_bytes = 12000
+
     def __init__(self, *, license_file: Path, expected_environment: dict | None = None):
         self.license_file = license_file.resolve(strict=True)
         if not self.license_file.is_file():
@@ -204,7 +207,7 @@ class NativeSandboxExecutor:
             for name in ("stdout", "stderr"):
                 with (root / name).open("rb") as stream:
                     stream.seek(0, os.SEEK_END)
-                    stream.seek(max(0, stream.tell() - 12000))
+                    stream.seek(max(0, stream.tell() - self.stream_tail_bytes))
                     record[name] = stream.read().decode(errors="replace").replace(token + "\n", "")
             if not record["bootstrap_ready"]:
                 record.update(phase="bootstrap_failed", execution_seconds=time.monotonic() - started)
