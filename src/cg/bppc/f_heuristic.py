@@ -1,6 +1,7 @@
 """Heuristic-only control for BPPC (scale-up study): an iterated local search without decomposition (no column
 generation, no LP, no MIP), built from the standard bin-packing neighbourhoods (Falkenauer's fitness, minimum-slack
-bin filling of Gupta-Ho / Fleszar-Hindi, Alvim et al.'s fixed-k tabu repair), made conflict-aware.
+bin filling of Gupta-Ho / Fleszar-Hindi, the fixed-k penalty search of Capua et al. 2017 run as a TabuCol-style
+tabu search), made conflict-aware.
 
 - Start: the shared basic initializer (heuristic.basic_initializer, first fit decreasing with conflicts), published.
 - Main loop, large-neighbourhood search (LNS): remove 2-6 random bins (half of the time also the least-loaded one) and
@@ -12,9 +13,12 @@ bin filling of Gupta-Ho / Fleszar-Hindi, Alvim et al.'s fixed-k tabu repair), ma
 - Bin elimination by tabu repair, every `tabu_every` LNS iterations without a new best: empty one of the three
   least-loaded bins, reinsert its items where the penalty grows least, and run a tabu search on the k-bin
   assignment minimizing f = sum_b max(0, load_b - C) + gamma * (conflicting pairs inside bins), gamma = mean weight,
-  with relocate and swap moves of violated items (sampled), tabu tenure 10 U(0, 1) + 0.6 * #violated, aspiration;
-  f = 0 is a feasible packing with one bin fewer. The repair gives up after `stall` iterations without a new best f
-  (initially max(2000, 5 n), doubled after every failed attempt up to 100 n, reset after a success).
+  over the neighbourhoods of Capua, Frota, Ochi and Vidal (2017, ILS): Relocate, Swap, Swap2vs1 and Swap1vs2 of the
+  items of problematic bins, evaluated with their O(1) conflict array (TabuRepair.repair); TabuCol-style tenure and
+  aspiration. Attempts alternate between this rich neighbourhood and a light one (Relocate and Swap only, more
+  iterations per second): the rich one is better on many-items-per-bin instances, the light one on dense graphs.
+  f = 0 is a feasible packing with one bin fewer. The repair gives up after `stall` iterations without a
+  new best f (initially max(2000, 5 n), doubled after every failed attempt up to 100 n, reset after a success).
 - Every improving packing is checked with bin_count and published; nothing is published at or after the deadline.
 It stops when the bin count reaches the trivial bound max(greedy clique size, ceil(w(N) / C)) ("finished_early") or
 at the deadline ("time_limit").
@@ -35,7 +39,7 @@ from src.cg.bppc.heuristic import basic_initializer, greedy_clique
 class TabuRepair:
     """Penalty tabu search on k-bin assignments of one instance (see the module docstring)."""
 
-    def __init__(self, inst: BPPCInstance, rng: np.random.Generator, sample: int = 8, check: bool = False) -> None:
+    def __init__(self, inst: BPPCInstance, rng: np.random.Generator, sample: int = 3, check: bool = False) -> None:
         self.inst, self.rng, self.sample, self.check = inst, rng, sample, check
         self.log: list[dict] = []  # one record per repair (diagnostics)
         self.n, self.C = inst.n, int(inst.capacity)
@@ -69,97 +73,182 @@ class TabuRepair:
             cnt[t] += self.A[i]
         return bin_of
 
-    def repair(self, bin_of: np.ndarray, k: int, deadline: float, stall: int) -> np.ndarray | None:
+    def repair(self, bin_of: np.ndarray, k: int, deadline: float, stall: int, rich: bool = True) -> np.ndarray | None:
         """Tabu search from the assignment bin_of (bins 0..k-1); the feasible assignment, or None after `stall`
-        iterations without a new best penalty or at the deadline."""
+        iterations without a new best penalty or at the deadline.
+
+        Penalty f = sum_b max(0, load_b - C) + gamma * (conflicting pairs in b). Every iteration evaluates, for every
+        item of up to `sample` problematic bins a (f_b > 0): Relocate (the item to any other bin), Swap (with any
+        item of another bin), Swap2vs1 (two items of a against one item of another bin) and Swap1vs2 (one item of a
+        against two items of the same other bin; the pair list is built once per iteration) - the neighbourhoods of Capua et al. (2017) - using their O(1)
+        conflict array cnt[b, i] (conflicts of item i with bin b), and applies the best admissible move: no moved
+        item may return to a bin it left less than tenure = 10 U(0, 1) + 0.6 * (#items in problematic bins)
+        iterations ago, unless the move reaches a new best f (aspiration); ties at random. f is recomputed exactly
+        after every move. rich=False evaluates Relocate and Swap only (cheaper iterations)."""
         n, C, w, A, g, rng = self.n, self.C, self.w, self.A, self.gamma, self.rng
         bin_of = bin_of.copy()
-        load = np.bincount(bin_of, weights=w, minlength=k).astype(np.int64)
-        cnt = np.zeros((k, n), dtype=np.int32)
+        items = [[] for _ in range(k)]
         for i in range(n):
-            cnt[bin_of[i]] += A[i]
-        own = cnt[bin_of, np.arange(n)]
-        f = float(self.ex(load).sum() + g * own.sum() / 2)
+            items[bin_of[i]].append(i)
+        load = np.array([int(w[l].sum()) if l else 0 for l in items], dtype=np.int64)
+        cnt = np.zeros((k, n), dtype=np.int32)
+        for t in range(k):
+            if items[t]:
+                cnt[t] = A[items[t]].sum(axis=0)
+        conf = np.array([int(cnt[t, items[t]].sum()) // 2 if items[t] else 0 for t in range(k)], dtype=np.int64)
+        pairs: list = [None] * k  # cached item pairs (J1, J2) of every bin
+        ex = self.ex
+        f = float(ex(load).sum() + g * conf.sum())
         best_f, last, f0 = f, 0, f
         tabu = np.zeros((n, k), dtype=np.int64)
         it = 0
+        arange_n = np.arange(n)
 
         def record(ok: bool) -> None:
-            own_ = cnt[bin_of, np.arange(n)]
             self.log.append({"k": k, "f0": round(f0, 1), "best_f": round(best_f, 1), "iters": it, "ok": ok,
-                             "f_end": round(float(self.ex(load).sum() + g * own_.sum() / 2), 1)})
+                             "f_end": round(f, 1)})
+
+        def pairs_of(t: int):
+            if pairs[t] is None:
+                l = items[t]
+                if len(l) < 2:
+                    pairs[t] = (np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64))
+                else:
+                    I, J = np.triu_indices(len(l), 1)
+                    arr = np.array(l, dtype=np.int64)
+                    pairs[t] = (arr[I], arr[J])
+            return pairs[t]
+
+        def relocate(x: int, s: int, t: int, until: int) -> None:
+            items[s].remove(x)
+            conf[s] -= cnt[s, x]
+            cnt[s] -= A[x]
+            load[s] -= w[x]
+            conf[t] += cnt[t, x]
+            cnt[t] += A[x]
+            load[t] += w[x]
+            items[t].append(x)
+            bin_of[x] = t
+            pairs[s] = pairs[t] = None
+            tabu[x, s] = until
 
         while True:
-            over = load[bin_of] > C
-            own = cnt[bin_of, np.arange(n)]
-            if self.check:  # tests: the tracked penalty, loads and conflict counts equal their recomputation
-                exact = float(self.ex(load).sum() + g * own.sum() / 2)
-                assert abs(exact - f) < 1e-6 * max(1.0, exact), (exact, f)
+            if self.check:  # tests: incremental loads, conflict counts and pair counts equal their recomputation
                 assert (load == np.bincount(bin_of, weights=w, minlength=k)).all()
                 assert (cnt == np.stack([A[bin_of == t].sum(axis=0) for t in range(k)])).all()
-            if f < 0.5 * min(1.0, g) or it % 1000 == 0:  # resynchronize the penalty (no float drift)
-                f = float(self.ex(load).sum() + g * own.sum() / 2)
-                if f == 0.0:
-                    record(True)
-                    return bin_of
+                assert all(conf[t] == int(cnt[t, items[t]].sum()) // 2 for t in range(k))
+            pen = ex(load) + g * conf
+            if f <= 0.0:
+                record(True)
+                return bin_of
             it += 1
             self.iterations += 1
             if it - last > stall or time.perf_counter() >= deadline:
                 record(False)
                 return None
-            viol = np.flatnonzero(over | (own > 0))
-            if len(viol) > self.sample:
-                viol = rng.choice(viol, self.sample, replace=False)
-            best = None  # (delta, tiebreak, move)
-            for i in viol.tolist():
-                a = int(bin_of[i])
-                la = load[a]
-                rem = self.ex(la - w[i]) - self.ex(la) - g * cnt[a, i]
-                # relocate i to bin b
-                d = rem + self.ex(load + w[i]) - self.ex(load) + g * cnt[:, i]
-                d = d.astype(float)
-                d[a] = np.inf
-                tabu_b = tabu[i] > it
-                d[tabu_b & (f + d >= best_f - 1e-9)] = np.inf
-                b = int(np.argmin(d + rng.random(k) * 1e-6))
-                if np.isfinite(d[b]) and (best is None or d[b] < best[0]):
-                    best = (float(d[b]), ("rel", i, a, b))
-                # swap i with j of another bin
-                bj = bin_of
-                lb = load[bj]
-                Aij = A[i]
-                dsw = (self.ex(la - w[i] + w) - self.ex(la) + self.ex(lb - w + w[i]) - self.ex(lb)
-                       + g * ((cnt[a] - Aij) - cnt[a, i] + (cnt[bj, i] - Aij) - cnt[bj, np.arange(n)])).astype(float)
-                dsw[bj == a] = np.inf
-                tabu_s = (tabu[i, bj] > it) | (tabu[np.arange(n), a] > it)
-                dsw[tabu_s & (f + dsw >= best_f - 1e-9)] = np.inf
-                j = int(np.argmin(dsw + rng.random(n) * 1e-6))
-                if np.isfinite(dsw[j]) and (best is None or dsw[j] < best[0]):
-                    best = (float(dsw[j]), ("swap", i, a, j))
+            prob = np.flatnonzero(pen > 0)
+            nprob_items = sum(len(items[t]) for t in prob.tolist())
+            if len(prob) > self.sample:
+                prob = rng.choice(prob, self.sample, replace=False)
+            Lb = load[bin_of]
+            own = cnt[bin_of, arange_n]
+            exL = ex(load)
+            best = None  # (delta, move)
+            multi = [t for t in range(k) if len(items[t]) >= 2] if rich else []  # item pairs, once per iteration
+            if multi:
+                GJ1 = np.concatenate([pairs_of(t)[0] for t in multi])
+                GJ2 = np.concatenate([pairs_of(t)[1] for t in multi])
+            else:
+                GJ1 = GJ2 = np.zeros(0, dtype=np.int64)
+            GPB = bin_of[GJ1]
+
+            def consider(D: np.ndarray, tabu_mask: np.ndarray, make) -> None:
+                nonlocal best
+                if D.size == 0:
+                    return
+                D = np.where(tabu_mask & (f + D >= best_f - 1e-9), np.inf, D)
+                flat = D.ravel()
+                m = flat.min()
+                if not np.isfinite(m) or (best is not None and m > best[0]):
+                    return
+                cand = np.flatnonzero(flat <= m + 1e-9)
+                pick = int(cand[rng.integers(len(cand))])
+                if best is None or m < best[0] or rng.random() < 0.5:
+                    best = (float(m), make(np.unravel_index(pick, D.shape)))
+
+            for a in prob.tolist():
+                ia = np.array(items[a], dtype=np.int64)
+                La = load[a]
+                wi = w[ia]
+                ca = cnt[a, ia]
+                # Relocate i (in a) -> bin t
+                D = (ex(La - wi) - ex(La) - g * ca)[:, None] + ex(load[None, :] + wi[:, None]) - exL[None, :] + g * cnt[:, ia].T
+                D = D.astype(float)
+                D[:, a] = np.inf
+                consider(D, tabu[ia] > it, lambda ij, ia=ia, a=a: ("rel", int(ia[ij[0]]), a, int(ij[1])))
+                # Swap i (in a) <-> j (any other bin)
+                Aij = A[ia]
+                D = (ex(La - wi[:, None] + w[None, :]) - ex(La) + ex(Lb[None, :] - w[None, :] + wi[:, None]) - ex(Lb)[None, :]
+                     + g * ((cnt[a][None, :] - Aij) - ca[:, None] + (cnt[:, ia][bin_of].T - Aij) - own[None, :])).astype(float)
+                D[:, bin_of == a] = np.inf
+                consider(D, (tabu[ia][:, bin_of] > it) | (tabu[:, a] > it)[None, :],
+                         lambda ij, ia=ia, a=a: ("swap", int(ia[ij[0]]), a, int(ij[1])))
+                # Swap2vs1: {i1, i2} (in a) <-> j (any other bin)
+                if rich and len(ia) >= 2:
+                    P1, P2 = np.triu_indices(len(ia), 1)
+                    i1, i2 = ia[P1], ia[P2]
+                    w12 = w[i1] + w[i2]
+                    a12 = A[i1, i2]
+                    D = (ex(La - w12[:, None] + w[None, :]) - ex(La) + ex(Lb[None, :] - w[None, :] + w12[:, None]) - ex(Lb)[None, :]
+                         + g * (-(cnt[a, i1] + cnt[a, i2] - a12)[:, None] + (cnt[a][None, :] - A[i1] - A[i2])
+                                - own[None, :] + (cnt[:, i1][bin_of].T - A[i1]) + (cnt[:, i2][bin_of].T - A[i2]) + a12[:, None])).astype(float)
+                    D[:, bin_of == a] = np.inf
+                    consider(D, ((tabu[i1][:, bin_of] > it) | (tabu[i2][:, bin_of] > it) | (tabu[:, a] > it)[None, :]),
+                             lambda ij, i1=i1, i2=i2, a=a: ("s21", (int(i1[ij[0]]), int(i2[ij[0]])), a, int(ij[1])))
+                # Swap1vs2: i (in a) <-> {j1, j2} (both in one other bin)
+                sel = GPB != a
+                if rich and sel.any():
+                    J1, J2 = GJ1[sel], GJ2[sel]
+                    if len(J1):
+                        PB = GPB[sel]
+                        LPB = load[PB]
+                        w12 = w[J1] + w[J2]
+                        a12 = A[J1, J2]
+                        Ai1, Ai2 = A[ia][:, J1], A[ia][:, J2]
+                        D = (ex(La - wi[:, None] + w12[None, :]) - ex(La) + ex(LPB[None, :] - w12[None, :] + wi[:, None]) - ex(LPB)[None, :]
+                             + g * (-(cnt[PB, J1] + cnt[PB, J2] - a12)[None, :] + (cnt[:, ia][PB].T - Ai1 - Ai2)
+                                    - ca[:, None] + (cnt[a, J1] - Ai1) + (cnt[a, J2] - Ai2) + a12[None, :])).astype(float)
+                        consider(D, (tabu[ia][:, PB] > it) | (tabu[J1, a] > it)[None, :] | (tabu[J2, a] > it)[None, :],
+                                 lambda ij, ia=ia, a=a, J1=J1, J2=J2: ("s12", int(ia[ij[0]]), a, (int(J1[ij[1]]), int(J2[ij[1]]))))
             if best is None:
                 continue
             delta, mv = best
-            nviol = len(np.flatnonzero(over | (own > 0)))
-            tenure = lambda: it + int(10 * rng.random()) + int(0.6 * nviol) + 1
-            if mv[0] == "rel":
-                _, i, a, b = mv
-                bin_of[i] = b
-                load[a] -= w[i]
-                load[b] += w[i]
-                cnt[a] -= A[i]
-                cnt[b] += A[i]
-                tabu[i, a] = tenure()
-            else:
+            until = lambda: it + int(10 * rng.random()) + int(0.6 * nprob_items) + 1
+            kind = mv[0]
+            if kind == "rel":
+                _, i, a, t = mv
+                relocate(i, a, t, until())
+            elif kind == "swap":
                 _, i, a, j = mv
-                b = int(bin_of[j])
-                bin_of[i], bin_of[j] = b, a
-                load[a] += w[j] - w[i]
-                load[b] += w[i] - w[j]
-                cnt[a] += A[j] - A[i]
-                cnt[b] += A[i] - A[j]
-                tabu[i, a] = tenure()
-                tabu[j, b] = tenure()
-            f += delta
+                t = int(bin_of[j])
+                relocate(i, a, t, until())
+                relocate(j, t, a, until())
+            elif kind == "s21":
+                _, (i1, i2), a, j = mv
+                t = int(bin_of[j])
+                relocate(i1, a, t, until())
+                relocate(i2, a, t, until())
+                relocate(j, t, a, until())
+            else:
+                _, i, a, (j1, j2) = mv
+                t = int(bin_of[j1])
+                relocate(i, a, t, until())
+                relocate(j1, t, a, until())
+                relocate(j2, t, a, until())
+            f_new = float(ex(load).sum() + g * conf.sum())
+            if self.check:
+                assert abs(f_new - (f + delta)) < 1e-6 * max(1.0, abs(f_new)), (kind, f_new, f + delta)
+            f = f_new
             if f < best_f - 1e-9:
                 best_f, last = f, it
 
@@ -218,7 +307,7 @@ class BPPCHeuristicControl:
 
     def __init__(self, *, time_limit: float = 3600.0, threads: int = 1, on_incumbent: Callable | None = None,
                  on_bound: Callable | None = None, soft_mem_gb: float | None = None, seed: int = 0,
-                 sample: int = 8, stall: int | None = None, tabu_every: int = 3000) -> None:
+                 sample: int = 3, stall: int | None = None, tabu_every: int = 1000) -> None:
         self.time_limit, self.threads, self.soft_mem_gb, self.seed = time_limit, threads, soft_mem_gb, seed
         self.on_incumbent = on_incumbent or (lambda bins: None)
         self.on_bound = on_bound or (lambda bound: None)
@@ -281,7 +370,8 @@ class BPPCHeuristicControl:
                 stats["tabu_attempts"] += 1
                 order = np.argsort(loads, kind="stable")
                 drop = int(order[rng.integers(0, min(3, len(cur)))])
-                res = tabu.repair(tabu.start(cur, drop), len(cur) - 1, deadline, stall)
+                res = tabu.repair(tabu.start(cur, drop), len(cur) - 1, deadline, stall,
+                                  rich=stats["tabu_attempts"] % 2 == 1)  # alternate rich and light neighbourhoods
                 stall = base_stall if res is not None else min(2 * stall, max(base_stall, 100 * inst.n))
                 if res is not None:
                     bins = [np.flatnonzero(res == t).tolist() for t in range(len(cur) - 1)]

@@ -579,8 +579,9 @@ def test_tabu_repair_tracks_the_penalty_exactly(tmp_path):
         if len(plan) < 2:
             continue
         drop = int(np.argmin([inst.weights[b].sum() for b in plan]))
-        res = tr.repair(tr.start(plan, drop), len(plan) - 1, time.perf_counter() + 5, stall=300)
-        if res is not None:
-            bins = [np.flatnonzero(res == t).tolist() for t in range(len(plan) - 1)]
-            assert bin_count(inst, public([b for b in bins if b])) is not None
+        for rich in (True, False):  # Capua's neighbourhoods (with Swap2vs1 / Swap1vs2), and Relocate + Swap only
+            res = tr.repair(tr.start(plan, drop), len(plan) - 1, time.perf_counter() + 5, stall=300, rich=rich)
+            if res is not None:
+                bins = [np.flatnonzero(res == t).tolist() for t in range(len(plan) - 1)]
+                assert bin_count(inst, public([b for b in bins if b])) is not None
         assert tr.log and tr.iterations > 0
