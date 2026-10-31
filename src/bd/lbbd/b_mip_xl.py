@@ -169,6 +169,8 @@ class PSTimeIndexedMIP:
             obj = schedule_cost(inst, sol)
             if obj is None:
                 raise RuntimeError("MIP incumbent fails the exact schedule check")
+            if time.perf_counter() >= deadline:  # decoding and checking may cross the deadline (review 39)
+                return
             if obj < best["obj"] - 0.5 * (1 if integral_costs(inst) else 1e-6):
                 best.update(obj=obj, sol=sol, stage=stage)
                 best["published"] += 1

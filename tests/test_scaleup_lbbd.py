@@ -665,3 +665,24 @@ def test_oracle_uses_one_absolute_deadline(mid_instance, monkeypatch):
     assert time.perf_counter() - t1 < 0.5
     st, _ = small_exact(inst, 0, jobs, deadline=time.perf_counter() - 1.0)
     assert st == UNKNOWN
+
+
+def test_mip_does_not_certify_an_incumbent_validated_after_the_deadline(tmp_path, clock, monkeypatch):
+    """Review 39 (high): the deadline passes while the MIP decodes and checks its first incumbent; that incumbent is not
+    published, so it must not be kept, and a final OPTIMAL status must not be reported as 'optimal'."""
+    import src.bd.lbbd.b_mip_xl as mip_mod
+    inst, path, greedy_cost, opt = improvable(tmp_path)
+    real_cost, state = mip_mod.schedule_cost, {"jumped": False}
+
+    def late_cost(*args, **kwargs):
+        value = real_cost(*args, **kwargs)
+        if not state["jumped"]:
+            state["jumped"] = True
+            clock()  # validation of the first incumbent ends after the deadline
+        return value
+
+    monkeypatch.setattr(mip_mod, "schedule_cost", late_cost)
+    seen = []
+    res = mip_mod.PSTimeIndexedMIP(time_limit=60, on_incumbent=seen.append).run(path)
+    assert state["jumped"] and seen == []
+    assert res["termination_reason"] != "optimal" and res["best_objective"] is None, res["termination_reason"]
