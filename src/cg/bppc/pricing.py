@@ -5,8 +5,9 @@ when its value exceeds 1 (reduced cost 1 - value < 0).
 
 KPCOracle is the exact oracle shared by the naive and the engineered column generation: a Gurobi MIP built once per
 conflict graph, with the conflicts written as clique rows sum_{i in K} z_i <= 1 over an edge clique cover (they imply
-every edge row). Items with p_i <= 0 are fixed to 0 (they cannot raise the value); every strictly positive profit is
-kept, however small, so that `bound` bounds the optimum of the full profit vector (review 34). MIPGap 0; Cutoff at the
+every edge row). Items with p_i <= 0 are fixed to 0 (they cannot raise the value). Positive profits at or below
+`small` (1e-5, inside Gurobi's tolerances) are also fixed to 0 in the MIP, and their total is added to every returned
+`bound`, so that `bound` bounds the optimum of the full profit vector (review 34). MIPGap 0; Cutoff at the
 threshold (1 + tol), so the search looks only for improving bins and, when there is none, ends with the proof that
 the optimum is at most the threshold. Every returned bin is re-checked (capacity, conflicts). `bound` is a valid upper
 bound on the optimum whenever it is not None (Gurobi's best bound, or the threshold after a cutoff), also when the
@@ -38,6 +39,7 @@ class KPCOracle:
         self.C = int(capacity)
         self.adj = adj
         self.tol = tol
+        self.small = 1e-5  # positive profits at or below this are handled through the bound slack (see solve)
         m = len(self.w)
         md = gp.Model(env=env)
         md.Params.OutputFlag = 0
@@ -65,22 +67,27 @@ class KPCOracle:
         if left is not None and left <= 1e-3:
             return out
         md, z = self.model, self.z
-        pos = p > 0.0  # never drop small positive profits: the bound feeds Farley's bound and pruning
-        if not pos.any() or float(np.sort(p[pos])[::-1].sum()) <= thr:
+        pos = p > 0.0
+        if not pos.any() or float(p[pos].sum()) <= thr:
             # Even all positive-profit items together cannot exceed the threshold.
             out.update(complete=True, bound=float(p[pos].sum()) if pos.any() else 0.0, seconds=time.perf_counter() - t)
             return out
-        z.UB = pos.astype(float)
-        z.Obj = np.where(pos, p, 0.0)
-        md.Params.Cutoff = thr
+        # Tiny positive profits are below Gurobi's resolution: solve without them and add their total to the bound
+        # (any bin's value is at most its value without them plus that total).
+        tiny = pos & (p <= self.small)
+        slack = float(p[tiny].sum())
+        big = pos & ~tiny
+        z.UB = big.astype(float)
+        z.Obj = np.where(big, p, 0.0)
+        md.Params.Cutoff = max(thr - slack, 0.0)
         md.Params.PoolSolutions = max(1, int(max_cols))
         md.Params.PoolSearchMode = pool_mode if max_cols > 1 else 0
         md.Params.TimeLimit = max(1e-3, left) if left is not None else GRB.INFINITY
         md.optimize()
         st = int(md.Status)
         out["status"] = st
-        if st in (GRB.CUTOFF, GRB.INFEASIBLE):  # no bin of value above the threshold
-            out.update(complete=True, bound=thr)
+        if st in (GRB.CUTOFF, GRB.INFEASIBLE):  # no bin of value above the cutoff (plus the tiny profits' total)
+            out.update(complete=True, bound=max(thr - slack, 0.0) + slack)
         else:
             out["complete"] = st == GRB.OPTIMAL
             try:
@@ -90,6 +97,8 @@ class KPCOracle:
                 out["bound"] = None
             if out["complete"] and out["bound"] is not None:
                 out["bound"] = max(out["bound"], float(md.ObjVal))
+            if out["bound"] is not None:
+                out["bound"] += slack
             found = {}
             for s in range(md.SolCount):
                 md.Params.SolutionNumber = s
