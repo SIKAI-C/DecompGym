@@ -39,7 +39,7 @@ SOURCES = {
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
     "cvrp": ["src/cg/cvrp/a_data.py", "src/cg/cvrp/heuristic.py", "src/cg/cvrp/b_mip_xl.py", "src/cg/cvrp/c_naive_cg.py", "src/cg/cvrp/d_ref_cg_xl.py", "src/cg/cvrp/e_verifier.py",
              "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/c_heuristic.py"],
-    "rcsp": ["src/cg/rcsp/a_data.py", "src/cg/rcsp/pricing.py", "src/cg/rcsp/b_mip_xl.py", "src/cg/rcsp/c_naive_cg.py", "src/cg/rcsp/d_ref_cg_xl.py", "src/cg/rcsp/e_verifier.py"],
+    "rcsp": ["src/cg/rcsp/a_data.py", "src/cg/rcsp/pricing.py", "src/cg/rcsp/b_mip_xl.py", "src/cg/rcsp/c_naive_cg.py", "src/cg/rcsp/d_ref_cg_xl.py", "src/cg/rcsp/e_verifier.py", "src/cg/rcsp/f_mcf_mip.py"],
     "hub": ["src/bd/hub/a_data.py", "src/bd/hub/b_mip_xl.py", "src/bd/hub/c_naive_bd.py", "src/bd/hub/d_ref_bd_xl.py", "src/bd/hub/e_verifier.py"],
     "mcnd": ["src/bd/mcnd/a_data.py", "src/bd/mcnd/b_mip_xl.py", "src/bd/mcnd/c_naive_bd.py", "src/bd/mcnd/d_ref_bd_xl.py", "src/bd/mcnd/e_verifier.py"],
     "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
@@ -289,19 +289,25 @@ class Recorder:
 
 # ---------------------------------------------------------------- methods
 
-def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp") -> dict:
-    """Compact MIPs that need their own callbacks (RCSP pairing cuts, CVRP rounded capacity cuts); every integer
-    solution is decoded and rechecked before it is published."""
+def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", flow: bool = False) -> dict:
+    """Compact MIPs that need their own callbacks; every integer solution is decoded and rechecked before it is
+    published. RCSP: the exact crew-indexed MCF of van Rossum (2026, Appendix B, with VIs and symmetry breaking,
+    barrier root) is the baseline; the layered flow model (a relaxation control) stays available as mip_flow.
+    CVRP: the flow model with rounded capacity cuts."""
+    kwargs = {}
     if family == "cvrp":
         from src.cg.cvrp.b_mip_xl import CVRPCompactMIP as CompactMIP
-    else:
+    elif flow:
         from src.cg.rcsp.b_mip_xl import RCSPCompactMIP as CompactMIP
+    else:
+        from src.cg.rcsp.f_mcf_mip import RCSPCrewMCF as CompactMIP
+        kwargs = {"method": 2}
     if remaining(limit) <= 0.01:
         return {"termination": "deadline_before_start"}
     res = CompactMIP(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "mip"),
-                         on_bound=lambda b: rec.bound(b, "mip"), soft_mem_gb=SOFT_MEM_GB).run(data)
+                     on_bound=lambda b: rec.bound(b, "mip"), soft_mem_gb=SOFT_MEM_GB, **kwargs).run(data)
     reason = res.get("termination_reason", "")
-    termination = "finished" if reason == "optimal" else "memory_limit" if "mem" in reason else "deadline"
+    termination = "finished" if reason in ("optimal", "finished") else "memory_limit" if "mem" in reason else "deadline"
     return {"termination": termination} | {k: v for k, v in res.items() if k not in ("trace", "duties")}
 
 
@@ -542,7 +548,7 @@ def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) ->
     return {"termination": "deadline"} | {k: v for k, v in res.items() if k != "routes"}
 
 
-METHODS = {"mip": run_mip, "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "naive_bd": run_naive_bd_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
+METHODS = {"mip": run_mip, "mip_flow": lambda family, data, limit, rec: run_rcsp_mip(data, limit, rec, family, flow=True), "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "naive_bd": run_naive_bd_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
 
 
 # ---------------------------------------------------------------- driver

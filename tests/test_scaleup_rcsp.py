@@ -6,6 +6,7 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from src.cg.rcsp.b_mip_xl import RCSPCompactMIP, duty_check, plan_cost, plan_iss
 from src.cg.rcsp.c_naive_cg import RCSPNaiveCG
 from src.cg.rcsp.d_ref_cg_xl import RCSPColumnGenerationXL
 from src.cg.rcsp.e_verifier import verify_connection_file, verify_solution
+from src.cg.rcsp.f_mcf_mip import BKS_DUTIES, RCSPCrewMCF, build_mcf, default_crews
 from src.cg.rcsp.pricing import DutyPricer, greedy_cover
 
 RAW = Path(__file__).resolve().parents[1] / "outputs" / "scaleup" / "raw" / "rcsp" / "rcsp-benchmark-main"
@@ -377,3 +379,254 @@ def test_converged_bounds_equal_lp_over_all_duties(synthetic):
         res = RCSPNaiveCG(time_limit=4).run(str(case["spec"]))
         assert res["cg_converged"] and res["lp_value"] == pytest.approx(lp, abs=1e-4)
         assert lp - 1.0 <= res["global_lb"] <= math.ceil(lp - 1e-6)
+
+
+# ---------------------------------------------------------------- crew-indexed MCF (van Rossum 2026, Appendix B)
+
+BOUNDARY_CASES = next(m for m in test_duty_rules_at_their_limits.pytestmark if m.name == "parametrize").args[1]
+BKS_S2_T90 = 748080
+
+
+def candidate_paths(inst) -> list[tuple[int, tuple[int, ...], int]]:
+    """Every SOURCE -> CONNECTION* -> SINK path, feasible or not, as (SOURCE crew base, tasks, SINK crew base)."""
+    succ, sinks = {}, {}
+    for i, j in inst.arc_of:
+        succ.setdefault(i, []).append(j)
+    for i, d in inst.sink_of:
+        sinks.setdefault(i, []).append(d)
+    out = []
+    for d, s in inst.source_of:
+        stack = [(s,)]
+        while stack:
+            path = stack.pop()
+            out += [(d, path, e) for e in sinks.get(path[-1], [])]
+            stack += [path + (j,) for j in succ.get(path[-1], [])]
+    return out
+
+
+def path_arcs(inst, info, depot, tasks, sink_depot) -> list[int]:
+    """Arc positions (in info["arcs"]) of a path."""
+    pos = {int(c): k for k, c in enumerate(info["arcs"]["conn"])}
+    conns = ([inst.source_of[(depot, tasks[0])]] + [inst.arc_of[(a, b)] for a, b in zip(tasks, tasks[1:])]
+             + [inst.sink_of[(tasks[-1], sink_depot)]])
+    return [pos[c] for c in conns]
+
+
+class ForcedPath:
+    """The MCF model of one crew member, without symmetry breaking and with covering right-hand sides 0: with a path
+    forced on the y variables it is feasible iff the model's duty rules accept the path."""
+
+    def __init__(self, inst, vi: bool) -> None:
+        self.inst = inst
+        self.model, self.info = build_mcf(inst, 1, valid_inequalities=vi, symmetry_breaking=False)
+        self.model.Params.OutputFlag = 0
+        lo, hi = self.info["rows"]["cover_9b"]
+        cons = self.model.getConstrs()[lo:hi]
+        self.model.setAttr("RHS", cons, [0.0] * len(cons))
+        self.y = self.info["X"].tolist()[: self.info["Ny"]]
+
+    def feasible(self, depot, tasks, sink_depot) -> bool:
+        on = np.zeros(self.info["Ny"])
+        on[self.info["yidx"][0, path_arcs(self.inst, self.info, depot, tasks, sink_depot)]] = 1.0
+        self.model.setAttr("LB", self.y, on.tolist())
+        self.model.setAttr("UB", self.y, on.tolist())
+        self.model.optimize()
+        assert self.model.Status in (gp.GRB.OPTIMAL, gp.GRB.INFEASIBLE)
+        return self.model.Status == gp.GRB.OPTIMAL
+
+
+@pytest.mark.parametrize("vi", [False, True])
+def test_mcf_duty_rules_match_duty_check(synthetic, tmp_path, vi):
+    """(9c)-(9i) (with vi also (12)-(14)) accept a path forced on one crew member iff duty_check accepts it, on every
+    path of the synthetic instances and of the boundary instances of test_duty_rules_at_their_limits; a multi-depot
+    path that ends at another crew base is rejected."""
+    insts = [(case["inst"], None) for case in synthetic]
+    for k, (intervals, feasible, _) in enumerate(BOUNDARY_CASES):
+        insts.append((read_instance(write_station_instance(tmp_path / f"b{k}", intervals), "single"), feasible))
+    checked = 0
+    for inst, whole in insts:
+        fp = ForcedPath(inst, vi)
+        for d, tasks, e in candidate_paths(inst):
+            expect = d == e and duty_check(inst, d, list(tasks))[0] is not None
+            assert fp.feasible(d, tasks, e) == expect, (inst.source_dir, inst.variant, d, tasks, e, vi)
+            checked += 1
+        if whole is not None:  # the boundary case itself: all tasks in one duty
+            assert fp.feasible(0, tuple(range(inst.n)), 0) == whole
+        fp.model.dispose()
+    assert checked > 200
+
+
+@pytest.mark.parametrize("vi", [True, False])
+def test_mcf_reaches_brute_force_optimum(synthetic, vi):
+    """With |C| = n and with |C| = the number of duties of the optimum (tight), the MCF proves the brute-force optimum;
+    every published incumbent is feasible and no bound exceeds the optimum."""
+    for case in synthetic:
+        inst, spec, opt = case["inst"], str(case["spec"]), case["opt"]
+        crews = inst.n
+        for _ in range(2):
+            incs, bounds = [], []
+            res = RCSPCrewMCF(time_limit=60, n_crews=crews, valid_inequalities=vi, on_incumbent=incs.append,
+                              on_bound=bounds.append).run(spec)
+            st = res["stats"]
+            assert st["decode_issues"] == 0 and st["rejected_solutions"] == 0, st["decode_issue_examples"]
+            assert res["termination_reason"] == "optimal", (spec, crews, res["termination_reason"])
+            assert res["best_objective"] == pytest.approx(opt) and res["global_lb"] == pytest.approx(opt)
+            assert plan_cost(inst, res["duties"]) == pytest.approx(opt)
+            costs = [plan_cost(inst, p) for p in incs]
+            assert costs and all(c is not None for c in costs) and costs == sorted(costs, reverse=True)
+            assert bounds and all(b <= opt + 1e-6 for b in bounds), (bounds, opt)
+            assert 1 <= st["q_used"] == st["q_size"] <= crews and st["n_crews"] == crews
+            crews = len(res["duties"])
+
+
+def test_mcf_chain_rows_equal_explicit_valid_inequalities(synthetic):
+    """The chain form of (12)-(14) has the same LP relaxation as the rows as printed (true and random objectives on
+    y and z); the inequalities only tighten the LP and stay below the optimum."""
+    rng = np.random.default_rng(5)
+    for case in synthetic:
+        inst = case["inst"]
+        objs = None
+        vals = {}
+        for vi, form in ((False, "chain"), (True, "chain"), (True, "explicit")):
+            model, info = build_mcf(inst, inst.n, valid_inequalities=vi, vi_form=form)
+            k = info["Ny"] + info["Nz"]
+            if objs is None:
+                objs = [info["YZ"].Obj.copy()] + [rng.uniform(-1.0, 1.0, k) * 1e4 for _ in range(3)]
+            vals[(vi, form)] = []
+            for obj in objs:
+                info["YZ"].Obj = obj
+                model.update()
+                lp = model.relax()
+                lp.Params.OutputFlag = 0
+                lp.optimize()
+                assert lp.Status == gp.GRB.OPTIMAL
+                vals[(vi, form)].append(lp.ObjVal)
+                lp.dispose()
+            model.dispose()
+        assert vals[(True, "chain")] == pytest.approx(vals[(True, "explicit")], rel=1e-9, abs=1e-6)
+        assert vals[(False, "chain")][0] <= vals[(True, "chain")][0] + 1e-6 <= case["opt"] + 2e-6
+
+
+def test_mcf_incompatible_set_and_arc_fixing_are_valid(synthetic):
+    """No feasible duty contains two tasks of Q, and for c <= |Q| every feasible duty covering q_c uses only arcs left
+    free for crew member c (the arc fixing of Appendix B cuts off no duty crew member c may take)."""
+    for case in synthetic:
+        inst, duties = case["inst"], case["duties"]
+        model, info = build_mcf(inst, inst.n)
+        Q = info["Q"]
+        assert Q and len(set(Q)) == len(Q)
+        for d, path, _ in duties:
+            hit = [c for c, q in enumerate(Q) if q in path]
+            assert len(hit) <= 1
+            for c in hit:
+                assert np.all(info["yidx"][c, path_arcs(inst, info, d, path, d)] >= 0)
+        model.dispose()
+
+
+def best_known_plan_in_mcf(inst, duties, vi: bool = True) -> tuple[int, float, dict]:
+    """Solve the MCF with y fixed to a plan: crew member c <= |Q| takes the duty covering q_c, the others the remaining
+    duties in order. Returns (status, objective, size)."""
+    model, info = build_mcf(inst, default_crews(inst), valid_inequalities=vi)
+    model.Params.OutputFlag = 0
+    Q, C = info["Q"], info["size"]["n_crews"]
+    rest = list(range(len(duties)))
+    order = []
+    for q in Q:
+        k = next(k for k in rest if q in duties[k]["tasks"])
+        order.append(k)
+        rest.remove(k)
+    order += rest
+    assert len(order) <= C
+    fix = np.zeros(info["Ny"])
+    for c, k in enumerate(order):
+        arcs = path_arcs(inst, info, duties[k]["depot"], duties[k]["tasks"], duties[k]["depot"])
+        idx = info["yidx"][c, arcs]
+        assert np.all(idx >= 0), "the arc fixing removed an arc of a best-known duty"
+        fix[idx] = 1.0
+    y = info["X"][: info["Ny"]]
+    y.LB = fix
+    y.UB = fix
+    model.optimize()
+    out = (model.Status, model.ObjVal if model.Status == gp.GRB.OPTIMAL else math.nan, info["size"])
+    model.dispose()
+    return out
+
+
+@needs_raw
+def test_mcf_crew_bound_and_best_known_plans_are_feasible():
+    """|C| = best-known duties + 5 from a table equal to the benchmark's solution files; the published best-known
+    plans satisfy every row of the model (symmetry breaking, arc fixing and valid inequalities included)."""
+    folder = RAW / "solutions" / "single_depot"
+    assert sorted(p.stem[len("solution_single_depot_"):] for p in folder.glob("solution_single_depot_*.txt")) == sorted(BKS_DUTIES)
+    for name, counts in BKS_DUTIES.items():
+        for k, variant in enumerate(("single", "multi")):
+            sol = RAW / "solutions" / f"{variant}_depot" / f"solution_{variant}_depot_{name}.txt"
+            assert len(read_solution_file(sol)) == counts[k], (name, variant)
+    for name, ((_, ds), (_, dm)) in PUBLISHED.items():
+        assert BKS_DUTIES[name] == (ds, dm)
+    assert default_crews(read_instance(RAW / "instances" / "s2_t90", "single")) == 19
+    for name in ("s2_t90", "s3_t262", "s6_t482"):
+        for k, variant in enumerate(("single", "multi")):
+            inst = read_instance(RAW / "instances" / name, variant)
+            sol = RAW / "solutions" / f"{variant}_depot" / f"solution_{variant}_depot_{name}.txt"
+            duties = duties_from_connections(inst, read_solution_file(sol))
+            status, obj, size = best_known_plan_in_mcf(inst, duties)
+            assert status == gp.GRB.OPTIMAL and obj == pytest.approx(PUBLISHED[name][k][0]), (name, variant, status)
+            assert size["q_size"] <= len(duties) and size["n_crews"] == len(duties) + 5
+
+
+@needs_raw
+@pytest.mark.skipif(not os.environ.get("DECOMPBENCH_RCSP_MCF_S2T90"),
+                    reason="long solve: set DECOMPBENCH_RCSP_MCF_S2T90=<time limit in s> (Phoenix only)")
+def test_mcf_proves_s2_t90_single(tmp_path):
+    """The paper's MCF + VI proves s2_t90 single optimal (CPLEX, 661 s); here within the given time limit."""
+    limit = float(os.environ["DECOMPBENCH_RCSP_MCF_S2T90"])
+    spec = write_spec(RAW / "instances" / "s2_t90", "single", tmp_path / "s.json")
+    incs, bounds = [], []
+    res = RCSPCrewMCF(time_limit=limit, on_incumbent=incs.append, on_bound=bounds.append).run(str(spec))
+    print(json.dumps({k: v for k, v in res.items() if k != "duties"}, default=str))
+    inst = read_instance(RAW / "instances" / "s2_t90", "single")
+    assert all(plan_cost(inst, p) is not None for p in incs) and max(bounds, default=0.0) <= BKS_S2_T90
+    assert res["stats"]["decode_issues"] == 0 and res["stats"]["n_crews"] == 19
+    assert res["termination_reason"] == "optimal" and res["best_objective"] == BKS_S2_T90 == res["global_lb"]
+
+
+def write_station_instance_seconds(root: Path, intervals: list[tuple[int, int]]) -> Path:
+    """write_station_instance with task times in seconds after 6:00."""
+    d = write_station_instance(root, [("6:00", "6:01")] * len(intervals))
+    base = hm("6:00")
+    start = [base + a for a, _ in intervals]
+    end = [base + b for _, b in intervals]
+    n = len(intervals)
+    (d / "tasks.txt").write_text("".join(f"{i} {start[i]} {end[i]} 0 0 {end[i] - start[i]}\n" for i in range(n)))
+    rows = []
+    for i in range(n):
+        for j in range(n):
+            if i != j and start[j] >= end[i]:
+                gap, dd = start[j] - end[i], end[j] - end[i]
+                rows.append(("CONNECTION", i, j, *((300, dd - 2100) if gap >= 2100 else (-1, -1)), dd, dd))
+    rows += [("SOURCE", 0, j, -1, -1, end[j] - start[j], end[j] - start[j] + 28800) for j in range(n)]
+    rows += [("SINK", i, 0, -1, -1, 0, 0) for i in range(n)]
+    text = "".join(f"{k} {' '.join(str(x) for x in r)}\n" for k, r in enumerate(rows))
+    (d / "connections_single_depot.txt").write_text(text)
+    (d / "connections_multi_depot.txt").write_text(text)
+    return d
+
+
+@pytest.mark.parametrize("intervals, feasible", [
+    ([(0, 14400), (16500, 34200)], True),     # duty length 34 200 s exactly
+    ([(0, 14400), (16500, 34201)], False),    # 34 201 s
+    ([(0, 19500), (21600, 22000)], True),     # 19 800 s before the break exactly
+    ([(0, 19501), (21601, 22000)], False),    # 19 801 s
+    ([(0, 1000), (3100, 22900)], True),       # 19 800 s after the break exactly
+    ([(0, 1000), (3100, 22901)], False),      # 19 801 s
+])
+def test_mcf_duty_rules_to_the_second(tmp_path, intervals, feasible):
+    """The MCF's limits are inclusive and exact to the second, like duty_check's."""
+    inst = read_instance(write_station_instance_seconds(tmp_path / "inst", intervals), "single")
+    tasks = tuple(range(inst.n))
+    assert (duty_check(inst, 0, list(tasks))[0] is not None) == feasible
+    for vi in (False, True):
+        fp = ForcedPath(inst, vi)
+        assert fp.feasible(0, tasks, 0) == feasible, vi
+        fp.model.dispose()
