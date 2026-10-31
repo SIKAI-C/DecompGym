@@ -297,3 +297,78 @@ def test_engineered_reaches_and_proves_optimum(tmp_path):
         assert res["termination_reason"] == "optimal"
         assert all(b <= opt for b in bounds)
         assert res["global_lb"] == opt
+
+
+# ---------------------------------------------------------------- MIP exactness on fixed plans (review 28)
+
+def fixed_plan_feasible(path: Path, routes: list[list[int]]) -> bool:
+    """Whether the compact MIP admits the given plan: every arc of the plan is fixed to 1, every other arc to 0."""
+    import gurobipy as gp
+    from gurobipy import GRB
+    from src.cg.pdptw.b_mip_xl import build_pdptw_mip
+    inst = load_pdptw(path)
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.start()
+    model, info = build_pdptw_mip(inst, inst.distances(), env=env)
+    used = {a for r in routes for a in zip([0] + r, r + [0])}
+    if not used <= set(info["arcs"]):
+        model.dispose()
+        env.dispose()
+        return False
+    for a, var in info["x"].items():
+        var.LB = var.UB = 1.0 if a in used else 0.0
+    model.optimize()
+    ok = model.Status == GRB.OPTIMAL
+    model.dispose()
+    env.dispose()
+    return ok
+
+
+def test_mip_admits_exactly_the_feasible_single_routes(tmp_path):
+    """On tiny instances (two requests, incl. dummy pickups), every ordering of all nodes on one route is admitted by
+    the MIP iff the independent verifier accepts it (time windows from the depot, precedence, capacity)."""
+    pytest.importorskip("gurobipy")
+    rng = np.random.default_rng(28)
+    checked = disagreements = 0
+    for k in range(12):
+        path = random_instance(rng, 2, tmp_path / f"r{k}.vrp", K=1, H=int(rng.integers(120, 240)))
+        d = ver.read_instance(path)
+        inst = load_pdptw(path)
+        assert build_precedence_exact(inst)
+        for perm in itertools.permutations(range(1, inst.N + 1)):
+            truth = ver.route_issue(d, list(perm))[0] is not None
+            got = fixed_plan_feasible(path, [list(perm)])
+            checked += 1
+            disagreements += truth != got
+    assert checked > 0 and disagreements == 0
+
+
+def build_precedence_exact(inst) -> bool:
+    import gurobipy as gp
+    from src.cg.pdptw.b_mip_xl import build_pdptw_mip
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.start()
+    model, info = build_pdptw_mip(inst, inst.distances(), env=env)
+    model.dispose()
+    env.dispose()
+    return info["precedence_exact"]
+
+
+@pytest.mark.skipif(not (DATA / "Li400/lrc1_4_5.vrp").exists(), reason="Li400 data not present")
+def test_review28_depot_start_counterexample_is_rejected():
+    """Review 28: on lrc1_4_5 the route below cannot leave the depot early enough (arrival 266,006 > 266,000 at node 41);
+    the bundled plan with that route substituted used to satisfy every MIP row."""
+    pytest.importorskip("gurobipy")
+    path = DATA / "Li400/lrc1_4_5.vrp"
+    bad = [143, 283, 76, 296, 23, 228, 19, 41, 99, 135, 414, 399]
+    d = ver.read_instance(path)
+    assert ver.route_issue(d, bad)[0] is None
+    routes, _ = read_sol(DATA / "Li400/lrc1_4_5.sol")
+    rest = [[v for v in r if v not in set(bad)] for r in routes]
+    plan = [r for r in rest if r] + [bad]
+    assert sorted(v for r in plan for v in r) == list(range(1, load_pdptw(path).N + 1))
+    assert not fixed_plan_feasible(path, plan)
+    assert fixed_plan_feasible(path, [list(r) for r in routes])  # the bundled solution itself stays admissible
+    assert build_precedence_exact(load_pdptw(path))

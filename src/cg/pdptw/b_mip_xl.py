@@ -103,6 +103,11 @@ def build_pdptw_mip(inst: PDPTWInstance, dist: np.ndarray, env: gp.Env | None = 
             if (j, i) in x and i < j:
                 model.addConstr(x[i, j] + x[j, i] <= 1)
         elif i == 0:
+            # Leaving the depot at its ready time at the earliest: service at j starts no earlier than e_0 + s_0 + t_0j.
+            # (The variable bound lo[j] is relaxed by the rounding slack, so this row is needed for exactness.)
+            M = float(inst.ready[0] + s[0] + D[0, j] - lo[j])
+            if M > 0:
+                model.addConstr(T[j] >= float(inst.ready[0] + s[0] + D[0, j]) - M * (1 - x[0, j]))
             if lhi[j] > dem[j]:
                 model.addConstr(L[j] <= float(dem[j]) + (lhi[j] - dem[j]) * (1 - x[0, j]))
             model.addConstr(v[j] >= j * x[0, j])
@@ -113,12 +118,15 @@ def build_pdptw_mip(inst: PDPTWInstance, dist: np.ndarray, env: gp.Env | None = 
                 model.addConstr(T[i] + float(s[i] + D[i, 0]) <= float(inst.due[0]) + M * (1 - x[i, 0]))
             if lhi[i] > 0:
                 model.addConstr(L[i] <= lhi[i] * (1 - x[i, 0]))
+    # The slack-relaxed precedence row still orders p before d on a common route: if d preceded p, the arc rows would
+    # give T_p >= T_d + s_d + t_dp - slack, contradicting the row below whenever s_p + s_d + t_pd + t_dp > 2 slack.
+    precedence_exact = all(int(s[p] + s[d] + D[p, d] + D[d, p]) > 2 * slack for p, d in zip(inst.pickups, inst.deliveries))
     for p, d in zip(inst.pickups, inst.deliveries):
         model.addConstr(v[p] == v[d])
         model.addConstr(T[d] >= T[p] + float(s[p] + D[p, d] - slack))
     model.setObjective(gp.quicksum(float(D[i, j]) * x[i, j] for (i, j) in A), GRB.MINIMIZE)
     model.update()
-    return model, {"x": x, "T": T, "L": L, "v": v, "arcs": A, "slack": slack}
+    return model, {"x": x, "T": T, "L": L, "v": v, "arcs": A, "slack": slack, "precedence_exact": precedence_exact}
 
 
 def decode_routes(N: int, arc_values: dict[tuple[int, int], float]) -> list[list[int]] | None:
@@ -227,24 +235,23 @@ class PDPTWCompactMIP:
                     for a, var in zip(A, xv):
                         var.Start = 1.0 if a in used else 0.0
                     offer([1.0 if a in used else 0.0 for a in A])
-        status = "time_limit"
+        status = "deadline_during_build"
         left = self.time_limit - (time.perf_counter() - t0)
         if left > 0.01:
             model.Params.TimeLimit = left
             model.optimize(callback)
             if model.SolCount:
                 offer(model.getAttr("X", xv))
+            # The actual Gurobi status is kept: only TIME_LIMIT is a solver timeout.
+            status = {GRB.OPTIMAL: "optimal", GRB.TIME_LIMIT: "time_limit", GRB.MEM_LIMIT: "memory_limit",
+                      GRB.INFEASIBLE: "infeasible"}.get(model.Status, f"status_{model.Status}")
             if model.Status == GRB.OPTIMAL:
                 bound(model.ObjBound)
-                status = "optimal"
-            elif model.Status == GRB.MEM_LIMIT:
-                status = "memory_limit"
-            elif model.Status == GRB.INFEASIBLE:
-                status = "infeasible"
         out = {"best_objective": best["obj"] if best["routes"] else None,
                "global_lb": best["bound"] if best["bound"] > -INF else None, "termination_reason": status,
                "routes": best["routes"], "build_seconds": build, "first_incumbent_seconds": best["first_t"],
-               "rejected_solutions": best["rejected"], "arcs": len(A), "variables": model.NumVars,
+               "rejected_solutions": best["rejected"], "gurobi_status": model.Status, "precedence_exact": info["precedence_exact"],
+               "budget_exhausted": time.perf_counter() - t0 >= self.time_limit - 1.0, "arcs": len(A), "variables": model.NumVars,
                "constraints": model.NumConstrs, "nodes": model.NodeCount if model.Status != GRB.LOADED else 0,
                "total_seconds": time.perf_counter() - t0}
         model.dispose()
