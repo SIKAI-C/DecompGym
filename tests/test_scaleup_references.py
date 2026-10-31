@@ -193,3 +193,19 @@ def test_deferred_publications_keep_their_times_and_replay(tmp_path, monkeypatch
     assert [(w["t"], w["objective"]) for w in rec.witnesses] == [(1.0, 10.0), (3.0, 3.0)] and rec.infeasible == 1
     again = cal.replay(tmp_path / "j.jsonl", Deferred(), 10.0)
     assert [(w["t"], w["objective"]) for w in again.witnesses] == [(1.0, 10.0), (3.0, 3.0)]
+
+
+def test_coarse_termination_keeps_abnormal_and_early_exits_apart():
+    """Review 30: only a solver timeout maps to "deadline"; early stops and abnormal exits keep their own labels."""
+    from src.experiments import scaleup_calibration as cal
+    expect = {"optimal": "finished", "finished": "finished", "memory_limit": "memory_limit", "time_limit": "deadline",
+              "deadline": "deadline", "stuck": "stopped_early", "finished_early": "stopped_early", "infeasible": "abnormal",
+              "interrupted": "abnormal", "status_12": "abnormal", "error": "abnormal", "deadline_during_build": "abnormal"}
+    for reason, label in expect.items():
+        assert cal.coarse_termination(reason, 1e9)["termination"] == label
+    assert cal.coarse_termination("time_limit", 1e9)["budget_exhausted"] is False
+
+
+def test_vrptw_fingerprint_covers_the_shared_rcc_separator():
+    from src.experiments import scaleup_calibration as cal
+    assert "src/bd/clrp/d_ref_cg_xl.py" in cal.SOURCES["vrptw"] and "src/bd/clrp/d_ref_cg_xl.py" in cal.SOURCES["cvrp"]

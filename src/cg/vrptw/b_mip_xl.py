@@ -272,14 +272,17 @@ class VRPTWCompactMIP:
                 offer(model.getAttr("X", xs))
             if model.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.MEM_LIMIT, GRB.INTERRUPTED):
                 bound(float(model.ObjBound))
+            # The actual Gurobi status is kept: only TIME_LIMIT is a solver timeout.
             reason = {GRB.OPTIMAL: "optimal", GRB.TIME_LIMIT: "time_limit", GRB.MEM_LIMIT: "memory_limit",
-                      GRB.INTERRUPTED: "time_limit", GRB.INFEASIBLE: "infeasible"}.get(model.Status, f"status_{model.Status}")
+                      GRB.INTERRUPTED: "interrupted", GRB.INFEASIBLE: "infeasible"}.get(model.Status, f"status_{model.Status}")
         out = {"best_objective": best["obj"] if best["routes"] else None,
                "global_lb": best["bound"] if best["bound"] > -math.inf else None,
                "termination_reason": reason, "routes": best["routes"], "build_seconds": build,
                "first_incumbent_seconds": best["first"], "num_vars": info["num_vars"], "num_constrs": info["num_constrs"],
                "num_arcs": info["num_arcs"], "rcc_cuts": best["cuts"], "undecodable_solutions": best["undecodable"],
-               "node_count": float(model.NodeCount) if reason != "deadline" else 0.0, "total_seconds": time.perf_counter() - t0}
+               "node_count": float(model.NodeCount) if reason != "deadline" else 0.0,
+               "gurobi_status": int(model.Status) if reason != "deadline" else None,
+               "budget_exhausted": time.perf_counter() - t0 >= self.time_limit - 1.0, "total_seconds": time.perf_counter() - t0}
         model.dispose()
         env.dispose()
         return out

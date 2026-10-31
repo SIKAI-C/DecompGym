@@ -39,7 +39,8 @@ SOURCES = {
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
     "cvrp": ["src/cg/cvrp/a_data.py", "src/cg/cvrp/heuristic.py", "src/cg/cvrp/b_mip_xl.py", "src/cg/cvrp/c_naive_cg.py", "src/cg/cvrp/d_ref_cg_xl.py", "src/cg/cvrp/e_verifier.py",
              "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/c_heuristic.py"],
-    "vrptw": ["src/cg/vrptw/a_data.py", "src/cg/vrptw/pricing.py", "src/cg/vrptw/heuristic.py", "src/cg/vrptw/b_mip_xl.py", "src/cg/vrptw/c_naive_cg.py", "src/cg/vrptw/d_ref_cg_xl.py", "src/cg/vrptw/e_verifier.py"],
+    "vrptw": ["src/cg/vrptw/a_data.py", "src/cg/vrptw/pricing.py", "src/cg/vrptw/heuristic.py", "src/cg/vrptw/b_mip_xl.py", "src/cg/vrptw/c_naive_cg.py", "src/cg/vrptw/d_ref_cg_xl.py", "src/cg/vrptw/e_verifier.py",
+              "src/bd/clrp/d_ref_cg_xl.py"],
     "pdptw": ["src/cg/pdptw/a_data.py", "src/cg/pdptw/pricing.py", "src/cg/pdptw/b_mip_xl.py", "src/cg/pdptw/c_naive_cg.py", "src/cg/pdptw/d_ref_cg_xl.py", "src/cg/pdptw/e_verifier.py"],
     "rcsp": ["src/cg/rcsp/a_data.py", "src/cg/rcsp/pricing.py", "src/cg/rcsp/b_mip_xl.py", "src/cg/rcsp/c_naive_cg.py", "src/cg/rcsp/d_ref_cg_xl.py", "src/cg/rcsp/e_verifier.py", "src/cg/rcsp/f_mcf_mip.py"],
     "hub": ["src/bd/hub/a_data.py", "src/bd/hub/b_mip_xl.py", "src/bd/hub/c_naive_bd.py", "src/bd/hub/d_ref_bd_xl.py", "src/bd/hub/e_verifier.py"],
@@ -336,6 +337,23 @@ class Recorder:
 
 # ---------------------------------------------------------------- methods
 
+def coarse_termination(reason: str, limit: float) -> dict:
+    """Coarse label plus the facts the feasibility-cohort gate needs: only a solver timeout ("time_limit"/"deadline")
+    maps to "deadline"; early stops ("stuck", "finished_early") and abnormal exits (infeasible, status_<code>,
+    interrupted, errors) keep their own label; budget_exhausted records whether the time limit was actually used."""
+    if reason in ("optimal", "finished"):
+        label = "finished"
+    elif "mem" in reason:
+        label = "memory_limit"
+    elif reason in ("time_limit", "deadline"):
+        label = "deadline"
+    elif reason in ("stuck", "finished_early"):
+        label = "stopped_early"
+    else:
+        label = "abnormal"
+    return {"termination": label, "budget_exhausted": remaining(limit) <= 1.0}
+
+
 def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", flow: bool = False, initializer: bool = False) -> dict:
     """Compact MIPs that need their own callbacks; every integer solution is decoded and rechecked before it is
     published. RCSP: the exact crew-indexed MCF of van Rossum (2026, Appendix B, with VIs and symmetry breaking,
@@ -359,9 +377,7 @@ def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", f
         return {"termination": "deadline_before_start"}
     res = CompactMIP(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "mip"),
                      on_bound=lambda b: rec.bound(b, "mip"), soft_mem_gb=SOFT_MEM_GB, **kwargs).run(data)
-    reason = res.get("termination_reason", "")
-    termination = "finished" if reason in ("optimal", "finished") else "memory_limit" if "mem" in reason else "deadline"
-    return {"termination": termination} | {k: v for k, v in res.items() if k not in ("trace", "duties")}
+    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "duties")}
 
 
 def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bool = False) -> dict:
@@ -545,9 +561,7 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
         solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
     res = solver.run(data)
-    reason = res.get("termination_reason", "")
-    termination = "memory_limit" if reason == "memory_limit" else "finished" if reason == "optimal" else "deadline"
-    return {"termination": termination} | {k: v for k, v in res.items() if k not in ("trace", "assignment", "open")}
+    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "assignment", "open")}
 
 
 def run_heuristic_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
@@ -608,7 +622,7 @@ def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) ->
         from src.bd.clrp.e_naive_cg import CLRPNaiveCG as NaiveCG
     res = NaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
                       on_bound=lambda b: rec.bound(b, "naive_cg"), soft_mem_gb=SOFT_MEM_GB).run(data)
-    return {"termination": "deadline"} | {k: v for k, v in res.items() if k != "routes"}
+    return coarse_termination(res.get("termination_reason", "time_limit"), limit) | {k: v for k, v in res.items() if k != "routes"}
 
 
 METHODS = {"mip": run_mip, "mip_flow": lambda family, data, limit, rec: run_rcsp_mip(data, limit, rec, family, flow=True), "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "naive_bd": run_naive_bd_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}

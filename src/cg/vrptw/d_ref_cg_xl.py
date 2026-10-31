@@ -135,7 +135,9 @@ class VRPTWColumnGenerationXL:
             if err.errno != GRB.Error.OUT_OF_MEMORY and "memory" not in str(err).lower():
                 raise
             self.memory_limit = True
-        out = self.result("memory_limit" if self.memory_limit else "optimal" if self.closed() else "time_limit")
+        # "stuck": the search stopped before the deadline because only stuck nodes remained (bound kept valid).
+        out = self.result("memory_limit" if self.memory_limit else "optimal" if self.closed()
+                          else "time_limit" if self.left() <= 0.5 else "stuck")
         env.dispose()
         return out
 

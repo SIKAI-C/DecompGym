@@ -157,7 +157,9 @@ class VRPTWNaiveCG:
         lp.dispose()
         env.dispose()
         return {"best_objective": best["obj"] if best["routes"] else None, "global_lb": bound,
-                "termination_reason": "time_limit", "cg_iterations": iters, "cg_converged": converged,
+                # "finished_early": the integer restricted master ended before the deadline (allowed by 20.6).
+                "termination_reason": "time_limit" if time.perf_counter() >= deadline - 1.0 else "finished_early",
+                "cg_iterations": iters, "cg_converged": converged,
                 "cg_stop_reason": stop_reason, "columns": len(cols), "lp_value": None if lp_value is None else lp_value / 10,
                 "rmp_status": rmp_status, "first_incumbent_seconds": best["first"], "routes": best["routes"],
                 "total_seconds": time.perf_counter() - t0}
