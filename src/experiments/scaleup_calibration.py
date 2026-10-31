@@ -30,7 +30,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd", "rcsp": "cg", "cvrp": "cg", "pdptw": "cg", "vrptw": "cg"}
+SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd", "rcsp": "cg", "cvrp": "cg", "pdptw": "cg", "vrptw": "cg", "bppc": "cg"}
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
                   "src/utils/base_data.py"]
@@ -39,6 +39,8 @@ SOURCES = {
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
     "cvrp": ["src/cg/cvrp/a_data.py", "src/cg/cvrp/heuristic.py", "src/cg/cvrp/b_mip_xl.py", "src/cg/cvrp/c_naive_cg.py", "src/cg/cvrp/d_ref_cg_xl.py", "src/cg/cvrp/e_verifier.py",
              "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/c_heuristic.py"],
+    "bppc": ["src/cg/bppc/a_data.py", "src/cg/bppc/heuristic.py", "src/cg/bppc/pricing.py", "src/cg/bppc/b_mip_xl.py", "src/cg/bppc/c_naive_cg.py", "src/cg/bppc/d_ref_cg_xl.py", "src/cg/bppc/e_verifier.py",
+             "src/cg/bppc/f_heuristic.py"],
     "vrptw": ["src/cg/vrptw/a_data.py", "src/cg/vrptw/pricing.py", "src/cg/vrptw/heuristic.py", "src/cg/vrptw/b_mip_xl.py", "src/cg/vrptw/c_naive_cg.py", "src/cg/vrptw/d_ref_cg_xl.py", "src/cg/vrptw/e_verifier.py",
               "src/bd/clrp/d_ref_cg_xl.py"],
     "pdptw": ["src/cg/pdptw/a_data.py", "src/cg/pdptw/pricing.py", "src/cg/pdptw/b_mip_xl.py", "src/cg/pdptw/c_naive_cg.py", "src/cg/pdptw/d_ref_cg_xl.py", "src/cg/pdptw/e_verifier.py"],
@@ -269,8 +271,30 @@ class VRPTWAdapter:
         return vrptw_output(self.inst, self.normalize(routes), status=status)
 
 
+class BPPCAdapter:
+    """Bin packing with conflicts (Muritiba et al. text format); solutions are bins of item numbers 1..n."""
+
+    def __init__(self, data: str) -> None:
+        from src.cg.bppc.a_data import load_bppc
+        self.inst = load_bppc(data)
+
+    @staticmethod
+    def normalize(bins: list) -> list:
+        from src.cg.bppc.b_mip_xl import normalize_bins
+        return normalize_bins(bins)
+
+    def objective(self, bins: list) -> float | None:
+        from src.cg.bppc.b_mip_xl import bin_count
+        k = bin_count(self.inst, self.normalize(bins))
+        return None if k is None else float(k)
+
+    def output(self, bins: list, status: str = "feasible") -> dict:
+        from src.cg.bppc.b_mip_xl import bppc_output
+        return bppc_output(self.inst, self.normalize(bins), status=status)
+
+
 UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter, "rcsp": RCSPAdapter, "cvrp": CVRPAdapter, "pdptw": PDPTWAdapter, "vrptw": VRPTWAdapter}
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter, "rcsp": RCSPAdapter, "cvrp": CVRPAdapter, "pdptw": PDPTWAdapter, "vrptw": VRPTWAdapter, "bppc": BPPCAdapter}
 
 
 class Recorder:
@@ -365,6 +389,8 @@ def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", f
         from src.cg.cvrp.b_mip_xl import CVRPCompactMIP as CompactMIP
     elif family == "vrptw":
         from src.cg.vrptw.b_mip_xl import VRPTWCompactMIP as CompactMIP
+    elif family == "bppc":
+        from src.cg.bppc.b_mip_xl import BPPCCompactMIP as CompactMIP
     elif family == "pdptw":
         from src.cg.pdptw.b_mip_xl import PDPTWCompactMIP as CompactMIP
         kwargs = {"warm_start": initializer}
@@ -377,11 +403,11 @@ def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", f
         return {"termination": "deadline_before_start"}
     res = CompactMIP(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "mip"),
                      on_bound=lambda b: rec.bound(b, "mip"), soft_mem_gb=SOFT_MEM_GB, **kwargs).run(data)
-    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "duties")}
+    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "duties", "bins")}
 
 
 def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bool = False) -> dict:
-    if family in ("rcsp", "cvrp", "pdptw", "vrptw"):
+    if family in ("rcsp", "cvrp", "pdptw", "vrptw", "bppc"):
         return run_rcsp_mip(data, limit, rec, family, initializer=initializer)
     a = rec.adapter
     model = gp.Model()
@@ -554,6 +580,9 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     elif family == "vrptw":
         from src.cg.vrptw.d_ref_cg_xl import VRPTWColumnGenerationXL
         solver = VRPTWColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
+    elif family == "bppc":
+        from src.cg.bppc.d_ref_cg_xl import BPPCBranchAndPrice
+        solver = BPPCBranchAndPrice(time_limit=remaining(limit), threads=1, **hooks)
     elif family == "pdptw":
         from src.cg.pdptw.d_ref_cg_xl import PDPTWColumnGenerationXL
         solver = PDPTWColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -561,7 +590,7 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
         solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
     res = solver.run(data)
-    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "assignment", "open")}
+    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "assignment", "open", "bins")}
 
 
 def run_heuristic_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
@@ -572,6 +601,11 @@ def run_heuristic_control(family: str, data: str, limit: float, rec: Recorder) -
         from src.bd.clrp.c_heuristic import depot_search
         best, _ = depot_search(a.inst, a.cost, started + remaining(limit), 0, lambda plan: rec.solution(plan, "heuristic_control"))
         return {"termination": "deadline", "heuristic_best": best, "seed": 0}
+    if family == "bppc":
+        from src.cg.bppc.f_heuristic import BPPCHeuristicControl
+        res = BPPCHeuristicControl(time_limit=remaining(limit), threads=1, seed=0, on_incumbent=lambda s: rec.solution(s, "heuristic_control"),
+                                   on_bound=lambda b: rec.bound(b, "heuristic_control")).run(data)
+        return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("bins", "trace")}
     if family != "ufl":
         raise ValueError("no heuristic control for this family")
     from src.bd.ufl.b_ref_bd_xl import iterated_local_search
@@ -608,8 +642,8 @@ def run_naive_bd_control(family: str, data: str, limit: float, rec: Recorder) ->
 def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
     """Naive textbook column generation control (protocol v3.1): root CG with one best column per depot, then an
     integer restricted master in the last 20% of the budget (CLRP)."""
-    if family not in ("clrp", "rcsp", "cvrp", "pdptw", "vrptw"):
-        raise ValueError("the naive CG control is defined for CLRP, RCSP, CVRP, PDPTW and VRPTW only")
+    if family not in ("clrp", "rcsp", "cvrp", "pdptw", "vrptw", "bppc"):
+        raise ValueError("the naive CG control is defined for CLRP, RCSP, CVRP, PDPTW, VRPTW and BPPC only")
     if family == "rcsp":
         from src.cg.rcsp.c_naive_cg import RCSPNaiveCG as NaiveCG
     elif family == "cvrp":
@@ -618,11 +652,13 @@ def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) ->
         from src.cg.pdptw.c_naive_cg import PDPTWNaiveCG as NaiveCG
     elif family == "vrptw":
         from src.cg.vrptw.c_naive_cg import VRPTWNaiveCG as NaiveCG
+    elif family == "bppc":
+        from src.cg.bppc.c_naive_cg import BPPCNaiveCG as NaiveCG
     else:
         from src.bd.clrp.e_naive_cg import CLRPNaiveCG as NaiveCG
     res = NaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
                       on_bound=lambda b: rec.bound(b, "naive_cg"), soft_mem_gb=SOFT_MEM_GB).run(data)
-    return coarse_termination(res.get("termination_reason", "time_limit"), limit) | {k: v for k, v in res.items() if k != "routes"}
+    return coarse_termination(res.get("termination_reason", "time_limit"), limit) | {k: v for k, v in res.items() if k not in ("routes", "bins")}
 
 
 METHODS = {"mip": run_mip, "mip_flow": lambda family, data, limit, rec: run_rcsp_mip(data, limit, rec, family, flow=True), "mip_init": lambda *args: run_mip(*args, initializer=True), "root_cg": run_root_cg_control, "naive_cg": run_naive_cg_control, "naive_bd": run_naive_bd_control, "ref": run_paper_reference, "ref_xl": run_engineered_reference, "ls": run_heuristic_control}
@@ -677,6 +713,9 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
         elif args.family == "cvrp":
             from src.cg.cvrp.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
+        elif args.family == "bppc":
+            from src.cg.bppc.e_verifier import verify_solution
+            result["verification"] = verify_solution(args.data, solution_path)
         elif args.family == "vrptw":
             from src.cg.vrptw.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path)
