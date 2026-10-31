@@ -30,13 +30,14 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd"}
+SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd"}
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
                   "src/utils/base_data.py"]
 SOURCES = {
     "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
+    "hub": ["src/bd/hub/a_data.py", "src/bd/hub/b_mip_xl.py", "src/bd/hub/c_naive_bd.py", "src/bd/hub/d_ref_bd_xl.py", "src/bd/hub/e_verifier.py"],
     "mcnd": ["src/bd/mcnd/a_data.py", "src/bd/mcnd/b_mip_xl.py", "src/bd/mcnd/c_naive_bd.py", "src/bd/mcnd/d_ref_bd_xl.py", "src/bd/mcnd/e_verifier.py"],
     "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
 }
@@ -144,8 +145,37 @@ class MCNDAdapter:
         return design_output(self.inst, self.normalize(design), method="benders_decomposition", status=status)
 
 
+class HubAdapter:
+    """Uncapacitated multiple-allocation hub location (data.json); solutions are hub sets. Evaluating a hub set
+    is a closed-form O(n^3) routing, deferred for the same reason as MCND (n = 200: ~1-2 s per evaluation)."""
+
+    deferred = True
+
+    def __init__(self, data: str) -> None:
+        from src.bd.hub.a_data import load_hub
+        self.inst = load_hub(data)
+        self._cache: dict[tuple[int, ...], float | None] = {}
+
+    @staticmethod
+    def normalize(hubs: list) -> list:
+        return sorted({int(h) for h in hubs})
+
+    def objective(self, hubs: list) -> float | None:
+        from src.bd.hub.b_mip_xl import hub_cost
+        key = tuple(self.normalize(hubs))
+        if not key:
+            return None
+        if key not in self._cache:
+            self._cache[key] = hub_cost(self.inst, list(key))
+        return self._cache[key]
+
+    def output(self, hubs: list, status: str = "feasible") -> dict:
+        from src.bd.hub.b_mip_xl import hub_output
+        return hub_output(self.inst, self.normalize(hubs), status=status)
+
+
 UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter}
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter}
 
 
 class Recorder:
@@ -245,6 +275,15 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bo
         yv = v["y"]
         # Only the design is published; the runner recomputes optimal flows for it (the MIP's own flows need not be).
         decode = lambda get: list(np.nonzero(np.asarray(get(yv)) > 0.5)[0])
+    elif family == "hub":
+        from src.bd.hub.b_mip_xl import build_hub_mip
+        model.dispose()
+        model, v = build_hub_mip(a.inst)
+        model.Params.OutputFlag = 0
+        model.Params.Threads = 1
+        model.Params.SoftMemLimit = SOFT_MEM_GB
+        zv = v["z"]
+        decode = lambda get: list(np.nonzero(np.asarray(get(zv)) > 0.5)[0])
     elif family == "clrp":
         from src.bd.clrp.b_mip_xl import build_clrp_mip, decode_routes
         model.dispose()
@@ -352,6 +391,9 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     elif family == "mcnd":
         from src.bd.mcnd.d_ref_bd_xl import MCNDBendersXL
         solver = MCNDBendersXL(time_limit=remaining(limit), threads=1, **hooks)
+    elif family == "hub":
+        from src.bd.hub.d_ref_bd_xl import HubBendersXL
+        solver = HubBendersXL(time_limit=remaining(limit), threads=1, **hooks)
     else:
         from src.cg.gap.b_ref_cg_xl import GAPColumnGenerationXL
         solver = GAPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -390,10 +432,13 @@ def run_root_cg_control(family: str, data: str, limit: float, rec: Recorder) -> 
 
 def run_naive_bd_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
     """Naive textbook Benders control (protocol v3.1): outer-loop integer master, one aggregate cut per iteration (MCND)."""
-    if family != "mcnd":
-        raise ValueError("the naive BD control is defined for MCND only")
-    from src.bd.mcnd.c_naive_bd import MCNDNaiveBenders
-    res = MCNDNaiveBenders(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_bd"),
+    if family not in ("mcnd", "hub"):
+        raise ValueError("the naive BD control is defined for MCND and hub location only")
+    if family == "hub":
+        from src.bd.hub.c_naive_bd import HubNaiveBenders as NaiveBenders
+    else:
+        from src.bd.mcnd.c_naive_bd import MCNDNaiveBenders as NaiveBenders
+    res = NaiveBenders(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_bd"),
                            on_bound=lambda b: rec.bound(b, "naive_bd"), soft_mem_gb=SOFT_MEM_GB).run(data)
     reason = res.get("termination_reason", "")
     return {"termination": "finished" if reason == "optimal" else "deadline"} | {k: v for k, v in res.items() if k not in ("trace", "open")}
@@ -442,6 +487,9 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
         elif args.family == "mcnd":
             from src.bd.mcnd.e_verifier import verify_solution
+            result["verification"] = verify_solution(args.data, solution_path, 1e-6)
+        elif args.family == "hub":
+            from src.bd.hub.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
         else:
             result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
