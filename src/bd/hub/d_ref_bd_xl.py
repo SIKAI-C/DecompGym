@@ -35,6 +35,7 @@ Stages, all within one wall-clock budget:
 """
 from __future__ import annotations
 
+import inspect
 import time
 from typing import Any, Callable
 
@@ -125,7 +126,12 @@ class HubBendersXL:
                  verbose: bool = False) -> None:
         self.time_limit = time_limit
         self.threads = threads
-        self.on_incumbent = on_incumbent or (lambda hubs: None)  # receives the sorted list of open hub indices
+        self.on_incumbent = on_incumbent or (lambda hubs, stage=None: None)  # receives the sorted list of open hub indices
+        try:  # hooks that accept a `stage` keyword also receive the incumbent's provenance
+            params = inspect.signature(self.on_incumbent).parameters
+            self.hook_takes_stage = "stage" in params or any(p.kind is p.VAR_KEYWORD for p in params.values())
+        except (TypeError, ValueError):
+            self.hook_takes_stage = False
         self.on_bound = on_bound or (lambda bound: None)  # receives every new valid global lower bound
         self.soft_mem_gb = soft_mem_gb
         self.seed = seed
@@ -167,7 +173,8 @@ class HubBendersXL:
         if cost < self.ub - 1e-9 * max(1.0, abs(cost)):
             self.ub, self.best = cost, z.copy()
             self.pending = True
-            self.on_incumbent(np.nonzero(z)[0].tolist())
+            hubs = np.nonzero(z)[0].tolist()
+            self.on_incumbent(hubs, stage=stage) if self.hook_takes_stage else self.on_incumbent(hubs)
             self.log(stage)
             return True
         return False

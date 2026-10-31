@@ -42,6 +42,7 @@ SOURCES = {
     "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
 }
 SOFT_MEM_GB = 12.0  # Gurobi SoftMemLimit, below the 16 GB job allocation with headroom for Python
+HARD_MEM_GB = 14.0  # hard Gurobi MemLimit for model construction (below the 16 GB job allocation)
 
 
 def elapsed() -> float:
@@ -278,10 +279,19 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bo
     elif family == "hub":
         from src.bd.hub.b_mip_xl import build_hub_mip
         model.dispose()
-        model, v = build_hub_mip(a.inst)
-        model.Params.OutputFlag = 0
-        model.Params.Threads = 1
-        model.Params.SoftMemLimit = SOFT_MEM_GB
+        # The flow model is large (n = 200: ~16M variables); memory limits are set on the environment *before*
+        # construction, and a hard MemLimit makes an oversized build fail cleanly instead of being killed.
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.setParam("Threads", 1)
+        env.setParam("SoftMemLimit", SOFT_MEM_GB)
+        env.setParam("MemLimit", HARD_MEM_GB)
+        env.start()
+        try:
+            model, v = build_hub_mip(a.inst, env=env)
+        except gp.GurobiError as exc:
+            return {"termination": "memory_limit_during_build" if exc.errno == GRB.Error.OUT_OF_MEMORY else "crash",
+                    "error": f"GurobiError: {exc}", "build_seconds": elapsed()}
         zv = v["z"]
         decode = lambda get: list(np.nonzero(np.asarray(get(zv)) > 0.5)[0])
     elif family == "clrp":
@@ -381,7 +391,9 @@ def run_paper_reference(family: str, data: str, limit: float, rec: Recorder) -> 
 def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder) -> dict:
     if remaining(limit) <= 0.01:
         return {"termination": "deadline_before_start"}
-    hooks = {"on_incumbent": lambda s: rec.solution(s, "ref_xl"), "on_bound": lambda b: rec.bound(b, "ref_xl"), "soft_mem_gb": SOFT_MEM_GB}
+    # References may pass the stage that produced an incumbent; it is kept as provenance in the journal and witnesses.
+    hooks = {"on_incumbent": lambda s, stage=None: rec.solution(s, f"ref_xl:{stage}" if stage else "ref_xl"),
+             "on_bound": lambda b: rec.bound(b, "ref_xl"), "soft_mem_gb": SOFT_MEM_GB}
     if family == "ufl":
         from src.bd.ufl.b_ref_bd_xl import UFLBendersXL
         solver = UFLBendersXL(time_limit=remaining(limit), threads=1, **hooks)
