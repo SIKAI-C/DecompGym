@@ -30,7 +30,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd", "rcsp": "cg", "cvrp": "cg", "pdptw": "cg"}
+SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd", "rcsp": "cg", "cvrp": "cg", "pdptw": "cg", "vrptw": "cg"}
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
                   "src/utils/base_data.py"]
@@ -39,6 +39,7 @@ SOURCES = {
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
     "cvrp": ["src/cg/cvrp/a_data.py", "src/cg/cvrp/heuristic.py", "src/cg/cvrp/b_mip_xl.py", "src/cg/cvrp/c_naive_cg.py", "src/cg/cvrp/d_ref_cg_xl.py", "src/cg/cvrp/e_verifier.py",
              "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/c_heuristic.py"],
+    "vrptw": ["src/cg/vrptw/a_data.py", "src/cg/vrptw/pricing.py", "src/cg/vrptw/heuristic.py", "src/cg/vrptw/b_mip_xl.py", "src/cg/vrptw/c_naive_cg.py", "src/cg/vrptw/d_ref_cg_xl.py", "src/cg/vrptw/e_verifier.py"],
     "pdptw": ["src/cg/pdptw/a_data.py", "src/cg/pdptw/pricing.py", "src/cg/pdptw/b_mip_xl.py", "src/cg/pdptw/c_naive_cg.py", "src/cg/pdptw/d_ref_cg_xl.py", "src/cg/pdptw/e_verifier.py"],
     "rcsp": ["src/cg/rcsp/a_data.py", "src/cg/rcsp/pricing.py", "src/cg/rcsp/b_mip_xl.py", "src/cg/rcsp/c_naive_cg.py", "src/cg/rcsp/d_ref_cg_xl.py", "src/cg/rcsp/e_verifier.py", "src/cg/rcsp/f_mcf_mip.py"],
     "hub": ["src/bd/hub/a_data.py", "src/bd/hub/b_mip_xl.py", "src/bd/hub/c_naive_bd.py", "src/bd/hub/d_ref_bd_xl.py", "src/bd/hub/e_verifier.py"],
@@ -245,8 +246,30 @@ class PDPTWAdapter:
         return pdptw_output(self.inst, self.dist, self.normalize(routes), status=status)
 
 
+class VRPTWAdapter:
+    """VRPTW (VRPLIB format, Solomon / Gehring-Homberger via PyVRP; distances truncated to one decimal, the DIMACS
+    convention); solutions are route lists of customers 1..n; at most VEHICLES routes."""
+
+    def __init__(self, data: str) -> None:
+        from src.cg.vrptw.a_data import load_vrptw
+        self.inst = load_vrptw(data)
+
+    @staticmethod
+    def normalize(routes: list) -> list:
+        from src.cg.vrptw.b_mip_xl import normalize_routes
+        return normalize_routes(routes)
+
+    def objective(self, routes: list) -> float | None:
+        from src.cg.vrptw.b_mip_xl import route_cost
+        return route_cost(self.inst, self.normalize(routes))
+
+    def output(self, routes: list, status: str = "feasible") -> dict:
+        from src.cg.vrptw.b_mip_xl import vrptw_output
+        return vrptw_output(self.inst, self.normalize(routes), status=status)
+
+
 UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter, "rcsp": RCSPAdapter, "cvrp": CVRPAdapter, "pdptw": PDPTWAdapter}
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter, "rcsp": RCSPAdapter, "cvrp": CVRPAdapter, "pdptw": PDPTWAdapter, "vrptw": VRPTWAdapter}
 
 
 class Recorder:
@@ -322,6 +345,8 @@ def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", f
     kwargs = {}
     if family == "cvrp":
         from src.cg.cvrp.b_mip_xl import CVRPCompactMIP as CompactMIP
+    elif family == "vrptw":
+        from src.cg.vrptw.b_mip_xl import VRPTWCompactMIP as CompactMIP
     elif family == "pdptw":
         from src.cg.pdptw.b_mip_xl import PDPTWCompactMIP as CompactMIP
         kwargs = {"warm_start": initializer}
@@ -340,7 +365,7 @@ def run_rcsp_mip(data: str, limit: float, rec: Recorder, family: str = "rcsp", f
 
 
 def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bool = False) -> dict:
-    if family in ("rcsp", "cvrp", "pdptw"):
+    if family in ("rcsp", "cvrp", "pdptw", "vrptw"):
         return run_rcsp_mip(data, limit, rec, family, initializer=initializer)
     a = rec.adapter
     model = gp.Model()
@@ -510,6 +535,9 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
     elif family == "cvrp":
         from src.cg.cvrp.d_ref_cg_xl import CVRPColumnGenerationXL
         solver = CVRPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
+    elif family == "vrptw":
+        from src.cg.vrptw.d_ref_cg_xl import VRPTWColumnGenerationXL
+        solver = VRPTWColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
     elif family == "pdptw":
         from src.cg.pdptw.d_ref_cg_xl import PDPTWColumnGenerationXL
         solver = PDPTWColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -566,14 +594,16 @@ def run_naive_bd_control(family: str, data: str, limit: float, rec: Recorder) ->
 def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
     """Naive textbook column generation control (protocol v3.1): root CG with one best column per depot, then an
     integer restricted master in the last 20% of the budget (CLRP)."""
-    if family not in ("clrp", "rcsp", "cvrp", "pdptw"):
-        raise ValueError("the naive CG control is defined for CLRP, RCSP, CVRP and PDPTW only")
+    if family not in ("clrp", "rcsp", "cvrp", "pdptw", "vrptw"):
+        raise ValueError("the naive CG control is defined for CLRP, RCSP, CVRP, PDPTW and VRPTW only")
     if family == "rcsp":
         from src.cg.rcsp.c_naive_cg import RCSPNaiveCG as NaiveCG
     elif family == "cvrp":
         from src.cg.cvrp.c_naive_cg import CVRPNaiveCG as NaiveCG
     elif family == "pdptw":
         from src.cg.pdptw.c_naive_cg import PDPTWNaiveCG as NaiveCG
+    elif family == "vrptw":
+        from src.cg.vrptw.c_naive_cg import VRPTWNaiveCG as NaiveCG
     else:
         from src.bd.clrp.e_naive_cg import CLRPNaiveCG as NaiveCG
     res = NaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
@@ -633,6 +663,9 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
         elif args.family == "cvrp":
             from src.cg.cvrp.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
+        elif args.family == "vrptw":
+            from src.cg.vrptw.e_verifier import verify_solution
+            result["verification"] = verify_solution(args.data, solution_path)
         elif args.family == "pdptw":
             from src.cg.pdptw.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path)

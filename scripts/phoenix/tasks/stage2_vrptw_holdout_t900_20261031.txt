@@ -1,0 +1,9 @@
+vrptw vrptw/R101.vrp mip 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/R101.vrp ref_xl 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/R101.vrp naive_cg 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/R105.vrp mip 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/R105.vrp ref_xl 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/R105.vrp naive_cg 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/RC101.vrp mip 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/RC101.vrp ref_xl 900 stage2_vrptw_holdout_t900_20261031
+vrptw vrptw/RC101.vrp naive_cg 900 stage2_vrptw_holdout_t900_20261031
