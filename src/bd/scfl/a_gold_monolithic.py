@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import gurobipy as gp
@@ -9,8 +10,27 @@ from src.bd.scfl.a_gen_data import SCFLInstance
 from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
-# Objective values are fractional, so optimality is certified by an explicit bound check at this relative tolerance.
-CERT_TOL = 1e-7
+def objective_step(inst: SCFLInstance) -> float:
+    """Spacing of the attainable objective values. With integer demands and capacities every transportation vertex is
+    integral, so with unit costs in multiples of 0.001, fixed costs in multiples of 0.01 and p_s = 1/S every design
+    value f.y + (1/S) sum_s Q_s(y) is a multiple of 0.001 / S. Raises for an instance outside that lattice."""
+    S = inst.n_scenarios
+    on = lambda v, k: abs(v * k - round(v * k)) <= 1e-6
+    if (any(p != 1.0 / S for p in inst.probability) or not all(on(c, 1000) for row in inst.unit_cost for c in row)
+            or not all(on(f, 100) for f in inst.fixed_cost)
+            or not all(float(v).is_integer() for v in [*inst.capacity, *(d for row in inst.demand for d in row)])):
+        raise ValueError("SCFL certification needs integer demands and capacities, unit costs in 0.001, fixed costs in 0.01 and equal probabilities")
+    return 0.001 / S
+
+
+def lattice_bound(bound: float, step: float) -> float:
+    """The smallest attainable objective value >= bound (the bound is first lowered by 1% of a step against roundoff)."""
+    return math.ceil(bound / step - 0.01) * step
+
+
+def certified(incumbent: float, bound: float, step: float) -> bool:
+    """Exact optimality: no attainable value lies strictly between the bound and the incumbent."""
+    return incumbent <= lattice_bound(bound, step) + 0.01 * step
 
 
 class SCFLBaseline(BaseBaseline[SCFLInstance, gp.Model]):
@@ -49,7 +69,7 @@ class SCFLBaseline(BaseBaseline[SCFLInstance, gp.Model]):
 
     def solve_model(self, inst: SCFLInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
         model.optimize()
-        if model.Status != GRB.OPTIMAL or model.ObjVal - model.ObjBound > CERT_TOL * max(1.0, abs(model.ObjVal)):
+        if model.Status != GRB.OPTIMAL or not certified(model.ObjVal, model.ObjBound, objective_step(inst)):
             raise RuntimeError(f"Baseline model not proved optimal (status={model.Status}, bound={model.ObjBound}, incumbent={model.ObjVal})")
         y = [int(model._y[i].X > 0.5) for i in range(inst.n_facilities)]  # type: ignore[attr-defined]
         return BaselineSolution(objective=float(model.ObjVal), vars={}, best_bound=float(model.ObjBound), model_state=model, metadata={"y": y})

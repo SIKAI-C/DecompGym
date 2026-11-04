@@ -50,22 +50,22 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
                     result, gold[method] = {"best_objective": None, "error": f"{type(exc).__name__}: {exc}"}, None
                 (inst_dir / filename).write_text(json.dumps(result, indent=2, default=str))
             mono, ref = gold["monolithic"], gold["decomposition"]
-            if strict and not (mono is not None and ref is not None and _certified(ref)
+            if strict and not (mono is not None and ref is not None and _certified(ref, tol)
                                and abs(mono["best_objective"] - ref["best_objective"]) <= tol * max(1.0, abs(mono["best_objective"]))):
                 # Strict families admit an instance only with a proved MIP optimum and a matching reference certificate.
                 raise RuntimeError(f"{folder}: requires a proved, verified MIP optimum and a matching certified reference")
-            if mono is not None and ref is not None and _certified(ref) and abs(mono["best_objective"] - ref["best_objective"]) > tol * max(1.0, abs(mono["best_objective"])):
+            if mono is not None and ref is not None and _certified(ref, tol) and abs(mono["best_objective"] - ref["best_objective"]) > tol * max(1.0, abs(mono["best_objective"])):
                 raise RuntimeError(f"{folder}: certified reference {ref['best_objective']} differs from the MIP optimum {mono['best_objective']}")
-            # The MIP wrapper raises unless Gurobi reports OPTIMAL (default MIPGap, as for the paper's families).
+            # The MIP wrapper raises unless its optimum is proved (each family's wrapper states its certificate).
             if mono is not None and isinstance(mono.get("best_objective"), (int, float)) and math.isfinite(mono["best_objective"]):
                 truth, source = mono["best_objective"], "monolithic_mip"
-            elif ref is not None and _certified(ref):
+            elif ref is not None and _certified(ref, tol):
                 truth, source = ref["best_objective"], "decomposition_certificate"
             else:
                 (inst_dir / "meta.json").unlink(missing_ok=True)
                 continue
             meta = {"seed": seed, "size": size, "folder": folder, "ground_truth_objective": truth, "ground_truth_source": source,
-                    "reference_proved": bool(ref is not None and _certified(ref)), "reference_seconds": (ref or {}).get("total_time")}
+                    "reference_proved": bool(ref is not None and _certified(ref, tol)), "reference_seconds": (ref or {}).get("total_time")}
             (inst_dir / "meta.json").write_text(json.dumps(meta, indent=2))
             metas.append(meta)
     return metas

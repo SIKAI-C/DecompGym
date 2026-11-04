@@ -11,7 +11,8 @@ is globally valid; with the LP's optimal duals it is tight at ybar. For a closed
 not depend on alpha_i, so alpha_i is chosen to minimize its coefficient u_i a + sum_j d_sj (v_j - c_ij - a)^+ over
 a >= 0 (closed-facility lifting, as in the scale-up reference; the minimum is at 0 or a breakpoint v_j - c_ij).
 Every master design is evaluated exactly (all S LPs), giving the upper bound; the master's proved bound is the lower
-bound. The loop stops when they meet; if the master repeats a design, its tight cuts force the bounds to meet.
+bound. The loop stops when no attainable objective value (a multiple of 0.001 / S, see `objective_step`) lies
+strictly between them; if the master repeats a design, its tight cuts force the bounds to meet.
 Shortcuts for the screen: `multi_cut=False` adds one aggregated cut sum_s p_s (cut_s) per iteration (the textbook
 L-shaped method; exact but slower); `expected_value=True` runs the method on the mean-demand scenario and evaluates
 that design exactly (not exact for the stochastic problem).
@@ -25,7 +26,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 from src.bd.scfl.a_gen_data import SCFLInstance
-from src.bd.scfl.a_gold_monolithic import CERT_TOL
+from src.bd.scfl.a_gold_monolithic import certified, lattice_bound, objective_step
 from src.utils.reference_runtime import ReferenceRuntime
 
 
@@ -82,6 +83,7 @@ class SCFLBenders:
             demands, probs = inst.demand, inst.probability
         K = range(len(demands)) if self.multi_cut else range(1)
         sub = self._transport(inst)
+        step = objective_step(inst)
 
         master = gp.Model("scfl_master")
         master.Params.OutputFlag = 0
@@ -126,7 +128,8 @@ class SCFLBenders:
                 if master.Status != GRB.OPTIMAL:
                     raise RuntimeError(f"master not optimal (status={master.Status})")
                 lb = max(lb, float(master.ObjBound))
-                if ub - lb <= CERT_TOL * max(1.0, abs(ub)):
+                if certified(ub, lb, step):
+                    lb = max(lb, lattice_bound(lb, step))  # the lattice-rounded bound is valid and closes the gap
                     break
                 design = [int(y[i].X > 0.5) for i in I]
                 values, cuts = self._evaluate(inst, sub, design, demands)

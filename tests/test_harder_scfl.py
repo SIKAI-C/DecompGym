@@ -67,3 +67,37 @@ def test_scfl_reference_and_mip_agree_on_the_tiny_instance(tmp_path, kwargs):
     ref = SCFLBenders(time_limit=20, **kwargs).run(path)
     assert mono["best_objective"] == pytest.approx(TINY_OPT)
     assert ref["best_objective"] == pytest.approx(TINY_OPT) and ref["y"] == [1, 1] and ref["status"] == "optimal"
+
+
+# Codex review counterexample (2026-11-04): opening both facilities costs 10000.01995 and the master's first bound
+# is already the optimum 10000.01990 (facility 0 alone), a relative gap of 5e-9. A relative stopping tolerance
+# returned the worse design; the lattice certificate (values are multiples of 0.001 / S) must not.
+NEAR_TIE = {
+    "instance_size": "small", "n_facilities": 2, "n_customers": 1, "n_scenarios": 20,
+    "capacity": [2, 1], "fixed_cost": [10000.0, 0.01], "unit_cost": [[0.199], [0.0]],
+    "demand": [[2]] + [[0]] * 19, "probability": [1 / 20] * 20,
+}
+
+
+def test_scfl_lattice_certificate():
+    from src.bd.scfl.a_gen_data import SCFLInstance
+    from src.bd.scfl.a_gold_monolithic import certified, lattice_bound, objective_step
+
+    step = objective_step(SCFLInstance(**NEAR_TIE))
+    assert step == pytest.approx(0.001 / 20)
+    assert not certified(10000.01995, 10000.0199, step)
+    assert certified(10000.0199, 10000.0199 - 1e-12, step) and certified(10000.0199, 10000.0199 - 0.9 * step, step)
+    assert lattice_bound(10000.0199 - 0.5 * step, step) == pytest.approx(10000.0199)
+    with pytest.raises(ValueError):
+        objective_step(SCFLInstance(**{**NEAR_TIE, "unit_cost": [[0.1995], [0.0]]}))
+
+
+def test_scfl_reference_does_not_stop_on_a_near_tie(tmp_path):
+    from src.bd.scfl.a_gold_bd import SCFLBenders
+    from src.bd.scfl.a_gold_monolithic import SCFLBaseline
+
+    path = str(_write(tmp_path, "data.json", NEAR_TIE))
+    ref = SCFLBenders(time_limit=20).run(path)
+    mono = SCFLBaseline().run(path)
+    assert ref["y"] == [1, 0] and ref["best_objective"] == pytest.approx(10000.0199, abs=1e-9) and ref["status"] == "optimal"
+    assert mono["best_objective"] == pytest.approx(10000.0199, abs=1e-9)

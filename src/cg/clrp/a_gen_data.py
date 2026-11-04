@@ -87,7 +87,8 @@ class CLRPGenerator(BaseInstanceGenerator[CLRPInstance]):
         cx, cy = [rng.randint(0, g) for _ in range(n)], [rng.randint(0, g) for _ in range(n)]
         demand = [rng.randint(*cfg["demand_range"]) for _ in range(n)]
         Q = rng.choice(cfg["vehicle_capacities"])
-        # Each depot can serve 1/k of the total demand (k = 2 or 3, plus up to 25% slack), so at least k depots open.
+        # Each depot can serve about 1/k of the total demand (k = 2 or 3, plus up to 25% slack); the floor at Q can
+        # raise that share, so fewer than k depots may suffice (e.g. clrp_small_seed000 opens 2 with k = 3).
         k = rng.randint(*cfg["depots_needed"])
         capacity = [max(Q, math.ceil(sum(demand) / k * rng.uniform(1.0, 1.25))) for _ in range(m)]
         opening = [rng.randint(*cfg["opening_cost_range"]) for _ in range(m)]

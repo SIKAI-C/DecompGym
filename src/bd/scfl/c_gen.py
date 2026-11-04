@@ -10,4 +10,5 @@ from src.utils.harder_suite import generate_suite as _generate_suite
 
 def generate_suite(sizes: Iterable[str], num_instances: int, out_root: str | Path, *, seed_offset: int = 0) -> list[dict]:
     return _generate_suite("bd", "scfl", gen=generate_scfl_instance, render_prompt=render_prompt, sizes=list(sizes),
-                           num_instances=num_instances, out_root=out_root, seed_offset=seed_offset, mono_time_limit=60.0, strict=True)
+                           num_instances=num_instances, out_root=out_root, seed_offset=seed_offset, mono_time_limit=60.0, strict=True,
+                           tol=1e-10)  # SCFL values lie on a 0.001/S lattice: agreement and certificates must be exact
