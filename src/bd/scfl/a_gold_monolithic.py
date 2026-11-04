@@ -12,25 +12,27 @@ from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 def objective_step(inst: SCFLInstance) -> float:
     """Spacing of the attainable objective values. With integer demands and capacities every transportation vertex is
-    integral, so with unit costs in multiples of 0.001, fixed costs in multiples of 0.01 and p_s = 1/S every design
-    value f.y + (1/S) sum_s Q_s(y) is a multiple of 0.001 / S. Raises for an instance outside that lattice."""
+    integral, so with unit costs in whole thousandths, fixed costs in whole cents and p_s = 1/S every design value
+    f.y + (1/S) sum_s Q_s(y) is a multiple of 0.001 / S. Raises unless every coefficient has exactly that precision
+    (the generator writes round(c, 3) and round(f, 2))."""
     S = inst.n_scenarios
-    on = lambda v, k: abs(v * k - round(v * k)) <= 1e-6
-    if (any(p != 1.0 / S for p in inst.probability) or not all(on(c, 1000) for row in inst.unit_cost for c in row)
-            or not all(on(f, 100) for f in inst.fixed_cost)
+    if (any(p != 1.0 / S for p in inst.probability) or any(c != round(c, 3) for row in inst.unit_cost for c in row)
+            or any(f != round(f, 2) for f in inst.fixed_cost)
             or not all(float(v).is_integer() for v in [*inst.capacity, *(d for row in inst.demand for d in row)])):
         raise ValueError("SCFL certification needs integer demands and capacities, unit costs in 0.001, fixed costs in 0.01 and equal probabilities")
     return 0.001 / S
 
 
+# Certificates assume the computed bound and incumbent are within half a step of their exact values (2.5e-5 for
+# S = 20, i.e. a relative 2.5e-9 at the generated objective sizes). Within that, both snap to the right lattice point.
 def lattice_bound(bound: float, step: float) -> float:
-    """The smallest attainable objective value >= bound (the bound is first lowered by 1% of a step against roundoff)."""
-    return math.ceil(bound / step - 0.01) * step
+    """The lattice value the bound certifies: the smallest attainable value >= the exact bound."""
+    return math.ceil(bound / step - 0.5) * step
 
 
 def certified(incumbent: float, bound: float, step: float) -> bool:
     """Exact optimality: no attainable value lies strictly between the bound and the incumbent."""
-    return incumbent <= lattice_bound(bound, step) + 0.01 * step
+    return incumbent <= lattice_bound(bound, step) + 0.5 * step
 
 
 class SCFLBaseline(BaseBaseline[SCFLInstance, gp.Model]):

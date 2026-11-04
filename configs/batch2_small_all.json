@@ -2,7 +2,7 @@
   "schema_version": 2,
   "name": "decompgym-batch2-small-all-20261104",
   "description": "Second batch of new families for the scale-up, small scale (27 instances: two-stage stochastic capacitated facility location, planning and scheduling with a cumulative resource, railway crew scheduling), paper protocol, the twelve paper models from older to newer generations.",
-  "dataset_inventory_sha256": "3c94fe343cf5b93a266c91c08480e51cdffc6602cfe6f821d1895a5dc58952c1",
+  "dataset_inventory_sha256": "4da627f7e617425ff683158f4cfe63894139165f6af2589976711d08a6a0d029",
   "prompt_policies": {
     "feedback": "qualitative-objective-feedback-v1",
     "workspace": "existing-target-cwd-v2"

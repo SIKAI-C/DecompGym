@@ -129,7 +129,6 @@ class SCFLBenders:
                     raise RuntimeError(f"master not optimal (status={master.Status})")
                 lb = max(lb, float(master.ObjBound))
                 if certified(ub, lb, step):
-                    lb = max(lb, lattice_bound(lb, step))  # the lattice-rounded bound is valid and closes the gap
                     break
                 design = [int(y[i].X > 0.5) for i in I]
                 values, cuts = self._evaluate(inst, sub, design, demands)
@@ -152,8 +151,13 @@ class SCFLBenders:
             values, _ = self._evaluate(inst, sub, best, inst.demand)
             ub = sum(inst.fixed_cost[i] * best[i] for i in I) + sum(p * q for p, q in zip(inst.probability, values))
             lb, termination = None, "expected_value_design"
+        proved = lb is not None and lb > -float("inf") and certified(ub, lb, step)
+        if proved:
+            lb = lattice_bound(lb, step)  # the bound snapped to its lattice value, which closes the gap
         result = {"best_objective": ub, "global_lb": lb if lb is not None and lb > -float("inf") else None, "global_ub": ub,
                   "y": best, "iters": iters, "n_cuts": master.NumConstrs - 1}
         result = self.runtime.finish(result, target_gap=0.0, termination_reason=termination)
+        # The lattice certificate, not the shared relative-gap rule, decides the proof on every exit.
+        result.update(status="optimal" if proved else "feasible", proven_optimal=proved)
         result["total_time"] = time.perf_counter() - started
         return result

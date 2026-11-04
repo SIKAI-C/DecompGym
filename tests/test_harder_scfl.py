@@ -86,10 +86,30 @@ def test_scfl_lattice_certificate():
     step = objective_step(SCFLInstance(**NEAR_TIE))
     assert step == pytest.approx(0.001 / 20)
     assert not certified(10000.01995, 10000.0199, step)
-    assert certified(10000.0199, 10000.0199 - 1e-12, step) and certified(10000.0199, 10000.0199 - 0.9 * step, step)
-    assert lattice_bound(10000.0199 - 0.5 * step, step) == pytest.approx(10000.0199)
-    with pytest.raises(ValueError):
-        objective_step(SCFLInstance(**{**NEAR_TIE, "unit_cost": [[0.1995], [0.0]]}))
+    assert certified(10000.0199, 10000.0199 - 1e-12, step) and certified(10000.0199, 10000.0199 - 0.4 * step, step)
+    assert lattice_bound(10000.0199 + 0.005 * step, step) == pytest.approx(10000.0199)  # roundoff above is not kept
+    assert not certified(10000.01995, 10000.0199 + 0.4 * step, step)
+    for bad in ({"unit_cost": [[0.1995], [0.0]]}, {"fixed_cost": [10000.0, 0.010000009]}):
+        with pytest.raises(ValueError):
+            objective_step(SCFLInstance(**{**NEAR_TIE, **bad}))
+
+
+def test_scfl_interrupted_reference_is_not_labelled_optimal(tmp_path, monkeypatch):
+    from src.bd.scfl import a_gold_bd
+
+    path = str(_write(tmp_path, "data.json", NEAR_TIE))
+    calls = {"n": 0}
+    real = a_gold_bd.SCFLBenders._evaluate
+
+    def evaluate_then_expire(self, *args):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the budget runs out while evaluating the master's (optimal) design
+            raise RuntimeError("time limit budget exhausted")
+        return real(self, *args)
+
+    monkeypatch.setattr(a_gold_bd.SCFLBenders, "_evaluate", evaluate_then_expire)
+    ref = a_gold_bd.SCFLBenders(time_limit=20).run(path)
+    assert ref["y"] == [1, 1] and ref["status"] == "feasible" and ref["proven_optimal"] is False
 
 
 def test_scfl_reference_does_not_stop_on_a_near_tie(tmp_path):
