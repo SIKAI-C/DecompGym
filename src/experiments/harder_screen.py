@@ -176,7 +176,78 @@ def clrp_setup():
     return generate_clrp_instance, verify_solution, mono, {"reference": solver(True), "S1_root_cg_then_integer_rmp": solver(False)}
 
 
+def scfl_setup():
+    from src.bd.scfl.a_gen_data import generate_scfl_instance
+    from src.bd.scfl.a_gold_bd import SCFLBenders
+    from src.bd.scfl.a_gold_monolithic import SCFLBaseline
+    from src.bd.scfl.d_verifier import verify_solution
+
+    def mono(path, tl):
+        res = SCFLBaseline(params={"TimeLimit": tl}).run(path)
+        return res, {"y": res["master_metadata"]["y"]}
+
+    def solver(**kw):
+        def run(path, tl):
+            res = SCFLBenders(time_limit=tl, **kw).run(path)
+            return res, {"y": res["y"]}
+        return run
+
+    return generate_scfl_instance, verify_solution, mono, {"reference": solver(), "S1_single_aggregated_cut": solver(multi_cut=False),
+                                                         "S2_expected_value_design": solver(expected_value=True)}
+
+
 SETUPS = {"nrp": nrp_setup, "pdptw": pdptw_setup, "lbbd": lbbd_setup, "sslp": sslp_setup, "vrptw": vrptw_setup, "gcol": partition_setup("gcol"), "bppc": partition_setup("bppc"), "cvrp": cvrp_setup, "clrp": clrp_setup}
+SETUPS["scfl"] = scfl_setup
+
+
+def lbbd_ps_setup():
+    from src.bd.lbbd_ps.a_gen_data import generate_lbbd_ps_instance
+    from src.bd.lbbd_ps.a_gold_bd import PSBenders
+    from src.bd.lbbd_ps.a_gold_monolithic import PSBaseline
+    from src.bd.lbbd_ps.d_verifier import verify_solution
+
+    def mono(path, tl):
+        res = PSBaseline(params={"TimeLimit": tl}).run(path)
+        return res, {"solution": {"schedule": res["master_metadata"]["schedule"]}}
+
+    def reference(path, tl):
+        res = PSBenders(time_limit=tl).run(path)
+        return res, {"solution": {"schedule": res["schedule"]}}
+
+    def outer(**kw):
+        def run(path, tl):
+            res = PSBenders(time_limit=tl).run_outer_loop(path, **kw)
+            return res, {"solution": {"schedule": res["schedule"]}}
+        return run
+
+    # S1 = the scale-up naive LBBD (whole-set nogoods, no master relaxation); S1b adds the relaxation.
+    return generate_lbbd_ps_instance, verify_solution, mono, {"reference": reference, "S1_nogood_no_relax": outer(),
+                                                              "S1b_nogood_with_relax": outer(relaxation=True)}
+
+
+SETUPS["lbbd_ps"] = lbbd_ps_setup
+
+
+def rcsp_setup():
+    from src.cg.rcsp.a_gen_data import generate_rcsp_instance
+    from src.cg.rcsp.a_gold_cg import RCSPColumnGeneration
+    from src.cg.rcsp.a_gold_monolithic import RCSPBaseline
+    from src.cg.rcsp.d_verifier import verify_solution
+
+    def mono(path, tl):
+        res = RCSPBaseline(params={"TimeLimit": tl}).run(path)
+        return res, {"solution": {"duties": res["master_metadata"]["duties"]}}
+
+    def solver(enumerate):
+        def run(path, tl):
+            res = RCSPColumnGeneration(time_limit=tl, enumerate=enumerate).run(path)
+            return res, {"solution": {"duties": res["duties"]}}
+        return run
+
+    return generate_rcsp_instance, verify_solution, mono, {"reference": solver(True), "S1_root_cg_then_integer_rmp": solver(False)}
+
+
+SETUPS["rcsp"] = rcsp_setup
 
 
 def main() -> None:

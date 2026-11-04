@@ -5,10 +5,14 @@ from collections import defaultdict
 from typing import Any
 
 
-HARDER_KEYS = {"lbbd": "assignments", "gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters", "cvrp": "routes", "clrp": "routes"}
+HARDER_KEYS = {"lbbd": "assignments", "gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters", "cvrp": "routes", "clrp": "routes", "lbbd_ps": "schedule", "rcsp": "duties"}
 
 
 def reference_output(suite: str, problem: str, data: dict, result: dict) -> dict[str, Any]:
+    if problem == "scfl":
+        # Harder-family design output: the reference returns y, the monolithic baseline keeps it in its metadata.
+        return {"status": result.get("status", "optimal"), "method": "benders_decomposition", "objective_value": result["best_objective"],
+                "y": result.get("y", (result.get("master_metadata") or {}).get("y"))}
     if problem in HARDER_KEYS:
         # Harder-family references return their plan directly (monolithic partition models as "groups").
         key = HARDER_KEYS[problem]

@@ -67,6 +67,19 @@ def validate_output_contract(suite, problem, data, output):
                     require(entry, "start", finite_number, "a finite JSON number", label + ".")
         return issues
 
+    if suite == "bd" and problem == "lbbd_ps":
+        # Cumulative scheduling schema (harder-family cohort): one {"job", "facility", "start"} object per job.
+        if require(output, "solution", lambda v: isinstance(v, dict), "an object"):
+            if require(output["solution"], "schedule", lambda v: isinstance(v, list), "an array", "solution."):
+                for idx, entry in enumerate(output["solution"]["schedule"]):
+                    label = f"solution.schedule[{idx}]"
+                    if not isinstance(entry, dict):
+                        issues.append(f"{label} must be an object")
+                        continue
+                    for name in ("job", "facility", "start"):
+                        require(entry, name, integer_value, "a finite integer JSON number", label + ".")
+        return issues
+
     if suite == "bd":
         if problem in {"ufl", "km", "fctp"}:
             m, n = data.get("m", 0), data.get("n", 0)
@@ -76,6 +89,9 @@ def validate_output_contract(suite, problem, data, output):
         elif problem == "tsso":
             m, n, s = data.get("n_products", 0), data.get("n_periods", 0), data.get("n_scenarios", 0)
             shapes = {"y": (m, n), **{name: (m, n, s) for name in ("x_reg", "x_ot", "inv", "back")}}
+        elif problem == "scfl":
+            # Harder-family cohort: the design alone; its recourse is recomputed exactly by the verifier.
+            shapes = {"y": (data.get("n_facilities", 0),)}
         else:
             raise ValueError(f"Unknown BD problem: {problem}")
         for name, shape in shapes.items():
@@ -99,6 +115,17 @@ def validate_output_contract(suite, problem, data, output):
                     continue
                 require(entry, "depot", integer_value, "a finite integer JSON number", label + ".")
                 require(entry, "customers", lambda v: isinstance(v, list) and all(integer_value(c) for c in v), "an array of finite integer JSON numbers", label + ".")
+        return issues
+    if problem == "rcsp":
+        # Crew scheduling schema: one {"depot", "tasks"} object per duty.
+        if require(output["solution"], "duties", lambda v: isinstance(v, list), "an array", "solution."):
+            for idx, entry in enumerate(output["solution"]["duties"]):
+                label = f"solution.duties[{idx}]"
+                if not isinstance(entry, dict):
+                    issues.append(f"{label} must be an object")
+                    continue
+                require(entry, "depot", integer_value, "a finite integer JSON number", label + ".")
+                require(entry, "tasks", lambda v: isinstance(v, list) and all(integer_value(t) for t in v), "an array of finite integer JSON numbers", label + ".")
         return issues
     if problem in LIST_SCHEMAS:
         # Harder-family cohort: the solution is a list of integer lists (classes, bins, routes or rosters).

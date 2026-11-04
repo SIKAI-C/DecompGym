@@ -33,7 +33,9 @@ PROBLEMS = {
 
 # Harder-family cohort (exploration): kept apart so `generate_dataset` and the paper's 81 instances are unchanged.
 HARDER_PROBLEMS = {
-    "bd": {"lbbd": ("a_gold_monolithic.LBBDBaseline", "a_gold_bd.LBBDBenders")},
+    "bd": {"lbbd": ("a_gold_monolithic.LBBDBaseline", "a_gold_bd.LBBDBenders"),
+           "scfl": ("a_gold_monolithic.SCFLBaseline", "a_gold_bd.SCFLBenders"),
+           "lbbd_ps": ("a_gold_monolithic.PSBaseline", "a_gold_bd.PSBenders")},
     "cg": {
         "gcol": ("a_gold_monolithic.GraphColoringBaseline", "a_gold_cg.GraphColoringBranchAndPrice"),
         "bppc": ("a_gold_monolithic.BPPCBaseline", "a_gold_cg.BPPCBranchAndPrice"),
@@ -42,6 +44,7 @@ HARDER_PROBLEMS = {
         "nrp": ("a_gold_monolithic.NRPBaseline", "a_gold_cg.NRPBranchAndPrice"),
         "cvrp": ("a_gold_monolithic.CVRPBaseline", "a_gold_cg.CVRPColumnGeneration"),
         "clrp": ("a_gold_monolithic.CLRPBaseline", "a_gold_cg.CLRPColumnGeneration"),
+        "rcsp": ("a_gold_monolithic.RCSPBaseline", "a_gold_cg.RCSPColumnGeneration"),
     },
 }
 

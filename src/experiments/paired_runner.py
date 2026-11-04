@@ -26,7 +26,7 @@ from src.utils.records import digest, identity, read, save
 
 SUITE_PROBLEMS = {"bd": ["tsso", "fctp", "km", "lrp", "ufl"], "cg": ["bp", "csp", "gap", "shift"]}
 # Harder-family cohort (exploration): accepted when named explicitly, never part of the default list.
-HARDER_SUITE_PROBLEMS = {"bd": ["lbbd"], "cg": ["gcol", "bppc", "vrptw", "pdptw", "nrp", "cvrp", "clrp"]}
+HARDER_SUITE_PROBLEMS = {"bd": ["lbbd", "scfl", "lbbd_ps"],"cg": ["gcol", "bppc", "vrptw", "pdptw", "nrp", "cvrp", "clrp", "rcsp"]}
 
 
 @dataclass
