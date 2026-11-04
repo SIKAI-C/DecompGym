@@ -40,6 +40,8 @@ HARDER_PROBLEMS = {
         "vrptw": ("a_gold_monolithic.VRPTWBaseline", "a_gold_cg.BranchAndPrice"),
         "pdptw": ("a_gold_monolithic.PDPTWBaseline", "a_gold_cg.PDPTWBranchAndPrice"),
         "nrp": ("a_gold_monolithic.NRPBaseline", "a_gold_cg.NRPBranchAndPrice"),
+        "cvrp": ("a_gold_monolithic.CVRPBaseline", "a_gold_cg.CVRPColumnGeneration"),
+        "clrp": ("a_gold_monolithic.CLRPBaseline", "a_gold_cg.CLRPColumnGeneration"),
     },
 }
 

@@ -25,7 +25,8 @@ def _certified(result: dict[str, Any], tol: float = 1e-6) -> bool:
 
 
 def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Callable, sizes, num_instances: int, out_root: str | Path,
-                   seed_offset: int = 0, mono_time_limit: float = 300.0, ref_time_limit: float = 60.0, tol: float = 1e-6) -> list[dict[str, Any]]:
+                   seed_offset: int = 0, mono_time_limit: float = 300.0, ref_time_limit: float = 60.0, tol: float = 1e-6,
+                   strict: bool = False) -> list[dict[str, Any]]:
     out_root = Path(out_root)
     metas = []
     for size in sizes:
@@ -49,6 +50,10 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
                     result, gold[method] = {"best_objective": None, "error": f"{type(exc).__name__}: {exc}"}, None
                 (inst_dir / filename).write_text(json.dumps(result, indent=2, default=str))
             mono, ref = gold["monolithic"], gold["decomposition"]
+            if strict and not (mono is not None and ref is not None and _certified(ref)
+                               and abs(mono["best_objective"] - ref["best_objective"]) <= tol * max(1.0, abs(mono["best_objective"]))):
+                # Strict families admit an instance only with a proved MIP optimum and a matching reference certificate.
+                raise RuntimeError(f"{folder}: requires a proved, verified MIP optimum and a matching certified reference")
             if mono is not None and ref is not None and _certified(ref) and abs(mono["best_objective"] - ref["best_objective"]) > tol * max(1.0, abs(mono["best_objective"])):
                 raise RuntimeError(f"{folder}: certified reference {ref['best_objective']} differs from the MIP optimum {mono['best_objective']}")
             # The MIP wrapper raises unless Gurobi reports OPTIMAL (default MIPGap, as for the paper's families).

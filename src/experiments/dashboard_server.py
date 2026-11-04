@@ -30,7 +30,8 @@ MODEL_NAMES = {"gpt-6-astra": "GPT-6 Astra", "gpt-6-sol": "GPT-6 Sol", "gpt-6.1-
                "claude-sonnet-5": "Claude Sonnet 5", "claude-fable-5": "Claude Fable 5", "gemini-3.8-flash-medium": "Gemini 3.8 Flash"}
 FAMILIES = {"ufl": "Facility location", "fctp": "Fixed-charge transportation", "km": "K-median", "lrp": "Location routing", "tsso": "Two-stage stochastic optimization", "bp": "Bin packing", "csp": "Cutting stock", "gap": "Generalized assignment", "shift": "Shift scheduling",
             "lbbd": "Assignment and scheduling (logic-based Benders)", "gcol": "Graph coloring", "bppc": "Bin packing with conflicts",
-            "vrptw": "Vehicle routing with time windows", "pdptw": "Pickup and delivery with time windows", "nrp": "Nurse rostering"}
+            "vrptw": "Vehicle routing with time windows", "pdptw": "Pickup and delivery with time windows", "nrp": "Nurse rostering",
+            "cvrp": "Capacitated vehicle routing", "clrp": "Capacitated location-routing"}
 
 
 def read_text(path: Path, limit: int = 4 * 1024 * 1024) -> str:

@@ -130,3 +130,68 @@ def test_pdptw_shortcut_keeps_its_seed_plan(monkeypatch, tmp_path):
     result = solver.run(str(_write(tmp_path, "data.json", PDPTW_EDGE)))
     assert result["routes"] == [[1, 3], [2, 4]]
     assert result["best_objective"] < float("inf")
+
+
+def test_new_routing_families_output_contracts():
+    good = {"status": "feasible", "method": "column_generation", "objective_value": 1.0}
+    assert validate_output_contract("cg", "cvrp", {}, {**good, "solution": {"routes": [[1, 2]]}}) == []
+    assert validate_output_contract("cg", "clrp", {}, {**good, "solution": {"routes": [{"depot": 0, "customers": [0, 1]}]}}) == []
+    assert validate_output_contract("cg", "clrp", {}, {**good, "solution": {"routes": [[0, 1]]}}) != []
+    assert validate_output_contract("cg", "clrp", {}, {**good, "solution": {"routes": [{"depot": 0, "customers": [0.5]}]}}) != []
+
+
+def test_cvrp_verifier_uses_nint_distances_and_capacity():
+    from src.cg.cvrp.d_verifier import verify_solution
+
+    data = {"n_customers": 2, "capacity": 5, "x": [0, 3, 0], "y": [0, 4, 1], "demand": [0, 3, 3]}
+    # 0 -> 1 is 5; 1 -> 2 is sqrt(18) = 4.24 -> 4; 2 -> 0 is 1.
+    assert verify_solution(data, {"solution": {"routes": [[1], [2]]}}) == {"ok": True, "issues": [], "objective_value": 12.0}
+    assert not verify_solution(data, {"solution": {"routes": [[1, 2]]}})["ok"]  # load 6 > 5
+    assert not verify_solution(data, {"solution": {"routes": [[1]]}})["ok"]  # customer 2 unserved
+
+
+def test_clrp_verifier_charges_opening_vehicle_and_ceil_travel():
+    from src.cg.clrp.d_verifier import verify_solution
+
+    data = {"n_customers": 2, "n_depots": 2, "vehicle_capacity": 10, "vehicle_cost": 7, "depot_x": [0, 9], "depot_y": [0, 9],
+            "depot_capacity": [5, 20], "opening_cost": [100, 1000], "customer_x": [1, 0], "customer_y": [1, 1], "demand": [3, 4]}
+    # Depot 0 holds only 5 < 7, so both customers on one route from depot 0 is infeasible.
+    assert not verify_solution(data, {"solution": {"routes": [{"depot": 0, "customers": [0, 1]}]}})["ok"]
+    # One route each: depot 0 -> c0 -> 0 = 2 * ceil(141.42) = 284; depot 1 -> c1 -> 1 = 2 * ceil(100 * sqrt(145)) = 2 * 1205.
+    result = verify_solution(data, {"solution": {"routes": [{"depot": 0, "customers": [0]}, {"depot": 1, "customers": [1]}]}})
+    assert result["ok"] and result["objective_value"] == 100 + 1000 + 2 * 7 + 284 + 2 * 1205
+    assert not verify_solution(data, {"solution": {"routes": [{"depot": 2, "customers": [0, 1]}]}})["ok"]
+
+
+def test_clrp_verifier_charges_a_used_depot_even_without_demand():
+    # Codex review (routing families) finding 3: opening costs follow the routes, not the load.
+    from src.cg.clrp.d_verifier import verify_solution
+
+    data = {"n_customers": 1, "n_depots": 1, "vehicle_capacity": 10, "vehicle_cost": 7, "depot_x": [0], "depot_y": [0],
+            "depot_capacity": [5], "opening_cost": [100], "customer_x": [1], "customer_y": [0], "demand": [0]}
+    assert verify_solution(data, {"solution": {"routes": [{"depot": 0, "customers": [0]}]}})["objective_value"] == 307
+
+
+def test_strict_suite_rejects_an_uncertified_reference(monkeypatch, tmp_path):
+    # Codex review (routing families) finding 2: strict families need both certificates, and they must agree.
+    from src.utils import harder_suite
+
+    data = {"n_customers": 1}
+    gen = lambda seed, size, out: (out.mkdir(parents=True, exist_ok=True), (out / "data.json").write_text("{}"), data)[2]
+    results = {"monolithic": {"best_objective": 10.0, "output": {}}, "decomposition": {"best_objective": 10.0, "global_lb": 9.0, "global_ub": 10.0, "output": {}}}
+    monkeypatch.setattr(harder_suite, "solve", lambda suite, problem, path, method, **kw: dict(results[method]))
+    monkeypatch.setattr(harder_suite, "verify", lambda *args: {"ok": True})
+    with pytest.raises(RuntimeError, match="matching certified reference"):
+        harder_suite.generate_suite("cg", "cvrp", gen=gen, render_prompt=lambda d: "p", sizes=["small"], num_instances=1, out_root=tmp_path, strict=True)
+    results["decomposition"]["global_lb"] = 10.0
+    metas = harder_suite.generate_suite("cg", "cvrp", gen=gen, render_prompt=lambda d: "p", sizes=["small"], num_instances=1, out_root=tmp_path, strict=True)
+    assert metas[0]["ground_truth_source"] == "monolithic_mip" and metas[0]["reference_proved"]
+
+
+@pytest.mark.parametrize("module,cls", [("src.cg.cvrp.a_gold_cg", "CVRPColumnGeneration"), ("src.cg.clrp.a_gold_cg", "CLRPColumnGeneration")])
+def test_routing_references_reject_an_empty_pricing_batch(module, cls):
+    # Codex review (routing families) round 2: batch=0 would read as pricing convergence.
+    import importlib
+
+    with pytest.raises(ValueError, match="positive"):
+        getattr(importlib.import_module(module), cls)(batch=0)

@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Any
 
 
-HARDER_KEYS = {"lbbd": "assignments", "gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters"}
+HARDER_KEYS = {"lbbd": "assignments", "gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters", "cvrp": "routes", "clrp": "routes"}
 
 
 def reference_output(suite: str, problem: str, data: dict, result: dict) -> dict[str, Any]:

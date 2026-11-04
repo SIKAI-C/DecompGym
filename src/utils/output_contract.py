@@ -5,7 +5,7 @@ import math
 
 
 OUTPUT_CONTRACT_POLICY = "strict-decomposition-output-contract-v2"
-LIST_SCHEMAS = {"gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters"}
+LIST_SCHEMAS = {"gcol": "color_classes", "bppc": "bins", "vrptw": "routes", "pdptw": "routes", "nrp": "rosters", "cvrp": "routes"}
 
 
 def finite_number(value):
@@ -88,6 +88,17 @@ def validate_output_contract(suite, problem, data, output):
     if suite != "cg":
         raise ValueError(f"Unknown suite: {suite}")
     if not require(output, "solution", lambda v: isinstance(v, dict), "an object"):
+        return issues
+    if problem == "clrp":
+        # Location-routing schema: one {"depot", "customers"} object per route.
+        if require(output["solution"], "routes", lambda v: isinstance(v, list), "an array", "solution."):
+            for idx, entry in enumerate(output["solution"]["routes"]):
+                label = f"solution.routes[{idx}]"
+                if not isinstance(entry, dict):
+                    issues.append(f"{label} must be an object")
+                    continue
+                require(entry, "depot", integer_value, "a finite integer JSON number", label + ".")
+                require(entry, "customers", lambda v: isinstance(v, list) and all(integer_value(c) for c in v), "an array of finite integer JSON numbers", label + ".")
         return issues
     if problem in LIST_SCHEMAS:
         # Harder-family cohort: the solution is a list of integer lists (classes, bins, routes or rosters).

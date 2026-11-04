@@ -137,7 +137,46 @@ def nrp_setup():
     return generate_nrp_instance, verify_solution, mono, {"reference": solver(False), "S1_root_cg_then_integer_rmp": solver(True)}
 
 
-SETUPS = {"nrp": nrp_setup, "pdptw": pdptw_setup, "lbbd": lbbd_setup, "sslp": sslp_setup, "vrptw": vrptw_setup, "gcol": partition_setup("gcol"), "bppc": partition_setup("bppc")}
+def cvrp_setup():
+    from src.cg.cvrp.a_gen_data import generate_cvrp_instance
+    from src.cg.cvrp.a_gold_cg import CVRPColumnGeneration
+    from src.cg.cvrp.a_gold_monolithic import CVRPBaseline
+    from src.cg.cvrp.d_verifier import verify_solution
+
+    def mono(path, tl):
+        res = CVRPBaseline(params={"TimeLimit": tl}).run(path)
+        return res, {"solution": {"routes": res["master_metadata"]["routes"]}}
+
+    def solver(enumerate):
+        def run(path, tl):
+            res = CVRPColumnGeneration(time_limit=tl, enumerate=enumerate).run(path)
+            return res, {"solution": {"routes": res["routes"]}}
+        return run
+
+    return generate_cvrp_instance, verify_solution, mono, {"reference": solver(True), "S1_root_cg_then_integer_rmp": solver(False)}
+
+
+
+def clrp_setup():
+    from src.cg.clrp.a_gen_data import generate_clrp_instance
+    from src.cg.clrp.a_gold_cg import CLRPColumnGeneration
+    from src.cg.clrp.a_gold_monolithic import CLRPBaseline
+    from src.cg.clrp.d_verifier import verify_solution
+
+    def mono(path, tl):
+        res = CLRPBaseline(params={"TimeLimit": tl}).run(path)
+        return res, {"solution": {"routes": res["master_metadata"]["routes"]}}
+
+    def solver(enumerate):
+        def run(path, tl):
+            res = CLRPColumnGeneration(time_limit=tl, enumerate=enumerate).run(path)
+            return res, {"solution": {"routes": res["routes"]}}
+        return run
+
+    return generate_clrp_instance, verify_solution, mono, {"reference": solver(True), "S1_root_cg_then_integer_rmp": solver(False)}
+
+
+SETUPS = {"nrp": nrp_setup, "pdptw": pdptw_setup, "lbbd": lbbd_setup, "sslp": sslp_setup, "vrptw": vrptw_setup, "gcol": partition_setup("gcol"), "bppc": partition_setup("bppc"), "cvrp": cvrp_setup, "clrp": clrp_setup}
 
 
 def main() -> None:
