@@ -23,10 +23,13 @@ def objective_step(inst: SCFLInstance) -> float:
     return 0.001 / S
 
 
-# Certificates assume the computed bound and incumbent are within half a step of their exact values (2.5e-5 for
-# S = 20, i.e. a relative 2.5e-9 at the generated objective sizes). Within that, both snap to the right lattice point.
+# Certificates assume the computed bound and incumbent, including the certificate's own float arithmetic, stay
+# clearly inside half a step of their exact values (2.5e-5 for S = 20, a relative 2.5e-9 at the generated objective
+# sizes). This is an engineering assumption, not an unconditional proof: the saved instances' errors are ~1e-11, and
+# their optima were also confirmed by exhaustive enumeration of all designs with an exact min-cost flow.
 def lattice_bound(bound: float, step: float) -> float:
-    """The lattice value the bound certifies: the smallest attainable value >= the exact bound."""
+    """A conservative lattice lower bound: a lattice value no greater than the optimum (it may lie below the smallest
+    lattice value above the exact bound, which is safe)."""
     return math.ceil(bound / step - 0.5) * step
 
 

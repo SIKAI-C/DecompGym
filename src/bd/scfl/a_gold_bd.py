@@ -157,7 +157,8 @@ class SCFLBenders:
         result = {"best_objective": ub, "global_lb": lb if lb is not None and lb > -float("inf") else None, "global_ub": ub,
                   "y": best, "iters": iters, "n_cuts": master.NumConstrs - 1}
         result = self.runtime.finish(result, target_gap=0.0, termination_reason=termination)
-        # The lattice certificate, not the shared relative-gap rule, decides the proof on every exit.
+        # The lattice certificate, not the shared relative-gap rule, decides the proof on every exit (the inherited
+        # optimality_tolerance / target_gap_met fields still describe that shared rule and are informational here).
         result.update(status="optimal" if proved else "feasible", proven_optimal=proved)
         result["total_time"] = time.perf_counter() - started
         return result
