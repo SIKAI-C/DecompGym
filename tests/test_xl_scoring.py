@@ -7,6 +7,7 @@ import math
 import os
 import sys
 from fractions import Fraction
+from pathlib import Path
 
 import pytest
 
@@ -398,7 +399,8 @@ def _km_arm_result(lbs, ok=True, best=100.0, infra=None, canonical=True):
     cps = [{"checkpoint": c, "seq": i + 1, "cert_ok": ok, "lb": lb, "infrastructure": infra if c == 900.0 else None}
            for i, (c, lb) in enumerate(zip((60.0, 300.0, 600.0, 900.0), lbs))]
     return {"certificates": {"checkpoints": cps, "canonical": canonical, "family_agrees": True},
-            "incumbents": {"best": best, "verified": True, "t_best": 1.0}, "run": {"killed_at_T": True, "child_peak_rss_mb": 1.0}}
+            "incumbents": {"best": best, "verified": True, "t_best": 1.0},
+            "run": {"killed_at_T": True, "returncode": -9, "child_peak_rss_mb": 1.0}}
 
 
 def test_review50_3_stage1_summary_treats_infrastructure_as_undefined(tmp_path):
@@ -413,7 +415,7 @@ def test_review50_3_stage1_summary_treats_infrastructure_as_undefined(tmp_path):
     (tmp_path / "panel.json").write_text(json.dumps(panel))
     arms = {"eng": _km_arm_result(["1000"] * 4), "naive_lp": _km_arm_result(["900"] * 4), "naive_int": _km_arm_result(["900"] * 4, best=150.0),
             "ils": _km_arm_result(["0"] * 4, best=200.0)}
-    for c in mod.BOUND_CONTROLS:
+    for c in mod.ALL_ARMS:
         arms.setdefault(c, _km_arm_result(["0"] * 4, best=300.0))
 
     def write(out, overrides):
@@ -480,7 +482,8 @@ def test_review52_1_stage1_conversion_runs_supervised_and_failures_are_not_score
     assert run["reader_errors"] == [] and any(r["kind"] == "certificate" for r in records)
     good = mod.certify(path, records, out, 4.0)
     final = good["checkpoints"][-1]
-    assert final["cert_ok"] and Fraction(final["lb"]) > 0 and good["family_agrees"]
+    assert final["cert_ok"] and Fraction(final["lb"]) > 0
+    assert mod.family_diagnostics(path, records, out, 4.0, good, 120.0)["family_agrees"]   # diagnostic cross-check
 
     def oom(*a, **kw):
         raise MemoryError
@@ -489,7 +492,7 @@ def test_review52_1_stage1_conversion_runs_supervised_and_failures_are_not_score
     bad = mod.certify(path, records, out, 4.0)
     assert bad["checkpoints"][-1]["infrastructure"] == "memory_error_unattributed" and not bad["checkpoints"][-1]["cert_ok"]
     arm = {"certificates": bad, "incumbents": {"best": 300.0, "verified": True, "t_best": 1.0},
-           "run": {"killed_at_T": True, "child_peak_rss_mb": 1.0}}
+           "run": {"killed_at_T": True, "returncode": -9, "child_peak_rss_mb": 1.0}}
     assert _decide(mod, _clean_arms(mod))["pass"] is True
     acc = _decide(mod, _clean_arms(mod) | {"pool": arm})
     assert acc["pass"] is None and acc["infrastructure"]["pool"] == ["memory_error_unattributed"]
@@ -599,9 +602,228 @@ def test_review53_2_stage1_requires_independent_verification(tmp_path, monkeypat
     bad = mod.evaluate_incumbents(path, [{"kind": "incumbent", "t": 1.0, "payload": {"design": design[:-1]}}], 10.0, "eng")
     assert bad["invalid"] == 1
     arms = {"invalid": _km_arm_result(["0"] * 4) | {"incumbents": bad},
-            "malformed": _km_arm_result(["0"] * 4) | {"run": {"killed_at_T": True, "child_peak_rss_mb": 1.0, "malformed_messages": 1}},
+            "malformed": _km_arm_result(["0"] * 4) | {"run": {"killed_at_T": True, "returncode": -9, "child_peak_rss_mb": 1.0,
+                                                               "malformed_messages": 1}},
             "rejected": _km_arm_result(["0"] * 4)}
     arms["rejected"]["certificates"]["checkpoints"][-1].update(cert_ok=False, reason="rejected:parse_error",
                                                                failure={"stage": "convert", "checkpoint": 3, "category": "certificate"})
     for name, arm in arms.items():
         assert _decide(mod, _clean_arms(mod) | {"pool": arm})["pass"] is None, name
+
+
+# ---------------------------------------------------------------- Codex review 54: Stage 1 arm exits and publication protocol
+
+_BAD_MODES = ["crash", "no_result", "bad_header", "null_incumbent", "empty_incumbent", "unknown_kind", "bad_bound",
+              "after_result", "torn_unkilled"]
+
+
+@pytest.mark.parametrize("mode", _BAD_MODES)
+def test_review54_arm_crashes_and_protocol_violations_are_infrastructure(tmp_path, mode):
+    """Subprocess arms (failure injection): an unexpected exit (code 1 after a RuntimeError, exit 0 without the
+    terminal result), a bad header, incumbent null or {}, an unknown kind, a non-finite bound, a message after the
+    result, or a frame cut without our deadline kill: infrastructure, and the panel decision is undefined."""
+    pytest.importorskip("gurobipy")
+    mod = _km_runner()
+    path = _km_tiny(tmp_path)
+    records, run = mod.supervise(path, f"_test_{mode}", 30.0, tmp_path / mode)
+    assert not run["killed_at_T"] and run["infrastructure"], run
+    arm = {"run": run, "incumbents": mod.evaluate_incumbents(path, records, 30.0, "pool"),
+           "certificates": _km_arm_result(["0"] * 4)["certificates"]}
+    acc = _decide(mod, _clean_arms(mod) | {"pool": arm})
+    assert acc["pass"] is None and "pool" in acc["infrastructure"], acc
+
+
+@pytest.mark.parametrize("mode,T", [("ok", 30.0), ("torn_then_sleep", 4.0)])
+def test_review54_normal_completion_and_a_frame_cut_by_our_kill_are_clean(tmp_path, mode, T):
+    pytest.importorskip("gurobipy")
+    mod = _km_runner()
+    path = _km_tiny(tmp_path)
+    records, run = mod.supervise(path, f"_test_{mode}", T, tmp_path / mode)
+    assert run["infrastructure"] == [], run
+    assert run["killed_at_T"] is (mode == "torn_then_sleep")
+    if mode == "ok":
+        assert run["returncode"] == 0 and run["terminal_result"]
+    else:
+        assert run["torn_messages"] == 1 and run["returncode"] == -9
+    inc = mod.evaluate_incumbents(path, records, T, "pool")
+    assert inc["verified"] is True and inc["malformed"] == 0
+    arm = {"run": run, "incumbents": inc, "certificates": _km_arm_result(["0"] * 4)["certificates"]}
+    assert _decide(mod, _clean_arms(mod) | {"pool": arm})["pass"] is True
+
+
+# ---------------------------------------------------------------- Codex review 55: Stage 1 decision rules and runner
+
+RULES55 = {"eps_b": 1e-5, "eps_p": 1e-3, "naive_quality_gap": 0.005, "naive_speed_ratio": 3.0, "saved_fraction": 0.25,
+           "control_speed_ratio": 2.0, "control_saved_seconds": 225.0}
+
+
+def _arm55(t_bound=None, target=False, bgap="0.1", best=None, near=False):
+    return {"t_bound": t_bound, "bound_target_T": target, "bgap_LP_T": float(Fraction(bgap)), "bgap_LP_T_exact": bgap,
+            "best": best, "gap_best": None, "near_best": near, "infrastructure": []}
+
+
+def _panel55(mod, eng=None, naive=None, nint_best=150):
+    per = {"eng": eng or _arm55(60, True, "0", 100, True), "naive_lp": naive or _arm55(None, False, "0.05"),
+           "naive_int": _arm55(None, False, "0.5", nint_best), "ils": _arm55(None, False, "0.3", 200, False)}
+    for c in mod.BOUND_CONTROLS:
+        per.setdefault(c, _arm55(None, False, "0.3", 300))
+    return per
+
+
+def test_review55_1_naive_speed_is_censored_and_comparisons_are_exact():
+    mod = _km_runner()
+    # Codex counterexample: engineered first reaches the target at 900 s, naive misses by 0.01 %, no 0.5-point gap
+    per = _panel55(mod, eng=_arm55(900, True, "0", 100, True), naive=_arm55(None, False, "0.0001"))
+    for headline in ("final_target", "time_to_target"):
+        acc = mod.accept(per, headline, RULES55, 900.0, z_best=100)
+        assert acc["naive_separates"] is False and acc["pass"] is False
+    # a never-reaching naive is censored at T: separated only with both >= 3x and >= 225 s saved
+    assert mod.accept(_panel55(mod, naive=_arm55(None, False, "0.0001")), "final_target", RULES55, 900.0, z_best=100)["naive_separates"]
+    assert not mod.accept(_panel55(mod, eng=_arm55(400, True, "0", 100, True), naive=_arm55(None, False, "0.0001")),
+                          "final_target", RULES55, 900.0, z_best=100)["naive_separates"]   # 900 < 3 x 400
+    assert not mod.accept(_panel55(mod, eng=_arm55(60, True, "0", 100, True), naive=_arm55(200, True, "0")),
+                          "final_target", RULES55, 900.0, z_best=100)["naive_separates"]   # 3.3x but only 140 s saved
+    # the bound-quality branch is exact: 0.5 point exactly separates
+    assert mod.accept(_panel55(mod, naive=_arm55(60, False, "0.005")), "final_target", RULES55, 900.0, z_best=100)["naive_separates"]
+    # primal: ceil(0.005 z_best) integer units, exact at the boundary (z_best = 1000: 5 units)
+    for nint_best, ok in ((1005, True), (1004, False)):
+        per = _panel55(mod, eng=_arm55(60, True, "0", 1000, True), nint_best=nint_best)
+        assert mod.accept(per, "final_target", RULES55, 900.0, z_best=1000)["primal_naive_worse"] is ok
+    # Tier B also requires the engineered final success (frozen): an early hit with a failed final version fails
+    early = _panel55(mod, eng=_arm55(60, False, "0.1", 100, True))
+    assert mod.accept(early, "time_to_target", RULES55, 900.0, z_best=100)["pass"] is False
+
+
+def test_review55_2_every_arm_constructor_accepts_the_child_keywords():
+    pytest.importorskip("gurobipy")
+    import inspect as _inspect
+    mod = _km_runner()
+    registry = mod.arms()
+    noop = lambda *a, **kw: None   # noqa: E731
+    for name in mod.ALL_ARMS:
+        cls, kw = registry[name]
+        kwargs = mod.arm_kwargs(cls, dict(time_limit=1.0, threads=1, on_incumbent=noop, on_bound=noop, on_certificate=noop, **kw))
+        _inspect.signature(cls).bind(**kwargs)   # raises TypeError if the child would fail at construction
+        assert ("on_certificate" in kwargs) is (name != "mip")   # only the MIP publishes no certificates
+    from src.bd.km.b_mip_xl import KMCompactMIP
+    assert "on_certificate" not in mod.arm_kwargs(KMCompactMIP, {"on_certificate": noop, "time_limit": 1.0})
+    with pytest.raises(TypeError):   # any other unknown keyword still fails loudly
+        _inspect.signature(KMCompactMIP).bind(**mod.arm_kwargs(KMCompactMIP, {"bogus": 1}))
+
+
+def test_review55_3_oom_kill_with_kernel_evidence_is_a_resource_outcome(tmp_path, monkeypatch):
+    pytest.importorskip("gurobipy")
+    mod = _km_runner()
+    path = _km_tiny(tmp_path)
+    real = mod.oom_kill_count()
+    assert real is None or isinstance(real, int)      # the job cgroup's memory.events (Linux cgroup v2)
+    counts = iter([7, 8])                              # before / after the run: one oom_kill during it
+    monkeypatch.setattr(mod, "oom_kill_count", lambda: next(counts))
+    records, run = mod.supervise(path, "_test_sigkill_self", 30.0, tmp_path / "oom")
+    assert run["returncode"] == -9 and not run["killed_at_T"] and run["oom_confirmed"] and run["infrastructure"] == []
+    inc = mod.evaluate_incumbents(path, records, 30.0, "pool")
+    assert inc["verified"] is True                     # its publications received before the kill are kept
+    arm = {"run": run, "incumbents": inc, "certificates": _km_arm_result(["0"] * 4)["certificates"]}
+    m = mod.arm_metrics(arm, {"rigorous": True, "hi": "1000"}, Fraction(999), 100.0, 1e-3)
+    assert m["infrastructure"] == [] and m["resource_outcome"].startswith("memory_limit")
+    for evidence in ([3, 3], [None, None]):            # no increase / no cgroup evidence: exit -9 stays undefined
+        counts = iter(evidence)
+        monkeypatch.setattr(mod, "oom_kill_count", lambda: next(counts))
+        records, run = mod.supervise(path, "_test_sigkill_self", 30.0, tmp_path / f"no_oom_{evidence[0]}")
+        assert not run["oom_confirmed"] and any("signal 9" in x for x in run["infrastructure"])
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="forked diagnostics and checker (Linux)")
+def test_review55_4_canonical_result_first_then_diagnostics_under_one_hard_deadline(tmp_path, monkeypatch):
+    pytest.importorskip("gurobipy")
+    import time as _time
+    mod = _km_runner()
+    import src.bd.km.g_certificate_xl as gcx
+    path = _km_tiny(tmp_path)
+    marker = tmp_path / "seen_by_diagnostics.json"
+    out_root = tmp_path / "out"
+
+    def slow_certify(self, *a, **kw):   # runs in the diagnostic child: records what was persisted, then hangs
+        res = json.loads((out_root / f"{Path(path).stem}___test_sleeper" / "result.json").read_text())
+        marker.write_text(json.dumps({"diagnostics": res["diagnostics"], "canonical": res["certificates"].get("canonical")}))
+        _time.sleep(60)
+
+    monkeypatch.setattr(gcx.Checker, "certify", slow_certify)
+    t0 = _time.monotonic()
+    row = mod.run_task(path, "_test_sleeper", 4.0, out_root, dense=True, diag_budget=2.0)
+    assert _time.monotonic() - t0 < 60.0
+    assert marker.exists(), (row["diagnostics"].get("detail"), row["diagnostics"].get("family_errors"))
+    seen = json.loads(marker.read_text())
+    assert seen == {"diagnostics": {"status": "pending"}, "canonical": True}   # canonical persisted before diagnostics
+    assert row["diagnostics"]["status"] == "deadline" and row["diagnostics"]["seconds"] < 10.0
+    assert row["certificates"]["checkpoints"][-1]["cert_ok"] and row["certificates"]["family_agrees"] is None
+    saved = json.loads((out_root / f"{Path(path).stem}___test_sleeper" / "result.json").read_text())
+    assert saved["diagnostics"]["status"] == "deadline" and saved["identity"]["task"]["arm"] == "_test_sleeper"
+    assert saved["identity"]["code_sha256"]["scripts/phoenix/scaleup_km_stage1.py"]
+    assert mod.DIAGNOSTIC_BUDGET + 900 + 620 + 600 + 120 < mod.TASK_ALLOCATION
+
+
+def _write_instance55(mod, out, name, eng_lbs, *, skip=()):
+    arms = {"eng": _km_arm_result(eng_lbs), "naive_lp": _km_arm_result(["900"] * 4),
+            "naive_int": _km_arm_result(["900"] * 4, best=150.0), "ils": _km_arm_result(["0"] * 4, best=200.0)}
+    for c in mod.ALL_ARMS:
+        arms.setdefault(c, _km_arm_result(["0"] * 4, best=300.0))
+    for arm, r in arms.items():
+        if arm in skip:
+            continue
+        d = out / f"{name}__{arm}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "result.json").write_text(json.dumps(r))
+
+
+def test_review55_6_tier_decisions_holdout_gating_and_pending_states(tmp_path):
+    pytest.importorskip("gurobipy")
+    mod = _km_runner()
+    iv = {"rigorous": True, "lo": "999.99", "hi": "1000"}
+    s1, ho = ["a", "b", "c", "d"], ["e", "f"]
+    panel = {"T": 900.0, "rules": RULES55, "tiers": {"X": {"headline": "final_target", "stage1": s1, "holdout": ho}},
+             "references": {n: {"z_pre": 100.0} for n in s1 + ho}, "lp_star_frozen": {"intervals": {n: iv for n in s1}}}
+    (tmp_path / "panel.json").write_text(json.dumps(panel))
+    out = tmp_path / "out"
+    for n, ok in zip(s1, (True, True, True, False)):
+        _write_instance55(mod, out, n, ["1000"] * 4 if ok else ["990"] * 4)
+    s = mod.summarize(out, tmp_path / "panel.json")
+    assert [s["instances"][n]["decision"] for n in s1] == ["pass", "pass", "pass", "fail"]
+    assert s["tiers"]["X"] == s["tiers"]["X"] | {"stage1": "pass", "tier": "pending"}
+    assert s["instances"]["e"]["reference_state"] == "pending_reference"        # holdout reference job not done yet
+    for n in ho:
+        _write_instance55(mod, out, n, ["1000"] * 4)
+        (out / f"{n}__lp_reference.json").write_text(json.dumps({"interval": iv}))
+    s = mod.summarize(out, tmp_path / "panel.json")
+    assert s["tiers"]["X"]["holdout"] == "pass" and s["tiers"]["X"]["tier"] == "retained"
+    # Stage 1 failing: the holdout is not scored at all
+    for n in ("b", "c"):
+        _write_instance55(mod, out, n, ["990"] * 4)
+    s = mod.summarize(out, tmp_path / "panel.json")
+    assert s["tiers"]["X"] == s["tiers"]["X"] | {"stage1": "fail", "holdout": "not_run", "tier": "rejected"}
+    assert s["instances"]["e"]["decision"] == "not_run"
+    # missing or non-rigorous references and unresolved arms are pending, never failures
+    panel["lp_star_frozen"]["intervals"]["b"] = {"rigorous": False, "hi": "1000"}
+    del panel["lp_star_frozen"]["intervals"]["c"]
+    (tmp_path / "panel.json").write_text(json.dumps(panel))
+    for n in ("b", "c"):
+        _write_instance55(mod, out, n, ["1000"] * 4)
+    import shutil
+    shutil.rmtree(out / "a__mip")                                               # one arm still running
+    s = mod.summarize(out, tmp_path / "panel.json")
+    assert s["instances"]["a"]["decision"] == "pending" and s["instances"]["a"]["acceptance"]["missing"] == ["mip"]
+    assert s["instances"]["b"]["reference_state"] == "undefined_reference" and s["instances"]["b"]["decision"] == "pending"
+    assert s["instances"]["c"]["reference_state"] == "pending_reference" and s["instances"]["c"]["decision"] == "pending"
+    assert s["tiers"]["X"]["stage1"] == "pending"   # 0 pass, 1 fail, 3 pending: 3 passes are still possible
+
+
+def test_review55_7_reporting_labels_and_export_loss():
+    mod = _km_runner()
+    r = _km_arm_result(["0", "500", "999.995", "999.995"])
+    r["solver_bounds"] = {"final": 1000.0}
+    m = mod.arm_metrics(r, {"rigorous": True, "hi": "1000"}, Fraction("999.99"), 100.0, 1e-3)
+    assert m["final_label"] == "target" and m["export_loss_T"] == pytest.approx(0.005) and m["solver_bound_T"] == 1000.0
+    r = _km_arm_result(["0"] * 4)
+    r["certificates"]["checkpoints"][-1].update(cert_ok=False, reason="checker_budget_exhausted")
+    m = mod.arm_metrics(r, {"rigorous": True, "hi": "1000"}, Fraction("999.99"), 100.0, 1e-3)
+    assert m["final_label"] == "checker_exhausted" and m["checkpoint_labels"][:3] == ["weak_bound"] * 3
