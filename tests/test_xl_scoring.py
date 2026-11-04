@@ -403,6 +403,25 @@ def _km_arm_result(lbs, ok=True, best=100.0, infra=None, canonical=True):
             "run": {"killed_at_T": True, "returncode": -9, "child_peak_rss_mb": 1.0}}
 
 
+KM_CODE56 = {"scripts/phoenix/scaleup_km_stage1.py": "c1", "src/experiments/xl_certificate.py": "c2"}
+
+
+def _km_panel_file(path, panel):
+    """Write a synthetic Stage 1 panel with its frozen identity fields (code and instance hashes); returns its sha256."""
+    panel.setdefault("code_sha256_at_preparation", dict(KM_CODE56))
+    for n, r in panel["references"].items():
+        r.setdefault("instance_sha256", f"sha-{n}")
+    path.write_text(json.dumps(panel))
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _stamp(r, name, arm, panel_sha, *, T=900.0, inst_sha=None, code=None):
+    """An arm result carrying the identity run_task records (instance, arm, T, panel, instance and code hashes)."""
+    return dict(r, instance=name, arm=arm, T=T, identity={
+        "task": {"instance": f"/x/{name}.json", "instance_sha256": inst_sha or f"sha-{name}", "arm": arm, "T": T},
+        "panel": {"file": "panel.json", "sha256": panel_sha}, "code_sha256": dict(code or KM_CODE56)})
+
+
 def test_review50_3_stage1_summary_treats_infrastructure_as_undefined(tmp_path):
     pytest.importorskip("gurobipy")
     mod = _km_runner()
@@ -412,7 +431,7 @@ def test_review50_3_stage1_summary_treats_infrastructure_as_undefined(tmp_path):
              "references": {"inst": {"z_pre": 100.0}},
              "lp_star_frozen": {"intervals": {"inst": {"rigorous": True, "lo": "999.99", "hi": "1000"}}},
              "checker": {"budget_seconds_per_attempt": 600, "max_bytes": 268435456, "memory_bytes": 12 << 30}}
-    (tmp_path / "panel.json").write_text(json.dumps(panel))
+    psha = _km_panel_file(tmp_path / "panel.json", panel)
     arms = {"eng": _km_arm_result(["1000"] * 4), "naive_lp": _km_arm_result(["900"] * 4), "naive_int": _km_arm_result(["900"] * 4, best=150.0),
             "ils": _km_arm_result(["0"] * 4, best=200.0)}
     for c in mod.ALL_ARMS:
@@ -422,7 +441,7 @@ def test_review50_3_stage1_summary_treats_infrastructure_as_undefined(tmp_path):
         for arm, r in (arms | overrides).items():
             d = out / f"inst__{arm}"
             d.mkdir(parents=True, exist_ok=True)
-            (d / "result.json").write_text(json.dumps(r))
+            (d / "result.json").write_text(json.dumps(_stamp(r, "inst", arm, psha)))
 
     write(tmp_path / "ok", {})
     s = mod.summarize(tmp_path / "ok", tmp_path / "panel.json")
@@ -763,7 +782,7 @@ def test_review55_4_canonical_result_first_then_diagnostics_under_one_hard_deadl
     assert mod.DIAGNOSTIC_BUDGET + 900 + 620 + 600 + 120 < mod.TASK_ALLOCATION
 
 
-def _write_instance55(mod, out, name, eng_lbs, *, skip=()):
+def _write_instance55(mod, out, name, eng_lbs, psha, *, skip=(), T=900.0):
     arms = {"eng": _km_arm_result(eng_lbs), "naive_lp": _km_arm_result(["900"] * 4),
             "naive_int": _km_arm_result(["900"] * 4, best=150.0), "ils": _km_arm_result(["0"] * 4, best=200.0)}
     for c in mod.ALL_ARMS:
@@ -773,7 +792,7 @@ def _write_instance55(mod, out, name, eng_lbs, *, skip=()):
             continue
         d = out / f"{name}__{arm}"
         d.mkdir(parents=True, exist_ok=True)
-        (d / "result.json").write_text(json.dumps(r))
+        (d / "result.json").write_text(json.dumps(_stamp(r, name, arm, psha, T=T)))
 
 
 def test_review55_6_tier_decisions_holdout_gating_and_pending_states(tmp_path):
@@ -783,31 +802,31 @@ def test_review55_6_tier_decisions_holdout_gating_and_pending_states(tmp_path):
     s1, ho = ["a", "b", "c", "d"], ["e", "f"]
     panel = {"T": 900.0, "rules": RULES55, "tiers": {"X": {"headline": "final_target", "stage1": s1, "holdout": ho}},
              "references": {n: {"z_pre": 100.0} for n in s1 + ho}, "lp_star_frozen": {"intervals": {n: iv for n in s1}}}
-    (tmp_path / "panel.json").write_text(json.dumps(panel))
+    psha = _km_panel_file(tmp_path / "panel.json", panel)
     out = tmp_path / "out"
     for n, ok in zip(s1, (True, True, True, False)):
-        _write_instance55(mod, out, n, ["1000"] * 4 if ok else ["990"] * 4)
+        _write_instance55(mod, out, n, ["1000"] * 4 if ok else ["990"] * 4, psha)
     s = mod.summarize(out, tmp_path / "panel.json")
     assert [s["instances"][n]["decision"] for n in s1] == ["pass", "pass", "pass", "fail"]
     assert s["tiers"]["X"] == s["tiers"]["X"] | {"stage1": "pass", "tier": "pending"}
     assert s["instances"]["e"]["reference_state"] == "pending_reference"        # holdout reference job not done yet
     for n in ho:
-        _write_instance55(mod, out, n, ["1000"] * 4)
-        (out / f"{n}__lp_reference.json").write_text(json.dumps({"interval": iv}))
+        _write_instance55(mod, out, n, ["1000"] * 4, psha)
+        (out / f"{n}__lp_reference.json").write_text(json.dumps({"interval": iv, "instance_sha256": f"sha-{n}"}))
     s = mod.summarize(out, tmp_path / "panel.json")
     assert s["tiers"]["X"]["holdout"] == "pass" and s["tiers"]["X"]["tier"] == "retained"
     # Stage 1 failing: the holdout is not scored at all
     for n in ("b", "c"):
-        _write_instance55(mod, out, n, ["990"] * 4)
+        _write_instance55(mod, out, n, ["990"] * 4, psha)
     s = mod.summarize(out, tmp_path / "panel.json")
     assert s["tiers"]["X"] == s["tiers"]["X"] | {"stage1": "fail", "holdout": "not_run", "tier": "rejected"}
     assert s["instances"]["e"]["decision"] == "not_run"
     # missing or non-rigorous references and unresolved arms are pending, never failures
     panel["lp_star_frozen"]["intervals"]["b"] = {"rigorous": False, "hi": "1000"}
     del panel["lp_star_frozen"]["intervals"]["c"]
-    (tmp_path / "panel.json").write_text(json.dumps(panel))
-    for n in ("b", "c"):
-        _write_instance55(mod, out, n, ["1000"] * 4)
+    psha = _km_panel_file(tmp_path / "panel.json", panel)   # a new panel file: the results are re-stamped with its hash
+    for n, lbs in (("a", ["1000"] * 4), ("b", ["1000"] * 4), ("c", ["1000"] * 4), ("d", ["990"] * 4)):
+        _write_instance55(mod, out, n, lbs, psha)
     import shutil
     shutil.rmtree(out / "a__mip")                                               # one arm still running
     s = mod.summarize(out, tmp_path / "panel.json")
@@ -827,3 +846,203 @@ def test_review55_7_reporting_labels_and_export_loss():
     r["certificates"]["checkpoints"][-1].update(cert_ok=False, reason="checker_budget_exhausted")
     m = mod.arm_metrics(r, {"rigorous": True, "hi": "1000"}, Fraction("999.99"), 100.0, 1e-3)
     assert m["final_label"] == "checker_exhausted" and m["checkpoint_labels"][:3] == ["weak_bound"] * 3
+
+
+# ---------------------------------------------------------------- Codex review 56: identity, incumbent-less runs, restarts
+
+def _panel56(tmp_path, names=("inst",), holdout=()):
+    iv = {"rigorous": True, "lo": "999.99", "hi": "1000"}
+    panel = {"T": 900.0, "rules": RULES55,
+             "tiers": {"C": {"headline": "final_target", "stage1": list(names), "holdout": list(holdout)}},
+             "references": {n: {"z_pre": 100.0} for n in [*names, *holdout]},
+             "lp_star_frozen": {"intervals": {n: iv for n in names}}}
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return panel, _km_panel_file(tmp_path / "panel.json", panel)
+
+
+def test_review56_1_results_with_a_foreign_identity_are_never_scored(tmp_path):
+    pytest.importorskip("gurobipy")
+    mod = _km_runner()
+    panel, psha = _panel56(tmp_path)
+    out = tmp_path / "out"
+    _write_instance55(mod, out, "inst", ["1000"] * 4, psha)
+    s = mod.summarize(out, tmp_path / "panel.json")
+    assert s["instances"]["inst"]["decision"] == "pass" and s["unexpected"] == []
+    # Codex counterexample: T = 300 results stamped with another panel's hash, summarized against the T = 900 panel
+    bad = tmp_path / "bad"
+    _write_instance55(mod, bad, "inst", ["1000"] * 4, "0" * 64, T=300.0)
+    d = mod.summarize(bad, tmp_path / "panel.json")["instances"]["inst"]
+    assert d["decision"] == "pending" and d["acceptance"]["pass"] is None and d["acceptance"]["missing"] == []
+    assert set(d["acceptance"]["identity"]) == set(mod.ALL_ARMS) and "arms" not in d
+    assert any("panel T 900.0" in p for p in d["acceptance"]["identity"]["eng"])
+    assert any("summarized panel" in p for p in d["acceptance"]["identity"]["eng"])
+    # each identity component on its own is enough: instance hash, code hash, T, panel hash, arm
+    variants = {"instance": dict(inst_sha="sha-other"), "code": dict(code=KM_CODE56 | {"src/experiments/xl_certificate.py": "zz"}),
+                "T": dict(T=300.0), "panel": dict(panel_sha="1" * 64)}
+    for what, kw in variants.items():
+        o = tmp_path / f"v_{what}"
+        _write_instance55(mod, o, "inst", ["1000"] * 4, psha)
+        r = _stamp(_km_arm_result(["1000"] * 4), "inst", "eng", kw.pop("panel_sha", psha), **kw)
+        (o / "inst__eng" / "result.json").write_text(json.dumps(r))
+        d = mod.summarize(o, tmp_path / "panel.json")["instances"]["inst"]
+        assert d["decision"] == "pending" and list(d["acceptance"]["identity"]) == ["eng"], what
+    o = tmp_path / "swapped"                       # the ils result copied into the engineered arm's directory
+    _write_instance55(mod, o, "inst", ["1000"] * 4, psha)
+    (o / "inst__eng" / "result.json").write_text((o / "inst__ils" / "result.json").read_text())
+    d = mod.summarize(o, tmp_path / "panel.json")["instances"]["inst"]
+    assert d["decision"] == "pending" and any("arm" in p for p in d["acceptance"]["identity"]["eng"])
+    # only the 15 panel arms are read: other directories are flagged and ignored (this one would set z_best = 1)
+    o = tmp_path / "extra"
+    _write_instance55(mod, o, "inst", ["1000"] * 4, psha)
+    junk = ["inst__eng_old", "inst___test_sleeper", "other__eng", "inst__eng/scratch", "inst__eng/attempt_1", "inst__eng/attempt_02"]
+    for j in junk:
+        (o / j).mkdir(parents=True)
+        (o / j / "result.json").write_text(json.dumps(_stamp(_km_arm_result(["1000"] * 4, best=1.0), "inst", "eng", psha)))
+    s = mod.summarize(o, tmp_path / "panel.json")
+    d = s["instances"]["inst"]
+    assert d["decision"] == "pass" and d["z_best"] == 100.0 and d["attempts"]["eng"] == "inst__eng"
+    assert set(s["unexpected"]) == set(junk) and set(d["unexpected"]) == set(junk) - {"other__eng"}
+    # the holdout reference must be for the frozen instance file as well
+    hp, hsha = _panel56(tmp_path / "h", names=("a", "b", "c"), holdout=("e",))
+    ho = tmp_path / "h" / "out"
+    for n in ("a", "b", "c", "e"):
+        _write_instance55(mod, ho, n, ["1000"] * 4, hsha)
+    iv = hp["lp_star_frozen"]["intervals"]["a"]
+    (ho / "e__lp_reference.json").write_text(json.dumps({"interval": iv, "instance_sha256": "sha-other"}))
+    s = mod.summarize(ho, tmp_path / "h" / "panel.json")
+    assert s["tiers"]["C"]["stage1"] == "pass" and s["instances"]["e"]["reference_state"] == "reference_identity_mismatch"
+    assert s["instances"]["e"]["decision"] == "pending" and s["tiers"]["C"]["tier"] == "pending"
+    (ho / "e__lp_reference.json").write_text(json.dumps({"interval": iv, "instance_sha256": "sha-e"}))
+    assert mod.summarize(ho, tmp_path / "h" / "panel.json")["tiers"]["C"]["tier"] == "retained"
+
+
+def test_review56_2_a_resolved_run_without_incumbent_is_not_near_best():
+    mod = _km_runner()
+    iv, tgt = {"rigorous": True, "hi": "1000"}, Fraction("999.99")
+    none = {"best": None, "verified": None, "t_best": None}
+    deadline = {"killed_at_T": True, "returncode": -9, "child_peak_rss_mb": 1.0}
+    oom = {"killed_at_T": False, "returncode": -9, "oom_confirmed": True, "child_peak_rss_mb": 1.0}
+    crash = {"killed_at_T": False, "returncode": 1, "terminal_result": False}
+    for run in (deadline, oom):
+        m = mod.arm_metrics(_km_arm_result(["0"] * 4) | {"incumbents": none, "run": run}, iv, tgt, 100.0, 1e-3)
+        assert m["near_best"] is False and m["no_incumbent"] and m["infrastructure"] == [] and not m["primal_undefined"]
+    m = mod.arm_metrics(_km_arm_result(["0"] * 4) | {"incumbents": none, "run": crash}, iv, tgt, 100.0, 1e-3)
+    assert m["near_best"] is None and m["primal_undefined"]          # infrastructure stays undefined
+    clean = _clean_arms(mod)
+    assert _decide(mod, clean)["pass"] is True
+    for arm in ("ils", "naive_int"):     # an incumbent-less ILS is beaten; an incumbent-less naive integer Benders is worse
+        for run in (deadline, oom):
+            acc = _decide(mod, clean | {arm: clean[arm] | {"incumbents": none, "run": run}})
+            assert acc["pass"] is True and acc["primal_ils_misses"] and acc["primal_naive_worse"], (arm, acc)
+        assert _decide(mod, clean | {arm: clean[arm] | {"incumbents": none, "run": crash}})["pass"] is None
+    # an engineered arm without incumbent is a resolved failure (not near_best), never pending
+    acc = _decide(mod, clean | {"eng": clean["eng"] | {"incumbents": none}})
+    assert acc["pass"] is False and acc["primal_engineered_near_best"] is False and acc["primal_naive_worse"] is False
+    # the exact-objective path agrees: incumbent-less naive integer vs a verified engineered incumbent
+    assert mod.primal_naive_worse({"best": 100}, {"best": None}, 0.005, 100) is True
+    assert mod.primal_naive_worse({"best": None}, {"best": None}, 0.005, 100) is False
+
+
+def test_review56_3_fresh_attempt_directories_and_atomic_results(tmp_path, monkeypatch):
+    mod = _km_runner()
+    base = tmp_path / "out" / "inst__eng"
+    assert mod.claim_attempt(base) == (1, base)
+    assert mod.claim_attempt(base) == (2, base / "attempt_2")
+    (base / "attempt_3").mkdir()                      # taken (another retry): never shared
+    assert mod.claim_attempt(base) == (4, base / "attempt_4")
+    assert [mod.attempt_index(n) for n in ("attempt_2", "attempt_10", "attempt_1", "attempt_02", "attempt_x", "certs")] == \
+        [2, 10, None, None, None, None]
+    # the supervisor refuses a non-empty directory before spawning anything or touching its files
+    (base / "attempt_4" / "events.jsonl").write_text("old")
+    with pytest.raises(FileExistsError):
+        mod.supervise("/nonexistent.json", "_test_sleeper", 1.0, base / "attempt_4")
+    assert (base / "attempt_4" / "events.jsonl").read_text() == "old" and not (base / "attempt_4" / "certs").exists()
+    # atomic replace: a rewrite failing at fsync or at the rename leaves the previous complete file and no temp file
+    f = tmp_path / "result.json"
+    mod.write_json_atomic(f, {"canonical": True})
+    mod.write_json_atomic(f, {"canonical": True, "diagnostics": "done"})
+    assert json.loads(f.read_text()) == {"canonical": True, "diagnostics": "done"} and (f.stat().st_mode & 0o777) == 0o644
+
+    def boom(*a, **kw):
+        raise OSError("injected")
+
+    for name in ("fsync", "replace"):
+        monkeypatch.setattr(mod.os, name, boom)
+        with pytest.raises(OSError):
+            mod.write_json_atomic(f, {"canonical": True, "diagnostics": "x" * 10**6})
+        monkeypatch.undo()
+        assert json.loads(f.read_text()) == {"canonical": True, "diagnostics": "done"}
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["out", "result.json"]
+
+
+def test_review56_3_summary_scores_the_earliest_complete_clean_attempt(tmp_path):
+    pytest.importorskip("gurobipy")
+    import shutil
+    mod = _km_runner()
+    panel, psha = _panel56(tmp_path)
+
+    def put(d, r, **kw):
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "result.json").write_text(json.dumps(_stamp(r, "inst", "eng", psha, **kw)))
+
+    out = tmp_path / "out"
+    _write_instance55(mod, out, "inst", ["1000"] * 4, psha)
+    eng = out / "inst__eng"
+    # attempt 1 infrastructure (checker error), attempt 2 incomplete (no result), attempt 3 clean but short of the
+    # target, attempt 4 clean and on target: attempt 3 is scored (earliest complete non-infrastructure), never 4
+    put(eng, _km_arm_result(["1000"] * 4, ok=False, infra="checker_error"))
+    (eng / "attempt_2").mkdir()
+    put(eng / "attempt_3", _km_arm_result(["990"] * 4))
+    put(eng / "attempt_4", _km_arm_result(["1000"] * 4))
+    d = mod.summarize(out, tmp_path / "panel.json")["instances"]["inst"]
+    assert d["attempts"]["eng"] == "inst__eng/attempt_3" and d["decision"] == "fail"
+    assert [a["status"] for a in d["attempt_history"]["eng"]] == ["complete", "incomplete", "complete", "complete"]
+    # only the infrastructure attempt (and an incomplete retry): the arm stays undefined, the instance pending
+    shutil.rmtree(eng / "attempt_3")
+    shutil.rmtree(eng / "attempt_4")
+    d = mod.summarize(out, tmp_path / "panel.json")["instances"]["inst"]
+    assert d["attempts"]["eng"] == "inst__eng" and d["decision"] == "pending"
+    assert d["acceptance"]["infrastructure"] == {"eng": ["checker_error"]}
+    # a foreign-identity attempt is skipped; retries are ordered numerically (attempt_2 before attempt_10)
+    out2 = tmp_path / "out2"
+    _write_instance55(mod, out2, "inst", ["1000"] * 4, psha)
+    e2 = out2 / "inst__eng"
+    put(e2, _km_arm_result(["1000"] * 4), T=300.0)
+    put(e2 / "attempt_10", _km_arm_result(["990"] * 4))
+    put(e2 / "attempt_2", _km_arm_result(["1000"] * 4))
+    d = mod.summarize(out2, tmp_path / "panel.json")["instances"]["inst"]
+    assert d["attempts"]["eng"] == "inst__eng/attempt_2" and d["decision"] == "pass"
+    assert d["attempt_history"]["eng"][0]["identity_problems"]
+    # an unreadable result is infrastructure as well (never scored), and the next attempt is taken
+    (e2 / "attempt_2" / "result.json").write_text('{"truncated": ')
+    d = mod.summarize(out2, tmp_path / "panel.json")["instances"]["inst"]
+    assert d["attempts"]["eng"] == "inst__eng/attempt_10" and d["decision"] == "fail"
+    assert d["attempt_history"]["eng"][1]["status"] == "unreadable"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="forked checker and diagnostics (Linux)")
+def test_review56_3_a_rerun_takes_a_fresh_attempt_and_keeps_the_first_result(tmp_path):
+    pytest.importorskip("gurobipy")
+    mod = _km_runner()
+    path = _km_tiny(tmp_path)
+    name = Path(path).stem
+    files = ["scripts/phoenix/scaleup_km_stage1.py", "src/experiments/xl_certificate.py"]
+    panel = {"T": 4.0, "rules": RULES55,
+             "references": {name: {"instance_sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}},
+             "code_sha256_at_preparation": {f: hashlib.sha256((mod.ROOT / f).read_bytes()).hexdigest() for f in files}}
+    pfile = tmp_path / "panel.json"
+    pfile.write_text(json.dumps(panel))
+    psha = hashlib.sha256(pfile.read_bytes()).hexdigest()
+    out = tmp_path / "out"
+    first = mod.run_task(path, "_test_sleeper", 4.0, out, dense=False, panel_path=pfile, diag_budget=10.0)
+    base = out / f"{name}___test_sleeper"
+    saved = (base / "result.json").read_bytes()
+    second = mod.run_task(path, "_test_sleeper", 4.0, out, dense=False, panel_path=pfile, diag_budget=10.0)
+    assert first["attempt"] == {"index": 1, "dir": base.name}
+    assert second["attempt"] == {"index": 2, "dir": f"{base.name}/attempt_2"}
+    assert (base / "result.json").read_bytes() == saved and json.loads((base / "attempt_2" / "result.json").read_text())["attempt"]["index"] == 2
+    assert not [p for p in base.rglob("*") if p.name.endswith(".tmp")]
+    # a real row carries exactly the identity the summary enforces
+    assert mod.identity_problems(json.loads(saved), name, "_test_sleeper", panel, psha) == []
+    assert any("panel T" in p for p in mod.identity_problems(first, name, "_test_sleeper", panel | {"T": 900.0}, psha))
+    assert mod.identity_problems(first, name, "eng", panel, psha)

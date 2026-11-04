@@ -17,6 +17,9 @@ Modes
                           unavailable). Infrastructure failures of the canonical check (view build failure, checker
                           errors, stored-version mismatches) are recorded per checkpoint and make the arm's bound metrics
                           undefined (rerun). --dense adds development diagnostics (family backend on every version).
+                          Every run writes into a FRESH directory claimed atomically (mkdir): the first attempt is
+                          OUT/<instance>__<arm>, a retry OUT/<instance>__<arm>/attempt_<k> (k >= 2); a non-empty
+                          directory is never reused, and result.json is replaced atomically (temp file, fsync, rename).
   --reference INSTANCE    frozen LP* reference interval: engineered Benders Phase 1 only (no branching) to convergence,
                           its final certificate checked canonically and by the family backend; LP_lo = the larger
                           certified exact bound (provenance recorded), LP_hi = the exact master objective of its LP point
@@ -25,7 +28,11 @@ Modes
                           bound_target (cert_ok and bgap_LP <= eps_b), t_bound (first checkpoint meeting it), primal
                           gap to z_best and near_best (<= eps_p), and the frozen acceptance rules (panel file). An arm
                           with an infrastructure marker has undefined bound metrics, and an instance whose decision
-                          needs such an arm is undefined ("pass": None, rerun): never a beaten control.
+                          needs such an arm is undefined ("pass": None, rerun): never a beaten control. Only the 15
+                          panel arms are read (other directories are flagged, never scored); per arm exactly one attempt
+                          is scored, the earliest complete one with a valid identity and no infrastructure marker; a
+                          result whose identity (instance, arm, T, panel sha256, instance sha256, frozen code hashes)
+                          does not match the summarized panel is infrastructure (pending, rerun).
 """
 from __future__ import annotations
 
@@ -174,6 +181,76 @@ def sha256(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+def write_json_atomic(path: Path, obj: Any) -> None:
+    """Replace `path` atomically: a unique temporary file in the same directory, written, flushed and fsynced, then
+    renamed over `path` (and the directory fsynced). A reader sees the previous complete file or the new complete
+    one, never a truncated one (Codex review 56 #3: the diagnostic rewrite cannot damage the canonical result)."""
+    data = json.dumps(obj, default=str, indent=1).encode()
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            os.fchmod(fh.fileno(), 0o644)   # mkstemp creates 0600
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:   # (b) the write failed: the previous file is untouched; the error propagates
+        try:
+            os.unlink(tmp)
+        except OSError:   # benign: already renamed or never created
+            pass
+        raise
+    try:
+        dfd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:   # benign: the directory fsync is a durability hint; the rename itself is atomic
+        pass
+
+
+ATTEMPT_PREFIX = "attempt_"
+
+
+def attempt_index(name: str) -> int | None:
+    """k for a retry directory name attempt_<k> (k >= 2, ASCII digits, no leading zero), else None."""
+    k = name[len(ATTEMPT_PREFIX):] if name.startswith(ATTEMPT_PREFIX) else ""
+    if not (k.isascii() and k.isdigit()) or k[0] == "0" or int(k) < 2:
+        return None
+    return int(k)
+
+
+def claim_attempt(base: Path) -> tuple[int, Path]:
+    """A fresh, empty output directory for one run of an arm, claimed atomically with mkdir (never an existing one):
+    attempt 1 is `base` itself, a retry is base/attempt_<k> with the smallest free k >= 2."""
+    base.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        base.mkdir()
+        return 1, base
+    except FileExistsError:   # benign: an earlier attempt owns base; this run takes a fresh retry directory
+        pass
+    k = 2
+    while True:
+        d = base / f"{ATTEMPT_PREFIX}{k}"
+        try:
+            d.mkdir()
+            return k, d
+        except FileExistsError:   # benign: taken by an earlier attempt
+            k += 1
+
+
+def code_commit() -> str | None:
+    """The git commit of the code root, recorded with every arm result (provenance; the frozen file hashes are the
+    enforced code identity). None outside a git checkout."""
+    try:
+        r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):   # recorded as unknown
+        return None
+    commit = r.stdout.strip() if r.returncode == 0 else ""
+    return commit or None
+
+
 # ---------------------------------------------------------------- child
 
 def arm_kwargs(cls, kwargs: dict) -> dict:
@@ -275,9 +352,12 @@ def _read_exact(f, n: int) -> bytes | None:
 
 def supervise(instance: str, arm: str, T: float, outdir: Path, volume_cap: int = PUBLICATION_VOLUME_CAP) -> tuple[list[dict], dict]:
     outdir.mkdir(parents=True, exist_ok=True)
+    if any(outdir.iterdir()):   # Codex review 56 #3: a retry never mixes with an earlier attempt's files
+        raise FileExistsError(f"refusing to reuse the non-empty arm output directory {outdir} "
+                              "(a retry takes a fresh attempt directory: claim_attempt)")
     certs = outdir / "certs"
-    certs.mkdir(exist_ok=True)
-    events = open(outdir / "events.jsonl", "ab")
+    certs.mkdir()
+    events = open(outdir / "events.jsonl", "xb")
     records: list[dict] = []
     torn: list[str] = []            # frames cut at the end of the stream (benign only for the run we killed at T)
     malformed = [0]                 # messages of our own arm that are not valid JSON: an evaluator bug (infrastructure)
@@ -290,7 +370,7 @@ def supervise(instance: str, arm: str, T: float, outdir: Path, volume_cap: int =
     start_wall = time.time()
     t0 = time.monotonic()
     proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--child", instance, arm, "--T", str(T),
-                             "--start", repr(start_wall)], stdout=subprocess.PIPE, stderr=open(outdir / "stderr.log", "wb"),
+                             "--start", repr(start_wall)], stdout=subprocess.PIPE, stderr=open(outdir / "stderr.log", "xb"),
                             start_new_session=True, cwd=str(ROOT))
 
     def reader() -> None:
@@ -340,7 +420,7 @@ def supervise(instance: str, arm: str, T: float, outdir: Path, volume_cap: int =
                 over_volume[0] += 1
             elif kind == "certificate":
                 fname = f"v{seq}.json"
-                with open(certs / fname, "wb") as fh:
+                with open(certs / fname, "xb") as fh:   # immutable: never overwritten
                     fh.write(payload)
                     fh.flush()
                     os.fsync(fh.fileno())
@@ -737,9 +817,10 @@ def identity(task: dict, panel_path: str | Path | None) -> dict:
 def run_task(instance: str, arm: str, T: float, out_root: Path, dense: bool, panel_path: str | Path | None = None,
              diag_budget: float | None = None) -> dict:
     """One arm: supervised run, incumbents, CANONICAL certification, persisted (result.json) BEFORE the diagnostic
-    family cross-check, which then runs under one cumulative hard deadline that fits the task allocation."""
+    family cross-check, which then runs under one cumulative hard deadline that fits the task allocation. The run
+    takes a fresh attempt directory (claim_attempt) and result.json is replaced atomically both times."""
     task_t0 = time.monotonic()
-    outdir = out_root / f"{stem(instance)}__{arm}"
+    k, outdir = claim_attempt(out_root / f"{stem(instance)}__{arm}")
     path = Path(panel_path) if panel_path is not None else DEFAULT_PANEL
     cap = PUBLICATION_VOLUME_CAP
     if path.exists():
@@ -765,15 +846,16 @@ def run_task(instance: str, arm: str, T: float, out_root: Path, dense: bool, pan
                              "label": "solver-reported internal master bound (never scored)"},
            "certificates": cert, "arm_result": result, "diagnostics": {"status": "pending"},
            "identity": identity({"instance": str(instance), "instance_sha256": sha256(Path(instance).read_bytes()), "arm": arm,
-                                 "T": T}, panel_path),
+                                 "T": T}, panel_path) | {"code_commit": code_commit()},
+           "attempt": {"index": k, "dir": outdir.relative_to(out_root).as_posix()},
            "post_seconds": round(time.monotonic() - t0, 2)}
-    (outdir / "result.json").write_text(json.dumps(row, default=str, indent=1))   # the canonical result first
+    write_json_atomic(outdir / "result.json", row)   # the canonical result first
     budget = DIAGNOSTIC_BUDGET if diag_budget is None else diag_budget
     budget = min(budget, TASK_ALLOCATION - (time.monotonic() - task_t0) - 120.0)
     row["diagnostics"] = family_diagnostics(instance, records, outdir, T, cert, budget, panel_path, dense)
     row["certificates"]["family_agrees"] = row["diagnostics"].get("family_agrees")   # diagnostic, never scored
     row["task_seconds"] = round(time.monotonic() - task_t0, 2)
-    (outdir / "result.json").write_text(json.dumps(row, default=str, indent=1))
+    write_json_atomic(outdir / "result.json", row)
     return row
 
 
@@ -848,22 +930,142 @@ def reference_state(iv: dict | None) -> str:
     return "ready" if iv.get("rigorous") and iv.get("hi") is not None else "undefined_reference"
 
 
-def instance_decision(name: str, spec: dict, panel: dict, out_root: Path, iv: dict | None) -> dict:
-    """One instance: reference gate, all 15 arms resolved (z_best is final only then), metrics and acceptance."""
+def identity_problems(r: dict, name: str, arm: str, panel: dict, panel_sha: str) -> list[str]:
+    """Codex review 56 #1: an arm result is scored only if it was produced for this instance and arm, at the panel's T,
+    under the summarized panel file (sha256), on the frozen instance file (sha256) and with the frozen code (every file
+    hash in panel["code_sha256_at_preparation"]; the commit as well if the panel freezes one). Any problem listed here
+    makes the result infrastructure (pending, rerun), never a score."""
+    p = []
+    ident = r.get("identity") if isinstance(r.get("identity"), dict) else {}
+    task = ident.get("task") if isinstance(ident.get("task"), dict) else {}
+    if r.get("instance") != name:
+        p.append(f"instance {r.get('instance')!r} != {name!r}")
+    if r.get("arm") != arm or task.get("arm") != arm:
+        p.append(f"arm {r.get('arm')!r}/{task.get('arm')!r} != {arm!r}")
+    T = panel.get("T")
+    if isinstance(T, bool) or not isinstance(T, (int, float)) or any(
+            isinstance(x, bool) or not isinstance(x, (int, float)) or x != T for x in (r.get("T"), task.get("T"))):
+        p.append(f"T {r.get('T')!r}/{task.get('T')!r} != panel T {T!r}")
+    got_panel = (ident.get("panel") or {}).get("sha256") if isinstance(ident.get("panel"), dict) else None
+    if got_panel != panel_sha:
+        p.append(f"panel sha256 {got_panel!r} != summarized panel {panel_sha}")
+    want = ((panel.get("references") or {}).get(name) or {}).get("instance_sha256")
+    if not want:
+        p.append("the panel freezes no instance_sha256 for this instance")
+    elif task.get("instance_sha256") != want:
+        p.append(f"instance sha256 {task.get('instance_sha256')!r} != frozen {want}")
+    frozen = panel.get("code_sha256_at_preparation") or {}
+    got = ident.get("code_sha256") if isinstance(ident.get("code_sha256"), dict) else {}
+    if not frozen:
+        p.append("the panel freezes no code hashes")
+    bad = sorted(f for f, h in frozen.items() if got.get(f) != h)
+    if bad:
+        p.append(f"code sha256 differs from the frozen panel: {bad}")
+    if panel.get("code_commit") and ident.get("code_commit") != panel["code_commit"]:
+        p.append(f"code commit {ident.get('code_commit')!r} != frozen {panel['code_commit']}")
+    return p
+
+
+def reference_problems(row: dict | None, name: str, panel: dict) -> list[str]:
+    """Identity of a reference interval (frozen in the panel, or a holdout reference row): its instance hash, when
+    recorded, must be the panel's frozen instance hash."""
+    want = ((panel.get("references") or {}).get(name) or {}).get("instance_sha256")
+    got = (row or {}).get("instance_sha256")
+    if got is not None and got != want:
+        return [f"reference instance sha256 {got!r} != frozen {want!r}"]
+    return []
+
+
+def arm_attempts(out_root: Path, name: str, arm: str) -> list[tuple[int, Path]]:
+    """Every attempt directory of one arm, in order: base (attempt 1) and base/attempt_<k> (k >= 2)."""
+    base = out_root / f"{name}__{arm}"
+    if not base.is_dir():
+        return []
+    found = [(1, base)] + [(attempt_index(d.name), d) for d in base.iterdir() if d.is_dir() and attempt_index(d.name)]
+    return sorted(found)
+
+
+def select_attempt(out_root: Path, name: str, arm: str, panel: dict, panel_sha: str, iv: dict, tgt: Fraction | None) -> dict:
+    """Exactly one complete attempt per arm (Codex review 56 #3): the earliest complete attempt with a valid identity and
+    no infrastructure marker; if every attempt with a valid identity carries one, the earliest of those (its markers
+    keep the arm undefined); if no complete attempt has a valid identity, none (identity problems listed)."""
+    seen, valid, clean = [], [], []
+    for k, d in arm_attempts(out_root, name, arm):
+        rel = d.relative_to(out_root).as_posix()
+        f = d / "result.json"
+        if not f.is_file():
+            seen.append({"attempt": rel, "status": "incomplete"})
+            continue
+        try:
+            r = json.loads(f.read_text())
+            if not isinstance(r, dict):
+                raise ValueError("result.json is not an object")
+            problems = identity_problems(r, name, arm, panel, panel_sha)
+            infra = [] if problems else arm_metrics(r, iv, tgt, None, panel["rules"]["eps_p"]).get("infrastructure") or []
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, ZeroDivisionError) as exc:   # (b) unreadable or
+            # malformed result (an evaluator failure): this attempt is infrastructure, never scored
+            seen.append({"attempt": rel, "status": "unreadable", "error": f"{type(exc).__name__}: {exc}"[:300]})
+            continue
+        seen.append({"attempt": rel, "status": "complete", "identity_problems": problems, "infrastructure": list(infra)})
+        if not problems:
+            valid.append((rel, r))
+            if not infra:
+                clean.append((rel, r))
+    pick = clean[0] if clean else (valid[0] if valid else None)
+    return {"attempt": pick[0] if pick else None, "result": pick[1] if pick else None, "attempts": seen,
+            "complete": any(a["status"] != "incomplete" for a in seen),
+            "identity_problems": [] if pick else [p for a in seen for p in a.get("identity_problems", [])]
+                                                  + [a["error"] for a in seen if a["status"] == "unreadable"]}
+
+
+def scan_unexpected(out_root: Path, names: list[str]) -> list[str]:
+    """Directories that are not an arm of the panel (<instance>__<arm>, the 15 arms) or one of its attempt or certs
+    directories: flagged, never read."""
+    expected = {f"{n}__{a}" for n in names for a in ALL_ARMS}
+    flagged = []
+    if not out_root.is_dir():
+        return flagged
+    for d in sorted(out_root.iterdir()):
+        if not d.is_dir():
+            continue
+        if d.name not in expected:
+            flagged.append(d.name)
+            continue
+        for sub in sorted(d.iterdir()):
+            if sub.is_dir() and sub.name != "certs" and attempt_index(sub.name) is None:
+                flagged.append(f"{d.name}/{sub.name}")
+    return flagged
+
+
+def instance_decision(name: str, spec: dict, panel: dict, out_root: Path, iv: dict | None, panel_sha: str,
+                      ref_problems: list[str] | None = None) -> dict:
+    """One instance: reference gate, all 15 arms resolved with a valid identity (z_best is final only then), metrics and
+    acceptance. Only the whitelisted arms are read, one attempt each (select_attempt)."""
     from src.bd.km.g_certificate_xl import target
     rules = panel["rules"]
     state = reference_state(iv)
+    if ref_problems:
+        state = "reference_identity_mismatch"
     base = {"headline": spec["headline"], "lp_interval": iv, "reference_state": state}
+    unexpected = [u for u in scan_unexpected(out_root, [name]) if u.startswith(f"{name}__")]
+    if unexpected:
+        base["unexpected"] = unexpected   # flagged, never read
     if state != "ready":
-        return base | {"decision": "pending", "acceptance": {"pass": None, "undefined": state}}
-    arms_res = {}
-    for d in sorted(out_root.glob(f"{name}__*")):
-        if d.is_dir() and (d / "result.json").exists():
-            arms_res[d.name.split("__", 1)[1]] = json.loads((d / "result.json").read_text())
-    missing = [a for a in ALL_ARMS if a not in arms_res]
-    if missing:
-        return base | {"decision": "pending", "acceptance": {"pass": None, "undefined": "arms pending", "missing": missing}}
+        return base | {"decision": "pending", "acceptance": {"pass": None, "undefined": state, **({"problems": ref_problems} if ref_problems else {})}}
     tgt = target(iv, rules["eps_b"])
+    sel = {a: select_attempt(out_root, name, a, panel, panel_sha, iv, tgt) for a in ALL_ARMS}
+    base["attempts"] = {a: s["attempt"] for a, s in sel.items()}
+    retried = {a: s["attempts"] for a, s in sel.items() if len(s["attempts"]) > 1}
+    if retried:
+        base["attempt_history"] = retried
+    arms_res = {a: s["result"] for a, s in sel.items() if s["result"] is not None}
+    missing = [a for a in ALL_ARMS if not sel[a]["complete"]]
+    ident = {a: sel[a]["identity_problems"] for a in ALL_ARMS if sel[a]["complete"] and sel[a]["result"] is None}
+    if missing or ident:
+        why = "; ".join(x for x in ("arms pending" if missing else "",
+                                    "invalid results (identity mismatch or unreadable; infrastructure): rerun" if ident else "") if x)
+        return base | {"decision": "pending", "acceptance": {"pass": None, "undefined": why, "missing": missing,
+                                                             **({"identity": ident} if ident else {})}}
     # z_best is final only when every arm's primal side is resolved (no run-level infrastructure)
     unresolved = [a for a in ALL_ARMS if arm_metrics(arms_res[a], iv, tgt, None, rules["eps_p"]).get("primal_undefined")]
     if unresolved:
@@ -895,13 +1097,19 @@ def summarize(out_root: Path, panel_path: Path) -> dict:
     """Instance decisions (pass / fail / pending, never failing for a missing or non-rigorous reference or an
     unresolved arm) and the frozen tier decision: Stage 1 jointly >= 3 of 4, then the holdout 2 of 2, the holdout scored
     only after Stage 1 passed and its own reference job (out_root/<name>__lp_reference.json) is done."""
-    panel = json.loads(panel_path.read_text())
-    summary: dict = {"panel": panel_path.name, "panel_sha256": sha256(panel_path.read_bytes()), "instances": {}, "tiers": {}}
+    raw = panel_path.read_bytes()
+    panel = json.loads(raw)
+    panel_sha = sha256(raw)          # the identity every arm result must carry (identity_problems)
+    names = [n for spec in panel["tiers"].values() for n in [*spec["stage1"], *spec.get("holdout", [])]]
+    summary: dict = {"panel": panel_path.name, "panel_sha256": panel_sha, "instances": {}, "tiers": {},
+                     "unexpected": scan_unexpected(out_root, names)}   # flagged directories, never read
     frozen = panel.get("lp_star_frozen", {}).get("intervals", {})
     for tier, spec in panel["tiers"].items():
         s1 = []
         for name in spec["stage1"]:
-            d = instance_decision(name, spec, panel, out_root, frozen.get(name)) | {"tier": tier, "part": "stage1"}
+            iv = frozen.get(name)
+            d = instance_decision(name, spec, panel, out_root, iv, panel_sha, reference_problems(iv, name, panel)) | \
+                {"tier": tier, "part": "stage1"}
             summary["instances"][name] = d
             s1.append(d["decision"])
         gate = tier_decision(s1, None)
@@ -910,8 +1118,10 @@ def summarize(out_root: Path, panel_path: Path) -> dict:
             hold = []
             for name in spec.get("holdout", []):
                 ref = out_root / f"{name}__lp_reference.json"   # computed by the holdout job before any arm result is read
-                iv = json.loads(ref.read_text())["interval"] if ref.exists() else None
-                d = instance_decision(name, spec, panel, out_root, iv) | {"tier": tier, "part": "holdout"}
+                row = json.loads(ref.read_text()) if ref.exists() else None
+                iv = row["interval"] if row else None
+                d = instance_decision(name, spec, panel, out_root, iv, panel_sha, reference_problems(row, name, panel)) | \
+                    {"tier": tier, "part": "holdout"}
                 summary["instances"][name] = d
                 hold.append(d["decision"])
         else:
@@ -920,7 +1130,7 @@ def summarize(out_root: Path, panel_path: Path) -> dict:
                                               "acceptance": {"pass": None, "undefined": f"Stage 1 {gate['stage1']}"}}
         summary["tiers"][tier] = tier_decision(s1, hold) | {"stage1_decisions": dict(zip(spec["stage1"], s1)),
                                                             "holdout_decisions": dict(zip(spec.get("holdout", []), hold)) if hold is not None else None}
-    (out_root / "stage1_summary.json").write_text(json.dumps(summary, default=str, indent=1))
+    write_json_atomic(out_root / "stage1_summary.json", summary)
     return summary
 
 
@@ -982,8 +1192,11 @@ def arm_metrics(r: dict, iv: dict, tgt: Fraction | None, z_best: float | None, e
     gap = None
     if best is not None and z_best is not None:
         gap = (Fraction(best) - Fraction(z_best)) / max(Fraction(1), abs(Fraction(z_best)))
+    # a resolved run (normal end, deadline kill at T, kernel-confirmed OOM) without any incumbent is not near z_best
+    # (Codex review 56 #2): near_best False, never undefined; only infrastructure (above) leaves it undefined
+    near = False if best is None else (None if gap is None else gap <= Fraction(str(eps_p)))
     out = report | {"best": best, "gap_best": None if gap is None else float(gap), "gap_best_exact": None if gap is None else str(gap),
-                    "near_best": None if gap is None else gap <= Fraction(str(eps_p)), "t_best": inc.get("t_best"),
+                    "near_best": near, "no_incumbent": best is None, "t_best": inc.get("t_best"),
                     "primal_undefined": False, "infrastructure": infra}
     if infra:
         return out | {"t_bound": None, "bound_target_T": None, "bgap_LP_T": None, "bgap_LP_T_exact": None, "cert_ok_T": None,
@@ -1012,7 +1225,11 @@ def _bgap(a: dict) -> Fraction | None:
 
 def primal_naive_worse(eng: dict, nint: dict, rule: float, z_best: float | None) -> bool:
     """§6 primal implementation separation: the naive objective exceeds the engineered one by at least ceil(rule *
-    z_best) units for integer objectives (exact integers), else by rule * max(1, |z_best|) exactly."""
+    z_best) units for integer objectives (exact integers), else by rule * max(1, |z_best|) exactly. A resolved naive
+    integer run without any incumbent (accept() has excluded infrastructure) is worse than an engineered verified
+    incumbent (Codex review 56 #2)."""
+    if eng.get("best") is not None and "best" in nint and nint["best"] is None:
+        return True
     if eng.get("best") is not None and nint.get("best") is not None and z_best is not None:
         e, n, z = Fraction(eng["best"]), Fraction(nint["best"]), Fraction(z_best)
         if e.denominator == n.denominator == z.denominator == 1:
@@ -1032,7 +1249,8 @@ def accept(per: dict, headline: str, rules: dict, T: float, z_best: float | None
          the engineered arm also meets the final target (rules["tier_B_requires_final_target"], frozen: yes); Tier C
          (final_target) the engineered arm meets the final target and every control misses it;
       3. primal: engineered near_best, the primal control (ils) misses it, naive integer Benders worse by
-         ceil(0.005 z_best) units."""
+         ceil(0.005 z_best) units. A resolved arm without any incumbent is not near_best (an incumbent-less ILS misses
+         it; an incumbent-less naive integer Benders is worse than an engineered verified incumbent)."""
     eng, naive = per.get("eng"), per.get("naive_lp")
     why = {}
     missing = [a for a in DECISION_ARMS if a not in per]
@@ -1102,6 +1320,8 @@ def main() -> None:
         print("REFERENCE " + json.dumps(r, default=str), flush=True)
     if a.summarize:
         s = summarize(out, Path(a.panel))
+        if s["unexpected"]:
+            print("UNEXPECTED (flagged, never read)", json.dumps(s["unexpected"]), flush=True)
         for name, d in s["instances"].items():
             print("SUMMARY", name, d.get("decision"), json.dumps(d.get("acceptance"), default=str), flush=True)
         for tier, d in s["tiers"].items():
