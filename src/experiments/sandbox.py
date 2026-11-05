@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 
@@ -98,6 +99,9 @@ def seatbelt_profile(case, work, environment, license_file):
     ])
 
 
+NATIVE_SOLVER_LOCK = threading.Lock()
+
+
 class NativeSandboxExecutor:
     # Bytes kept from the end of each of stdout and stderr (the paper's 12 000; the scale-up protocol uses 20 000).
     stream_tail_bytes = 12000
@@ -131,10 +135,12 @@ class NativeSandboxExecutor:
             return tuple(receipt["result"][name] for name in ("exec_ok", "stdout", "stderr", "output"))
         identifier = uuid.uuid4().hex
         evidence = attempt_dir / f"native_execution_{identifier}.json"
-        record = self.execute_bytes(solver, data, timeout, threads, evidence=evidence)
+        with NATIVE_SOLVER_LOCK:  # one candidate solver on the host at a time, across campaign workers
+            record = self.execute_bytes(solver, data, timeout, threads, evidence=evidence)
         if not record["exec_ok"] and not record["integrity_violations"] and any(clue in record["stderr"].lower() for clue in GUROBI_CLUES):
             probe_path = attempt_dir / f"gurobi_diagnostic_{identifier}.json"
-            probe = self.execute_bytes(GUROBI_PROBE.replace("THREADS", str(threads)).encode(), b"{}", timeout, threads, evidence=probe_path)
+            with NATIVE_SOLVER_LOCK:
+                probe = self.execute_bytes(GUROBI_PROBE.replace("THREADS", str(threads)).encode(), b"{}", timeout, threads, evidence=probe_path)
             record["gurobi_diagnostic"] = {"path": probe_path.name, "ok": probe["exec_ok"] and probe["output"] == {"status": "optimal", "objective_value": 1.0, "threads": threads}}
             save(evidence, record)
             if not record["gurobi_diagnostic"]["ok"]:

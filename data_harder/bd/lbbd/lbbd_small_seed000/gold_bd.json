@@ -1,0 +1,117 @@
+{
+  "best_objective": 252.0,
+  "global_lb": 252.0,
+  "global_ub": 252.0,
+  "gap": 0.0,
+  "termination_reason": "optimal",
+  "iters": 13,
+  "total_time": 0.11318450001999736,
+  "iter_records": [],
+  "assignments": [
+    {
+      "task_id": 0,
+      "machine_id": 1,
+      "start": 8
+    },
+    {
+      "task_id": 1,
+      "machine_id": 0,
+      "start": 20
+    },
+    {
+      "task_id": 2,
+      "machine_id": 0,
+      "start": 7
+    },
+    {
+      "task_id": 3,
+      "machine_id": 0,
+      "start": 16
+    },
+    {
+      "task_id": 4,
+      "machine_id": 0,
+      "start": 9
+    },
+    {
+      "task_id": 5,
+      "machine_id": 0,
+      "start": 2
+    },
+    {
+      "task_id": 6,
+      "machine_id": 0,
+      "start": 13
+    },
+    {
+      "task_id": 7,
+      "machine_id": 1,
+      "start": 16
+    },
+    {
+      "task_id": 8,
+      "machine_id": 1,
+      "start": 0
+    }
+  ],
+  "n_cuts": 9,
+  "output": {
+    "status": "optimal",
+    "method": "benders_decomposition",
+    "objective_value": 252.0,
+    "solution": {
+      "assignments": [
+        {
+          "task_id": 0,
+          "machine_id": 1,
+          "start": 8
+        },
+        {
+          "task_id": 1,
+          "machine_id": 0,
+          "start": 20
+        },
+        {
+          "task_id": 2,
+          "machine_id": 0,
+          "start": 7
+        },
+        {
+          "task_id": 3,
+          "machine_id": 0,
+          "start": 16
+        },
+        {
+          "task_id": 4,
+          "machine_id": 0,
+          "start": 9
+        },
+        {
+          "task_id": 5,
+          "machine_id": 0,
+          "start": 2
+        },
+        {
+          "task_id": 6,
+          "machine_id": 0,
+          "start": 13
+        },
+        {
+          "task_id": 7,
+          "machine_id": 1,
+          "start": 16
+        },
+        {
+          "task_id": 8,
+          "machine_id": 1,
+          "start": 0
+        }
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 252.0
+  }
+}

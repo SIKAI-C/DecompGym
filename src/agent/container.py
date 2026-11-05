@@ -141,18 +141,22 @@ class DockerRuntime:
         if not names:
             return []
         stats = self.command("stats", "--no-stream", "--format", "{{json .}}", *names)
-        if stats.returncode:
-            live = []
-            for name in names:
+        if not stats.returncode:
+            return [parse_docker_sample(json.loads(line)) for line in stats.stdout.splitlines() if line.strip()]
+        # A worker may exit between `ps` and `stats`: sample the workers one by one and skip those that are gone.
+        samples = []
+        for name in names:
+            for _ in range(2):
+                single = self.command("stats", "--no-stream", "--format", "{{json .}}", name)
+                if not single.returncode:
+                    samples += [parse_docker_sample(json.loads(line)) for line in single.stdout.splitlines() if line.strip()]
+                    break
                 observed = self.inspect(name)
-                if observed is not None and observed["State"]["Running"]:
-                    live.append(name)
-            if not live:
-                return []
-            stats = self.command("stats", "--no-stream", "--format", "{{json .}}", *live)
-            if stats.returncode:
+                if observed is None or not observed["State"]["Running"]:
+                    break
+            else:
                 raise ContainerError("Cannot sample Docker worker resources")
-        return [parse_docker_sample(json.loads(line)) for line in stats.stdout.splitlines() if line.strip()]
+        return samples
 
     def command(self, *args, timeout=30):
         try:

@@ -1,0 +1,9 @@
+{
+  "seed": 1,
+  "size": "medium",
+  "folder": "bppc_medium_seed001",
+  "ground_truth_objective": 12.0,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 0.1671983749838546
+}

@@ -323,10 +323,27 @@ def main() -> None:
         help="Print JSON instead of a human summary.",
     )
     parser.add_argument("--sizes", nargs="+", choices=["small", "medium", "large"], default=["small", "medium", "large"])
+    parser.add_argument("--family-set", choices=["paper", "harder"], default="paper",
+                        help="paper: the nine paper families (default); harder: the exploration cohort, written to a separate root.")
     parser.add_argument("--regenerate", action="store_true", help="Explicitly regenerate existing instances.")
     args = parser.parse_args()
 
     root = Path(args.instances_root)
+
+    if args.family_set == "harder":
+        import importlib
+        from src.utils.api import HARDER_PROBLEMS
+
+        if root.resolve() == (Path(__file__).resolve().parents[1] / "data").resolve():
+            raise SystemExit("The harder cohort must not be written into the paper's data/ root; pass --instances-root")
+        if args.mode != "generate":
+            raise SystemExit("The harder cohort supports --mode generate; its gold plans are verified during generation")
+        suites = ["bd", "cg"] if args.suite == "all" else [args.suite]
+        for suite in suites:
+            for prob in ([args.problem] if args.problem else list(HARDER_PROBLEMS[suite])):
+                importlib.import_module(f"src.{suite}.{prob}.c_gen").generate_suite(
+                    sizes=args.sizes, num_instances=args.num_instances, out_root=root / suite / prob, seed_offset=args.seed_offset)
+        return
 
     if args.mode in {"generate", "both"}:
         sizes = args.sizes

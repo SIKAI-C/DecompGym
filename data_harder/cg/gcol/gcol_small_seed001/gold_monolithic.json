@@ -1,0 +1,70 @@
+{
+  "best_objective": 4.0,
+  "global_lb": 4.0,
+  "global_ub": 4.0,
+  "groups": [
+    [
+      0,
+      4,
+      5,
+      11,
+      13,
+      15
+    ],
+    [
+      1,
+      10,
+      14
+    ],
+    [
+      2,
+      8,
+      9
+    ],
+    [
+      3,
+      6,
+      7,
+      12
+    ]
+  ],
+  "runtime": 0.0008349418640136719,
+  "output": {
+    "status": "optimal",
+    "method": "column_generation",
+    "objective_value": 4.0,
+    "solution": {
+      "color_classes": [
+        [
+          0,
+          4,
+          5,
+          11,
+          13,
+          15
+        ],
+        [
+          1,
+          10,
+          14
+        ],
+        [
+          2,
+          8,
+          9
+        ],
+        [
+          3,
+          6,
+          7,
+          12
+        ]
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 4.0
+  }
+}

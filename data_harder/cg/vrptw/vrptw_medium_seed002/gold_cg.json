@@ -1,0 +1,72 @@
+{
+  "best_objective": 517.1,
+  "global_lb": 517.1,
+  "global_ub": 517.1,
+  "root_lp": 514.0,
+  "termination_reason": "optimal",
+  "iters": 3,
+  "n_columns": 124,
+  "total_time": 0.03117283299798146,
+  "routes": [
+    [
+      7,
+      8,
+      1,
+      15,
+      6
+    ],
+    [
+      4,
+      12
+    ],
+    [
+      9,
+      3,
+      13
+    ],
+    [
+      5,
+      14,
+      11,
+      2,
+      10
+    ]
+  ],
+  "output": {
+    "status": "optimal",
+    "method": "column_generation",
+    "objective_value": 517.1,
+    "solution": {
+      "routes": [
+        [
+          7,
+          8,
+          1,
+          15,
+          6
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          9,
+          3,
+          13
+        ],
+        [
+          5,
+          14,
+          11,
+          2,
+          10
+        ]
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 517.1
+  }
+}

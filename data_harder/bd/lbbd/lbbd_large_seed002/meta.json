@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "large",
+  "folder": "lbbd_large_seed002",
+  "ground_truth_objective": 302.0,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 11.546602292044554
+}

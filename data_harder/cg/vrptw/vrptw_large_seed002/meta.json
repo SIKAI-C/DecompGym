@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "large",
+  "folder": "vrptw_large_seed002",
+  "ground_truth_objective": 613.5,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 0.04927629203302786
+}

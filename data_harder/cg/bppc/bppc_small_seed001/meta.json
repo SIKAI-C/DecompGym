@@ -1,0 +1,9 @@
+{
+  "seed": 1,
+  "size": "small",
+  "folder": "bppc_small_seed001",
+  "ground_truth_objective": 9.0,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 0.04308945900993422
+}

@@ -1,0 +1,9 @@
+{
+  "seed": 2,
+  "size": "small",
+  "folder": "nrp_small_seed002",
+  "ground_truth_objective": 128.0,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 0.039619167044293135
+}

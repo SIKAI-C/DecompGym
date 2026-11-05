@@ -1,0 +1,47 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a bin packing problem with conflicts:
+  - Items i = 0..n-1 with integer weights weights[i]; identical bins of capacity C.
+  - Some pairs of items conflict and may not be packed in the same bin.
+  - Objective: minimize the number of bins used.
+
+This instance has 40 items, bin capacity 150, and 93 conflicting pairs.
+
+Input file data.json contains:
+  - "n_items", "capacity": int
+  - "weights": list of n_items integers
+  - "conflicts": list of [i, j] pairs
+
+Examples from this instance:
+  - item 0: weight 66
+  - item 1: weight 41
+  - item 2: weight 59
+  - item 3: weight 52
+  - ...
+  - conflict 1 -- 10
+  - conflict 1 -- 16
+
+Task:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Column Generation to solve the problem,
+3) writes output.json with at least:
+{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "column_generation",
+  "objective_value": <number of bins>,
+  "solution": {
+    "bins": [[<item>, ...], ...]
+  }
+}
+Every item must be packed exactly once; each bin's total weight must not exceed the capacity, and no bin may hold a conflicting pair.
+
+Decomposition method requirements:
+
+Use a restricted master problem and pricing subproblems. Use master dual or reduced-cost information to generate columns, add useful columns to the restricted master, and reoptimize iteratively. A final integer solve of the restricted master over the accumulated columns is allowed. Construct the reported solution from this column-generation procedure.
+
+Do not build and solve a separate monolithic optimization model of the full original problem, including for an initial incumbent, initialization, a warm start, a fallback, the reported solution, or an optimality certificate. This prohibition includes a full-original-model feasibility solve with a zero objective and applies to every reachable solution-producing path, including conditional fallback paths, even when decomposition also runs.
+
+Heuristic initialization, directly constructed seed columns, phase-I restricted masters with artificial variables and pricing, valid initial bounds or cuts, and warm-starting a legitimate decomposition master are allowed. A permitted initialization must not obtain its solution from a separate full-original-model solve. The restriction concerns that separate full model, not legitimate decomposition masters, fixed-decision subproblems, pricing problems, or integer restricted masters.
+
+Implement the information feedback required by the requested method. There is no minimum iteration count and no requirement that every instance add a cut or column, or improve the initial incumbent: legitimate immediate convergence or termination is allowed. Report mutually consistent decisions and objective values from the same incumbent. Use status feasible when returning an incumbent without a global optimality proof; optimality of an integer restricted master alone does not prove global optimality.

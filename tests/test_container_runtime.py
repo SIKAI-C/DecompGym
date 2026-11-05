@@ -125,3 +125,22 @@ def test_container_finishing_between_listing_and_sampling_is_not_a_monitor_fault
     monkeypatch.setattr(runtime, "command", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, "finished-worker\n", "") if args[0] == "ps" else subprocess.CompletedProcess(args, 1, "", "No such container"))
     monkeypatch.setattr(runtime, "inspect", lambda _: None)
     assert runtime.resource_samples() == []
+
+
+def test_sampling_skips_a_worker_that_exits_mid_sample_and_keeps_the_others(tmp_path, monkeypatch):
+    runtime = DockerRuntime(seccomp_profile=tmp_path / "profile")
+    sample = '{"Name":"alive","CPUPerc":"1.0%","MemUsage":"10MiB / 1GiB","MemPerc":"1.0%"}'
+
+    def command(*args, **kwargs):
+        if args[0] == "ps":
+            return subprocess.CompletedProcess(args, 0, "alive\ngone\n", "")
+        if args[-1] == "alive":
+            return subprocess.CompletedProcess(args, 0, sample + "\n", "")
+        return subprocess.CompletedProcess(args, 1, "", "No such container")
+
+    monkeypatch.setattr(runtime, "command", command)
+    monkeypatch.setattr(runtime, "inspect", lambda name: None if name == "gone" else {"State": {"Running": True}})
+    assert len(runtime.resource_samples()) == 1
+    monkeypatch.setattr(runtime, "command", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, "alive\n", "") if args[0] == "ps" else subprocess.CompletedProcess(args, 1, "", "daemon error"))
+    with pytest.raises(ContainerError, match="Cannot sample"):
+        runtime.resource_samples()

@@ -1,0 +1,142 @@
+{
+  "best_objective": 187.0,
+  "global_lb": 187.0,
+  "global_ub": 187.0,
+  "iters": 1,
+  "total_time": 0.008321166038513184,
+  "iter_records": [],
+  "final_master_objective": 187.0,
+  "final_vars": {
+    "task_0": [
+      0,
+      3
+    ],
+    "task_1": [
+      1,
+      0
+    ],
+    "task_2": [
+      1,
+      18
+    ],
+    "task_3": [
+      1,
+      9
+    ],
+    "task_4": [
+      0,
+      11
+    ],
+    "task_5": [
+      0,
+      21
+    ],
+    "task_6": [
+      0,
+      15
+    ],
+    "task_7": [
+      0,
+      8
+    ]
+  },
+  "master_metadata": {
+    "assignments": [
+      {
+        "task_id": 0,
+        "machine_id": 0,
+        "start": 3
+      },
+      {
+        "task_id": 1,
+        "machine_id": 1,
+        "start": 0
+      },
+      {
+        "task_id": 2,
+        "machine_id": 1,
+        "start": 18
+      },
+      {
+        "task_id": 3,
+        "machine_id": 1,
+        "start": 9
+      },
+      {
+        "task_id": 4,
+        "machine_id": 0,
+        "start": 11
+      },
+      {
+        "task_id": 5,
+        "machine_id": 0,
+        "start": 21
+      },
+      {
+        "task_id": 6,
+        "machine_id": 0,
+        "start": 15
+      },
+      {
+        "task_id": 7,
+        "machine_id": 0,
+        "start": 8
+      }
+    ]
+  },
+  "sub_metadata": {},
+  "output": {
+    "status": "optimal",
+    "method": "benders_decomposition",
+    "objective_value": 187.0,
+    "solution": {
+      "assignments": [
+        {
+          "task_id": 0,
+          "machine_id": 0,
+          "start": 3
+        },
+        {
+          "task_id": 1,
+          "machine_id": 1,
+          "start": 0
+        },
+        {
+          "task_id": 2,
+          "machine_id": 1,
+          "start": 18
+        },
+        {
+          "task_id": 3,
+          "machine_id": 1,
+          "start": 9
+        },
+        {
+          "task_id": 4,
+          "machine_id": 0,
+          "start": 11
+        },
+        {
+          "task_id": 5,
+          "machine_id": 0,
+          "start": 21
+        },
+        {
+          "task_id": 6,
+          "machine_id": 0,
+          "start": 15
+        },
+        {
+          "task_id": 7,
+          "machine_id": 0,
+          "start": 8
+        }
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 187.0
+  }
+}

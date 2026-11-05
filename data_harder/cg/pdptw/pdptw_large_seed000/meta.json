@@ -1,0 +1,9 @@
+{
+  "seed": 0,
+  "size": "large",
+  "folder": "pdptw_large_seed000",
+  "ground_truth_objective": 566.6,
+  "ground_truth_source": "monolithic_mip",
+  "reference_proved": true,
+  "reference_seconds": 0.07800999999744818
+}

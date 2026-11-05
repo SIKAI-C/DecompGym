@@ -19,7 +19,7 @@ from src.experiments.environment import RuntimeEnvironmentError
 DOCKER_EDIT_POLICY = "fresh-docker-cli-edit-v1"
 IMAGE_TAG = "decompbench-agents-v2:20261013"
 CLI_VERSIONS = {"codex-cli": "codex-cli 0.162.1", "claude-code-cli": "2.1.296 (Claude Code)", "agy-cli": "1.3.1"}
-AUTH_VOLUMES = {"codex-cli": "decompbench-v2-codex-auth", "claude-code-cli": "decompbench-v2-claude-auth", "agy-cli": "decompbench-agy-native-keyring-v1"}
+AUTH_VOLUMES = {"codex-cli": "decompbench-v3-codex-auth", "claude-code-cli": "decompbench-v2-claude-auth", "agy-cli": "decompbench-agy-native-keyring-v1"}
 _PREFLIGHT_LOCK = threading.Lock()
 _PREFLIGHTS = set()
 

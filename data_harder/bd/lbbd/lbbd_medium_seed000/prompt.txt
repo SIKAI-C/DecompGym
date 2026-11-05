@@ -1,0 +1,56 @@
+You are an expert operations research engineer and Python programmer.
+
+You are given a task assignment and scheduling problem:
+  - Tasks j = 0..n-1 must each be assigned to exactly one of the machines i = 0..m-1 and scheduled on it.
+  - Each machine processes at most one task at a time, without preemption.
+  - Task j cannot start before its release time release[j]. On machine i it takes proc_time[i][j] time units
+    and costs proc_cost[i][j].
+  - Task j is due at due[j]; if it completes at time C_j, its tardiness is T_j = max(0, C_j - due[j]),
+    penalized with weight weight[j]. Due dates are soft: a task may finish late.
+  - Objective: minimize sum of processing costs of the chosen assignments + sum_j weight[j] * T_j.
+
+This instance has 12 tasks and 3 machines.
+
+Input file data.json contains:
+  - "n_tasks", "n_machines": int
+  - "release", "due", "weight": lists of length n_tasks (integers)
+  - "proc_time", "proc_cost": lists of n_machines lists of length n_tasks (integers), indexed [machine][task]
+
+Examples from this instance:
+  - task 0: release=12, due=28, weight=2, proc_time by machine=[7, 8, 13], proc_cost by machine=[27, 22, 14]
+  - task 1: release=8, due=21, weight=1, proc_time by machine=[3, 6, 9], proc_cost by machine=[36, 29, 19]
+  - task 2: release=3, due=8, weight=5, proc_time by machine=[3, 2, 5], proc_cost by machine=[14, 11, 7]
+  - task 3: release=11, due=23, weight=3, proc_time by machine=[2, 6, 6], proc_cost by machine=[30, 24, 16]
+  - ...
+
+Task:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) loads data.json,
+2) Implements a Benders decomposition to solve the problem,
+3) writes output.json with at least:
+{
+  "status": "optimal | feasible | infeasible | error",
+  "method": "benders_decomposition",
+  "objective_value": <total processing cost + total weighted tardiness>,
+  "solution": {
+    "assignments": [
+      {
+        "task_id": <int>,
+        "machine_id": <int>,
+        "start": <start time, a number>
+      },
+      ...
+    ]
+  }
+}
+Every task must appear exactly once. Start times must respect release times, and tasks on the same machine must not overlap.
+
+Decomposition method requirements:
+
+Use a master problem for the complicating decisions and recourse-cost estimates. Solve subproblems with the master decisions fixed, and use subproblem information to generate feasibility or optimality cuts and update subsequent master solves. Classical, integer, and logic-based Benders decomposition are allowed; LP duals are not required for integer or logic-based variants. Solving the master and fixed-decision subproblems as LPs or MIPs is allowed. Construct the reported solution from this decomposition, retaining a feasible incumbent when appropriate.
+
+Do not build and solve a separate monolithic optimization model of the full original problem, including for an initial incumbent, initialization, a warm start, a fallback, the reported solution, or an optimality certificate. This prohibition includes a full-original-model feasibility solve with a zero objective and applies to every reachable solution-producing path, including conditional fallback paths, even when decomposition also runs.
+
+Heuristic initialization, directly constructed seed columns, phase-I restricted masters with artificial variables and pricing, valid initial bounds or cuts, and warm-starting a legitimate decomposition master are allowed. A permitted initialization must not obtain its solution from a separate full-original-model solve. The restriction concerns that separate full model, not legitimate decomposition masters, fixed-decision subproblems, pricing problems, or integer restricted masters.
+
+Implement the information feedback required by the requested method. There is no minimum iteration count and no requirement that every instance add a cut or column, or improve the initial incumbent: legitimate immediate convergence or termination is allowed. Report mutually consistent decisions and objective values from the same incumbent. Use status feasible when returning an incumbent without a global optimality proof; optimality of an integer restricted master alone does not prove global optimality.

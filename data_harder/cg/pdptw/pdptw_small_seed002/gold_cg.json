@@ -1,0 +1,50 @@
+{
+  "best_objective": 352.1,
+  "global_lb": 352.1,
+  "global_ub": 352.1,
+  "root_lp": 352.1,
+  "termination_reason": "optimal",
+  "iters": 1,
+  "n_columns": 18,
+  "total_time": 0.0015570000396110117,
+  "routes": [
+    [
+      4,
+      8
+    ],
+    [
+      3,
+      7,
+      2,
+      1,
+      6,
+      5
+    ]
+  ],
+  "output": {
+    "status": "optimal",
+    "method": "column_generation",
+    "objective_value": 352.1,
+    "solution": {
+      "routes": [
+        [
+          4,
+          8
+        ],
+        [
+          3,
+          7,
+          2,
+          1,
+          6,
+          5
+        ]
+      ]
+    }
+  },
+  "verification": {
+    "ok": true,
+    "issues": [],
+    "objective_value": 352.1
+  }
+}
