@@ -179,6 +179,8 @@ def greedy_solution(inst: PSInstance) -> dict[int, tuple[int, int]] | None:
 
 class PSBenders:
     def __init__(self, *, time_limit: float = 60.0, max_cores: int = 3, max_iters: int = 100_000, verbose: bool = False) -> None:
+        if not isinstance(max_cores, int) or max_cores < 1:
+            raise ValueError("max_cores must be a positive integer (an infeasible facility always needs a nogood)")
         self.runtime = ReferenceRuntime(time_limit)
         self.max_cores = max_cores
         self.max_iters = max_iters

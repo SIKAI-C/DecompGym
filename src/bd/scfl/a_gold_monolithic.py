@@ -10,32 +10,74 @@ from src.bd.scfl.a_gen_data import SCFLInstance
 from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
-def objective_step(inst: SCFLInstance) -> float:
-    """Spacing of the attainable objective values. With integer demands and capacities every transportation vertex is
-    integral, so with unit costs in whole thousandths, fixed costs in whole cents and p_s = 1/S every design value
-    f.y + (1/S) sum_s Q_s(y) is a multiple of 0.001 / S. Raises unless every coefficient has exactly that precision
-    (the generator writes round(c, 3) and round(f, 2))."""
+# Optimality certificates.
+# Lattice (exact up to a stated coefficient perturbation). Every CAP allocation cost is lambda_bar_j times a multiple of
+# 1/80, so every exact unit cost c_ij = alloc_ij / lambda_bar_j is a multiple of 1/80 (checked on all 16 vendored
+# files); fixed costs are integers, demands and capacities integers, p_s = 1/S. Hence every design value of the exact
+# rational instance f.y + (1/S) sum_s Q_s(y) (integral transportation vertices) is a multiple of 1/(80 S). The JSON
+# holds the doubles alloc/lambda_bar (the scale-up conversion, not snapped); they differ from the exact multiples by
+# at most `dev` (~1e-14), which moves any design value by at most dev * max_s D_s (`objective_step` requires this to
+# be below step/100). A bound and an incumbent with no lattice value strictly between them (half-step margins) prove
+# the incumbent optimal for the exact instance, provided the solver's own float error stays below about a quarter
+# step (an engineering assumption, as before; step = 0.0125 / S, e.g. 2.5e-4 at S = 50).
+# Relative fallback. When the solver cannot close the gap to that margin (or the data lie on no small grid), an
+# incumbent within CERT_TOL = 1e-9 relative of the bound is accepted as numerically optimal (1e-4 to 1e-3 absolute at
+# objectives 1e5-1e6). Results name the certificate used ("lattice" or "relative").
+CERT_TOL = 1e-9
+GRID_DENOMINATORS = (1, 2, 4, 5, 8, 10, 16, 20, 25, 40, 50, 80, 100, 125, 200, 250, 400, 500, 1000)
+
+
+def objective_step(inst: SCFLInstance) -> float | None:
+    """Spacing 1/(q S) of the exact design values for the smallest q in GRID_DENOMINATORS that puts every unit and
+    fixed cost on a 1/q grid (within 1e-12 relative; see above), or None when no such grid exists."""
     S = inst.n_scenarios
-    if (any(p != 1.0 / S for p in inst.probability) or any(c != round(c, 3) for row in inst.unit_cost for c in row)
-            or any(f != round(f, 2) for f in inst.fixed_cost)
+    if (any(p != 1.0 / S for p in inst.probability)
             or not all(float(v).is_integer() for v in [*inst.capacity, *(d for row in inst.demand for d in row)])):
-        raise ValueError("SCFL certification needs integer demands and capacities, unit costs in 0.001, fixed costs in 0.01 and equal probabilities")
-    return 0.001 / S
+        return None
+    costs = [*inst.fixed_cost, *(c for row in inst.unit_cost for c in row)]
+    for q in GRID_DENOMINATORS:
+        dev = max(abs(v - round(v * q) / q) for v in costs)
+        if dev <= 1e-12 * max(1.0, max(abs(v) for v in costs)):
+            step = 1.0 / (q * S)
+            return step if dev * max(1.0, inst.max_demand) * (inst.n_facilities + 1) < step / 100 else None
+    return None
 
 
-# Certificates assume the computed bound and incumbent, including the certificate's own float arithmetic, stay
-# clearly inside half a step of their exact values (2.5e-5 for S = 20, a relative 2.5e-9 at the generated objective
-# sizes). This is an engineering assumption, not an unconditional proof: the saved instances' errors are ~1e-11, and
-# their optima were also confirmed by exhaustive enumeration of all designs with an exact min-cost flow.
 def lattice_bound(bound: float, step: float) -> float:
-    """A conservative lattice lower bound: a lattice value no greater than the optimum (it may lie below the smallest
-    lattice value above the exact bound, which is safe)."""
+    """A conservative lattice lower bound: a lattice value no greater than the optimum."""
     return math.ceil(bound / step - 0.5) * step
 
 
-def certified(incumbent: float, bound: float, step: float) -> bool:
-    """Exact optimality: no attainable value lies strictly between the bound and the incumbent."""
-    return incumbent <= lattice_bound(bound, step) + 0.5 * step
+def certificate(incumbent: float, bound: float, step: float | None, tol: float = CERT_TOL) -> str | None:
+    """'lattice', 'relative' or None (see above). Non-finite values are rejected. 'lattice' needs the bound within half a
+    step above the incumbent (a larger crossing violates the error assumption) and no lattice value strictly between;
+    otherwise 'relative' needs |incumbent - bound| <= tol * max(1, |incumbent|) (a crossing within tol is roundoff)."""
+    if not (math.isfinite(incumbent) and math.isfinite(bound) and math.isfinite(tol) and tol >= 0):
+        return None
+    if step and bound <= incumbent + 0.5 * step and incumbent <= lattice_bound(bound, step) + 0.5 * step:
+        return "lattice"
+    if abs(incumbent - bound) <= tol * max(1.0, abs(incumbent)):
+        return "relative"
+    return None
+
+
+def certified(incumbent: float, bound: float, step: float | None) -> bool:
+    return certificate(incumbent, bound, step) is not None
+
+
+def design_value(inst: SCFLInstance, y: list[int]) -> float:
+    """f.y + sum_s p_s Q_s(y) recomputed by the independent verifier (min-cost flow, no solver)."""
+    from src.bd.scfl.d_verifier import verify_solution
+
+    res = verify_solution(inst.to_dict(), {"y": y})
+    if not res["ok"]:
+        raise RuntimeError(f"design {y} rejected by the verifier: {res['issues']}")
+    return float(res["objective_value"])
+
+
+def agree(a: float, b: float, step: float | None) -> bool:
+    """Two computations of one design value agree (a quarter step, or 1e-10 relative without a lattice)."""
+    return abs(a - b) <= (0.25 * step if step else 1e-10 * max(1.0, abs(a)))
 
 
 class SCFLBaseline(BaseBaseline[SCFLInstance, gp.Model]):
@@ -74,7 +116,13 @@ class SCFLBaseline(BaseBaseline[SCFLInstance, gp.Model]):
 
     def solve_model(self, inst: SCFLInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
         model.optimize()
-        if model.Status != GRB.OPTIMAL or not certified(model.ObjVal, model.ObjBound, objective_step(inst)):
-            raise RuntimeError(f"Baseline model not proved optimal (status={model.Status}, bound={model.ObjBound}, incumbent={model.ObjVal})")
+        if model.Status != GRB.OPTIMAL or model.SolCount == 0:
+            raise RuntimeError(f"Baseline model not proved optimal (status={model.Status})")
         y = [int(model._y[i].X > 0.5) for i in range(inst.n_facilities)]  # type: ignore[attr-defined]
-        return BaselineSolution(objective=float(model.ObjVal), vars={}, best_bound=float(model.ObjBound), model_state=model, metadata={"y": y})
+        step = objective_step(inst)
+        value = design_value(inst, y)  # the published objective is the verifier's value of the design
+        kind = certificate(value, float(model.ObjBound), step)
+        if not agree(value, float(model.ObjVal), step) or kind is None:
+            raise RuntimeError(f"Baseline model not certified (bound={model.ObjBound}, incumbent={model.ObjVal}, verified={value})")
+        return BaselineSolution(objective=value, vars={}, best_bound=float(model.ObjBound), model_state=model,
+                                metadata={"y": y, "certificate": kind, "objective_step": step, "solver_objective": float(model.ObjVal)})

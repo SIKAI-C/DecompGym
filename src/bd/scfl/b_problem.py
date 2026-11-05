@@ -23,7 +23,7 @@ This instance has {I} facilities, {J} customers and {S} equally likely scenarios
 Input file data.json contains:
   - "n_facilities", "n_customers", "n_scenarios": int
   - "capacity" (u, integers), "fixed_cost" (f): lists of length n_facilities
-  - "unit_cost" (c): n_facilities x n_customers
+  - "unit_cost" (c): n_facilities x n_customers (floating-point values; use them with the full precision given)
   - "demand" (d, integers): n_scenarios x n_customers
   - "probability" (p): list of length n_scenarios
 

@@ -1,21 +1,54 @@
-"""Planning and scheduling with a cumulative resource (Hooker 2004, 2005, 2007; Cire, Coban and Hooker 2016), small scale.
+"""Planning and scheduling with a cumulative resource (Hooker 2004, 2007; Cire, Coban and Hooker 2016), small scale.
 
 Assign each of n jobs to one of m facilities and schedule every facility's jobs: job j starts at an integer time s_j
 with r_j <= s_j and s_j + p_ij <= d_j on its facility i; while it runs, on [s_j, s_j + p_ij), it consumes c_ij units of
 the facility's renewable resource, and the jobs in process on facility i never consume more than C_i at any time.
 Minimize the assignment cost sum_j f_{a(j) j}. All data are integers.
-Semantics and generator follow the scale-up family (DecompBench-scaleup src/bd/lbbd/a_data.py `generate`, Hooker's
-published recipes, numpy default_rng(seed), drawn facility by facility (p, then f), then c):
-    class c: p_ij in [k, 10k) with k = m - i, f_ij in [10(i+1), 20(i+1)), c_j in [1, 10) on every facility, C_i = 10,
-             r_j = 0, d_j = ceil(1.65 (m + 1) n / m);
-    class e: p_ij in [2, P_i], P_i = round(24 - 10 i / (m - 1)), f_ij in [L_i, 2 L_i), L_i = round(16 + 11 i / (m - 1)),
-             c_j in [1, 10), C_i = 10, r_j = 0, d_j = 33.
-Ranges are half-open unless closed brackets are written. Even seeds use class c, odd seeds class e.
+
+Recipe: Hooker's published generator for the minimum-cost classes c and e.
+  Sources: J. N. Hooker, "Planning and scheduling by logic-based Benders decomposition", Operations Research 55(3):
+  588-602 (2007), Section 9 "Problem Generation"; the instance page https://johnhooker.tepper.cmu.edu/instances.htm
+  ("Problem generation" table, footnote D(a) = 5aN(M+1)/M); the instance archive
+  http://public.tepper.cmu.edu/jnh/planningandscheduling.zip (OPL .dat files cNjMmK.dat, eNjMmK.dat).
+  Common to both classes: C_i = 10; c_ij = c_j drawn once per job on [1, 10] and equal on every facility; r_j = 0;
+  one common deadline d.
+  class c (archive: m = 2, 3, 4; n = 10, 12, ..., 38 / 32 / 32): facility speeds differ by up to a factor m, faster
+    facilities cost more. With rows r = 0..m-1 in archive order (row 0 slowest) and k = m - r (Hooker's facility
+    number i = k):  p_rj on [k, 10k],  f_rj on [10(r + 1), 20(r + 1)],  d = 5 alpha n (m + 1) / m with alpha = 1/3,
+    rounded to the nearest integer (Hooker 2007: "the deadline for every task was set to alpha L (rounded to the
+    nearest integer), where L = 5n(m + 1)/m. We used alpha = 1/3").
+  class e (archive: m = 2..10, n = 5m, plus n = 12 at m = 2): speeds within a factor 25/15; with
+    P2_r = 25 - 10 r / (m - 1) (the page's 25 - (i - 1)(10/(M - 1)), row r = i - 1, row 0 slowest):
+    p_rj on [2, P2_r],  f_rj on [400 / P2_r, 800 / P2_r],  d = 33 for n = 5m (the page); the archive's e12j2m* files
+    have d = 40, so d = 33 n / (5m) rounded, which reproduces every e file.
+Integer conventions: an archive-compatible reconstruction of the published recipes. Every value of every c and e
+archive file (195 c, 50 e) lies in these ranges, windows and capacities match exactly, and every range endpoint is
+attained somewhere in the archive except one (e, m = 3, row 0: p tops at 23 of 24 in the five e15j3m files); checked
+in tests/test_harder_lbbd_ps.py when the archive is present: a uniform draw on
+[lo, hi] is an integer in the half-open range [lo, hi) (no c file has p = 10k or c = 10, no e file has c = 10), with
+  c: p_rj in [k, 10k), f_rj in [10(r + 1), 20(r + 1)), c_j in [1, 10);
+  e: p_rj in [2, round(P2_r)), f_rj in [L_r, 2 L_r) with L_r = round(400 / P2_r) for m <= 8 and
+     L_r = round(16 + 11 r / (m - 1)) for m = 9, 10 (the archive's m = 9, 10 files use this linear spacing instead);
+     round = half up;
+  d (class e) = round(6.6 n / m);
+  d (class c) = nearest integer to 5n(m + 1)/(3m), ties rounded DOWN (the archive's c18j4m*, c30j4m* have
+     d = 37, 62 for 37.5, 62.5; the cause in Hooker's code is unknown, the archive fixes the rule).
+Deviation from the printed recipe, in favour of the archive: the instance page, OR 2007 Section 9 and CP 2004 print
+the class-c cost range [2(M - i + 1), 20(M - i + 1)]; every archive c file has f in [10(M - i + 1), 20(M - i + 1)).
+The class-e deadline 33 is printed for n = 5m; round(6.6 n / m) reproduces the archive (incl. e12j2m, d = 40) and
+is an extrapolation for other n (not used by SIZE_CONFIG).
+Random stream: numpy default_rng(seed), facility by facility (p, then f), then c (the scale-up generator's order).
+Classes de/df (different deadlines / release dates, m = 3) are not mimicked: their archive files do not follow one
+fixed rule (de: the facility-0 ranges change between job counts; df: the five df20j3m* files hold 18 jobs). Even
+seeds use class c, odd seeds class e.
+Small-scale adaptation: only (class, n, m) combinations that occur in the archive are generated (SIZE_CONFIG); the
+archive's sizes are kept, so no size is shrunk below the published ones.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,10 +57,14 @@ import numpy as np
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
+# (n_jobs, n_facilities) per class; every pair is an archive size. Calibrated on pilot seeds >= 100 (time-indexed
+# MIP, 1 thread, 60 s): c14j3m 20 pilots 0.02-1.6 s; c16j4m 26 pilots 0.05-1.0 s; e20j4m 6 pilots 0.2-3.5 s;
+# e25j5m 19 pilots 0.2-16.2 s. Rejected for heavy tails: c18j4m (1 of 20 pilots unproved at 60 s), c20j4m (14 pilots,
+# 1 unproved, 1 at 51 s; evaluation seed 0 took 59 s in a first generation), c24j4m (3 of 6 unproved), e30j6m (1 of 6).
 SIZE_CONFIG = {
-    "small": {"n_jobs": 10, "n_facilities": 2},
-    "medium": {"n_jobs": 15, "n_facilities": 3},
-    "large": {"n_jobs": 18, "n_facilities": 4},
+    "small": {"c": (10, 2), "e": (10, 2)},
+    "medium": {"c": (14, 3), "e": (20, 4)},
+    "large": {"c": (16, 4), "e": (25, 5)},
 }
 
 
@@ -69,28 +106,36 @@ class PSInstance(JsonDataMixin):
         return max(self.deadline)
 
 
+def _half_up(x: float) -> int:
+    return math.floor(x + 0.5)
+
+
+def class_ranges(kind: str, n: int, m: int) -> tuple[list[tuple[int, int, int, int]], int]:
+    """Per facility row r (archive order): half-open integer ranges (p_lo, p_hi, f_lo, f_hi), and the common deadline."""
+    if kind == "c":
+        rows = [(m - r, 10 * (m - r), 10 * (r + 1), 20 * (r + 1)) for r in range(m)]
+        return rows, math.ceil(Fraction(5 * n * (m + 1), 3 * m) - Fraction(1, 2))  # nearest integer, ties down
+    if kind == "e":
+        if m < 2:
+            raise ValueError("class e needs m >= 2")
+        rows = []
+        for r in range(m):
+            top = 25 - 10 * r / (m - 1)
+            low = _half_up(400 / top) if m <= 8 else _half_up(16 + 11 * r / (m - 1))
+            rows.append((2, _half_up(top), low, 2 * low))
+        return rows, _half_up(6.6 * n / m)
+    raise ValueError(f"unknown class {kind!r}")
+
+
 def generate(kind: str, n: int, m: int, seed: int) -> dict[str, Any]:
-    """The scale-up generator (`a_data.generate`), returning plain integer lists."""
+    """Hooker's class-c / class-e recipe (see the module docstring), returning plain integer lists."""
+    rows, d = class_ranges(kind, n, m)
     rng = np.random.default_rng(seed)
     p = np.zeros((m, n), dtype=np.int64)
     f = np.zeros((m, n), dtype=np.int64)
-    if kind == "c":
-        for i in range(m):
-            k = m - i
-            p[i] = rng.integers(k, 10 * k, size=n)
-            f[i] = rng.integers(10 * (i + 1), 20 * (i + 1), size=n)
-        d = math.ceil(1.65 * (m + 1) * n / m - 1e-9)
-    elif kind == "e":
-        if m < 2:
-            raise ValueError("class e needs m >= 2")
-        for i in range(m):
-            top = math.floor(24 - 10 * i / (m - 1) + 0.5)
-            low = math.floor(16 + 11 * i / (m - 1) + 0.5)
-            p[i] = rng.integers(2, top + 1, size=n)
-            f[i] = rng.integers(low, 2 * low, size=n)
-        d = 33
-    else:
-        raise ValueError(f"unknown class {kind!r}")
+    for i, (plo, phi, flo, fhi) in enumerate(rows):
+        p[i] = rng.integers(plo, phi, size=n)
+        f[i] = rng.integers(flo, fhi, size=n)
     c = rng.integers(1, 10, size=n)
     return {"kind": kind, "n_jobs": n, "n_facilities": m, "capacity": [10] * m, "release": [0] * n, "deadline": [d] * n,
             "proc": p.tolist(), "rate": np.tile(c, (m, 1)).tolist(), "cost": f.tolist()}
@@ -101,8 +146,9 @@ class PSGenerator(BaseInstanceGenerator[PSInstance]):
         if size_label not in SIZE_CONFIG:
             raise ValueError(f"Unknown size_label '{size_label}'. Expected one of {list(SIZE_CONFIG)}.")
         seed = 0 if seed is None else int(seed)
-        size = SIZE_CONFIG[size_label]
-        return PSInstance(instance_size=size_label, **generate("c" if seed % 2 == 0 else "e", size["n_jobs"], size["n_facilities"], seed))
+        kind = "c" if seed % 2 == 0 else "e"
+        n, m = SIZE_CONFIG[size_label][kind]
+        return PSInstance(instance_size=size_label, **generate(kind, n, m, seed))
 
 
 def generate_lbbd_ps_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:
