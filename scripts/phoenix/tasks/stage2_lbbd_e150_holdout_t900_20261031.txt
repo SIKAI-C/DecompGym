@@ -1,0 +1,10 @@
+lbbd lbbd/ge150j30m_s5.json mip 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s5.json ref_xl 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s5.json naive_bd 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s5.json ls 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s5.json cpsat 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s6.json mip 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s6.json ref_xl 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s6.json naive_bd 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s6.json ls 900 stage2_lbbd_holdout_t900_20261031
+lbbd lbbd/ge150j30m_s6.json cpsat 900 stage2_lbbd_holdout_t900_20261031

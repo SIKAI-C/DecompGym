@@ -1,0 +1,12 @@
+rcsp rcsp/s5_t591_single.json mip 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s5_t591_single.json ref_xl 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s5_t591_single.json naive_cg 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s5_t591_multi.json mip 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s5_t591_multi.json ref_xl 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s5_t591_multi.json naive_cg 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s7_t599_single.json mip 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s7_t599_single.json ref_xl 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s7_t599_single.json naive_cg 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s7_t599_multi.json mip 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s7_t599_multi.json ref_xl 900 stage2_rcsp_holdout_t900_20261031
+rcsp rcsp/s7_t599_multi.json naive_cg 900 stage2_rcsp_holdout_t900_20261031

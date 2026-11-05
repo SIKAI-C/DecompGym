@@ -1,0 +1,16 @@
+pdptw pdptw/lr1_4_9.vrp mip 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_4_9.vrp ref_xl 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_4_9.vrp naive_cg 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_4_9.vrp mip_init 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_4_6.vrp mip 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_4_6.vrp ref_xl 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_4_6.vrp naive_cg 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_4_6.vrp mip_init 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_6_9.vrp mip 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_6_9.vrp ref_xl 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_6_9.vrp naive_cg 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lr1_6_9.vrp mip_init 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_6_6.vrp mip 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_6_6.vrp ref_xl 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_6_6.vrp naive_cg 900 stage2_pdptw_holdout_t900_20261031
+pdptw pdptw/lrc1_6_6.vrp mip_init 900 stage2_pdptw_holdout_t900_20261031

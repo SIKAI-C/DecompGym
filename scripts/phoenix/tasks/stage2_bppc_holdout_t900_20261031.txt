@@ -1,0 +1,16 @@
+bppc bppc/da250_r6_k9.txt mip 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k9.txt ref_xl 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k9.txt naive_cg 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k9.txt ls 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k10.txt mip 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k10.txt ref_xl 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k10.txt naive_cg 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/da250_r6_k10.txt ls 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k9.txt mip 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k9.txt ref_xl 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k9.txt naive_cg 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k9.txt ls 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k10.txt mip 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k10.txt ref_xl 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k10.txt naive_cg 900 stage2_bppc_holdout_t900_20261031
+bppc bppc/ua500_r9_k10.txt ls 900 stage2_bppc_holdout_t900_20261031

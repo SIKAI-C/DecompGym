@@ -1,0 +1,12 @@
+hub hub/AP90L50/data.json mip 900 stage1_hub_t900_20261030/AP90L50
+hub hub/AP90L50/data.json ref_xl 900 stage1_hub_t900_20261030/AP90L50
+hub hub/AP90L50/data.json naive_bd 900 stage1_hub_t900_20261030/AP90L50
+hub hub/AP90T50/data.json mip 900 stage1_hub_t900_20261030/AP90T50
+hub hub/AP90T50/data.json ref_xl 900 stage1_hub_t900_20261030/AP90T50
+hub hub/AP90T50/data.json naive_bd 900 stage1_hub_t900_20261030/AP90T50
+hub hub/AP100L50/data.json mip 900 stage1_hub_t900_20261030/AP100L50
+hub hub/AP100L50/data.json ref_xl 900 stage1_hub_t900_20261030/AP100L50
+hub hub/AP100L50/data.json naive_bd 900 stage1_hub_t900_20261030/AP100L50
+hub hub/AP100T50/data.json mip 900 stage1_hub_t900_20261030/AP100T50
+hub hub/AP100T50/data.json ref_xl 900 stage1_hub_t900_20261030/AP100T50
+hub hub/AP100T50/data.json naive_bd 900 stage1_hub_t900_20261030/AP100T50

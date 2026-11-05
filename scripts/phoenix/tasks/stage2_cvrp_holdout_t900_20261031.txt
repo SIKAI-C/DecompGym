@@ -1,0 +1,9 @@
+cvrp cvrp/X-n129-k18.vrp mip 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n129-k18.vrp ref_xl 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n129-k18.vrp naive_cg 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n172-k51.vrp mip 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n172-k51.vrp ref_xl 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n172-k51.vrp naive_cg 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n181-k23.vrp mip 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n181-k23.vrp ref_xl 900 stage2_cvrp_holdout_t900_20261031
+cvrp cvrp/X-n181-k23.vrp naive_cg 900 stage2_cvrp_holdout_t900_20261031
