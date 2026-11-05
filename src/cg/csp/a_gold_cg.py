@@ -101,6 +101,10 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
         for k, v in self.pricing_params.items():
             model.setParam(k, v)
 
+        # Pool alternatives enrich the integer restricted master (as in the bin packing reference). Pricing stays the
+        # classical unbounded knapsack, so the master LP is the Gilmore-Gomory relaxation.
+        model.Params.PoolSearchMode = 2
+        model.Params.PoolSolutions = 64
         a = model.addVars(items, vtype=GRB.INTEGER, lb=0, name="a")
         model.addConstr(gp.quicksum(widths[i] * a[i] for i in items) <= inst.stock_size, name="capacity")
         model.addConstr(gp.quicksum(a[i] for i in items) >= 1, name="nontrivial")
@@ -114,8 +118,18 @@ class CuttingStockColumnGeneration(BaseColumnGeneration[CuttingStockInstance, li
         z_price = float(model.ObjVal)
         pattern = [round(a[i].X) for i in items]
         reduced_cost = 1.0 - float(model.ObjBound)
+        known = {tuple(pat) for pat in patterns}
+        for index in range(model.SolCount):
+            model.Params.SolutionNumber = index
+            candidate = [round(a[i].Xn) for i in items]
+            # The base loop adds the improving best column itself.
+            if candidate == pattern and reduced_cost < -self.rc_tolerance:
+                continue
+            if tuple(candidate) not in known:
+                patterns.append(candidate)
+                known.add(tuple(candidate))
 
-        return PricingResult(pattern=pattern, reduced_cost=reduced_cost, metadata={"dual_value": z_price, "lp_bound": master_solution.objective / max(1.0, float(model.ObjBound))})
+        return PricingResult(pattern=pattern, reduced_cost=reduced_cost, metadata={"dual_value": z_price, "pricing_pool_solutions": model.SolCount, "lp_bound": master_solution.objective / max(1.0, float(model.ObjBound))})
 
 
     def solve_integer_master(

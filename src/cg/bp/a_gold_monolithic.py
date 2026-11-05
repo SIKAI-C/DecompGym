@@ -4,9 +4,9 @@ from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
-import numpy as np
 
 from src.cg.bp.a_gen_data import BinPackingInstance
+from src.cg.bp.arcflow import build_arcflow, decompose_flow
 from src.utils.base_baseline_class import BaseBaseline, BaselineSolution
 
 
@@ -21,7 +21,7 @@ def _aggregate_items(inst: BinPackingInstance) -> tuple[list[int], list[int]]:
 
 
 class BinPackingBaseline(BaseBaseline[BinPackingInstance, gp.Model]):
-    """Full MIP for bin packing using BaseBaseline structure."""
+    """Arc-flow MIP (Valerio de Carvalho 1999; src/cg/bp/arcflow.py); its LP bound is the Gilmore-Gomory bound."""
 
     def __init__(self, *, params: dict[str, Any] | None = None, verbose: bool = False) -> None:
         super().__init__(verbose=verbose)
@@ -30,76 +30,29 @@ class BinPackingBaseline(BaseBaseline[BinPackingInstance, gp.Model]):
     def load_instance(self, instance_name: str) -> BinPackingInstance:
         return BinPackingInstance.from_json_file(instance_name)
 
-    def build_model(self, inst: BinPackingInstance) -> gp.Model:
+    def build_model(self, inst):
         sizes, demands = _aggregate_items(inst)
-        n_types = len(sizes)
-        max_bins = sum(demands)
-
-        model = gp.Model("bp_monolithic")
+        model, state = build_arcflow(sizes, demands, inst.bin_capacity, "bp_monolithic_arcflow")
         model.Params.OutputFlag = 1 if self.verbose else 0
+        model.Params.Threads = 1  # the 60 s single-thread reference protocol; user params may override
         for k, v in self.params.items():
             model.setParam(k, v)
-
-        bins = range(max_bins)
-        items = range(n_types)
-
-        y = model.addVars(bins, vtype=GRB.BINARY, name="y")
-        x = model.addVars(items, bins, vtype=GRB.INTEGER, lb=0, name="x")
-
-        for b in bins:
-            model.addConstr(
-                gp.quicksum(sizes[i] * x[i, b] for i in items) <= inst.bin_capacity * y[b],
-                name=f"cap_{b}",
-            )
-        for i in items:
-            model.addConstr(gp.quicksum(x[i, b] for b in bins) >= demands[i], name=f"demand_{i}")
-
-        model.setObjective(gp.quicksum(y[b] for b in bins), GRB.MINIMIZE)
-        model._vars = {"x": x, "y": y, "sizes": sizes, "demands": demands, "bins": list(bins)}  # type: ignore[attr-defined]
+        model._vars = state  # type: ignore[attr-defined]
         return model
 
-    def solve_model(self, inst: BinPackingInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
+    def solve_model(self, inst, model: gp.Model) -> BaselineSolution[gp.Model]:
         model.optimize()
         if model.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Baseline model not optimal (status={model.Status})")
-
-        vars_ = model._vars  # type: ignore[attr-defined]
-        x = vars_["x"]
-        y = vars_["y"]
-        bins = vars_["bins"]
-        sizes: list[int] = vars_["sizes"]
-
-        x_val = np.asarray([[x[i, b].X for b in bins] for i in range(len(sizes))], dtype=float)
-        y_val = np.asarray([y[b].X for b in bins], dtype=float)
-
-        var_dict: dict[str, Any] = {}
-        for b, yb in y.items():
-            var_dict[f"y_{b}"] = float(yb.X)
-            for i in range(len(sizes)):
-                var_dict[f"x_{i}_{b}"] = float(x[i, b].X)
-
-        patterns = []
-        pattern_id = 0
-        for b in bins:
-            if y[b].X <= 0.5:
-                continue
-            contents = []
-            for i in range(len(sizes)):
-                cnt = round(x[i, b].X)
-                if cnt > 0:
-                    contents.append({"item_id": i, "count": cnt})
-            patterns.append({"pattern_id": pattern_id, "usage": 1, "contents": contents})
-            pattern_id += 1
-
+        state = model._vars  # type: ignore[attr-defined]
+        patterns = [{"pattern_id": p, "usage": usage, "contents": [{"item_id": i, "count": c} for i, c in enumerate(counts) if c > 0]}
+                    for p, (counts, usage) in enumerate(decompose_flow(state))]
+        var_dict = {"z": float(state["z"].X)}
         best_bound = float(model.ObjBound) if model.ObjBound < 1e20 else None
         return BaselineSolution(
             objective=float(model.ObjVal),
             vars=var_dict,
             best_bound=best_bound,
             model_state=model,
-            metadata={
-                "patterns": patterns,
-                "y_assignment": y_val.tolist(),
-                "x_assignment": x_val.tolist(),
-            },
+            metadata={"patterns": patterns, "formulation": "arc-flow"},
         )

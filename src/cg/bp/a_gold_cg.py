@@ -23,6 +23,23 @@ def _aggregate_items(inst: BinPackingInstance) -> tuple[list[int], list[int]]:
     return sizes, demands
 
 
+def _ffd_patterns(sizes: list[int], demands: list[int], capacity: int) -> list[list[int]]:
+    """Bins of first-fit decreasing as count vectors over the aggregated types."""
+    bins: list[tuple[int, list[int]]] = []  # (load, counts)
+    for i in sorted(range(len(sizes)), key=lambda t: -sizes[t]):
+        for _ in range(demands[i]):
+            for b, (load, counts) in enumerate(bins):
+                if load + sizes[i] <= capacity:
+                    counts[i] += 1
+                    bins[b] = (load + sizes[i], counts)
+                    break
+            else:
+                counts = [0] * len(sizes)
+                counts[i] = 1
+                bins.append((sizes[i], counts))
+    return [counts for _, counts in bins]
+
+
 def _trim_surplus_bins(patterns: list[list[int]], usages: dict[int, float], demands: list[int]) -> dict[int, float]:
     """Drop redundant bins in a feasible integer incumbent, in output-conversion order."""
     remaining = list(demands)
@@ -50,8 +67,10 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
         rc_tol: float = 1e-6,
         verbose: bool = False,
         time_limit: float = 60.0,
+        ffd_warm_start: bool = False,
     ) -> None:
         super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
+        self.ffd_warm_start = ffd_warm_start  # litgen references only; the paper-era default stays off
         self.master_params = master_params or {}
         self.pricing_params = pricing_params or {}
         self.rc_tolerance = rc_tol
@@ -68,6 +87,10 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
             if max_cnt > 0:
                 pat = [0] * m
                 pat[i] = max_cnt
+                patterns.append(pat)
+        # Optional warm start (litgen references): the bins of first-fit decreasing, so the integer master always contains a heuristic packing.
+        for pat in (_ffd_patterns(sizes, demands, inst.bin_capacity) if self.ffd_warm_start else []):
+            if pat not in patterns:
                 patterns.append(pat)
         if not patterns:
             raise RuntimeError("No initial patterns constructed; check instance.")

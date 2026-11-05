@@ -1,25 +1,55 @@
 """Bin packing with conflicts: pack items into the fewest bins of one capacity; conflicting items may not share a bin.
 
-Weights follow the classical uniform recipe (Gendreau, Laporte and Semet 2004; Muritiba et al. 2010):
-weights in [20, 100], capacity 150, and a random conflict graph of the given density.
+Small-scale instances follow the arbitrary-conflict-graph classes of Sadykov and Vanderbeck (2013):
+R. Sadykov, F. Vanderbeck, "Bin packing with conflicts: a generic branch-and-price algorithm", INFORMS Journal on
+Computing 25(2):244-255 (classes "ua" and "da"; described in Capua, Frota, Ochi, Vidal 2017, arXiv:1705.08495, Sec. 4:
+"(ta) and (ua) have the same characteristics as the instances of sets (t) and (u), but with an arbitrary conflict
+graph ... edge densities from 10% to 90%"; "(d) and (da) were generated with item weights uniformly distributed in
+[500, 2500], and a bin capacity of 10000 ... 120, 250 or 500 items").
+  - UA items: the (u) class of Muritiba, Iori, Malaguti, Toth (2010), INFORMS JOC 22(3):401-415, i.e. Falkenauer (1996)
+    "uniform" items: integer weights U{20, ..., 100}, capacity 150 (n in {120, 250, 500, 1000} in the literature).
+  - DA items: integer weights U{500, ..., 2500}, capacity 10000 (n in {120, 250, 500}).
+  - Arbitrary conflict graph with edge density rho: uniformly random item pairs, added if new, until
+    |E| = ceil(rho n (n - 1) / 2) (the same convention as the scale-up files, src.cg.bppc.a_data.random_conflicts).
+The ua/ta sets of the literature reuse the Muritiba item files and only replace the graph; here the UA items are drawn
+directly from the Falkenauer-U distribution, since the published files have n >= 120.
+
+Adaptations (named): (1) size: n is shrunk to 30/35/40 (SIZE_CONFIG; n = 50 failed the 60 s proof on 4 of 6 pilot seeds) so that the monolithic MIP proves optimality within 60 s (aim; litgen_suite rejects any instance where it does not)
+(Threads = 1); (2) regime mix: even benchmark seeds draw DA, odd seeds UA (seeds 0-2 give DA, UA, DA); (3) density:
+one value of the published grid {0.1, ..., 0.9} per regime (DENSITY), fixed for every size and seed;
+(4) randomness: Python's random.Random(f"bppc-litgen:{regime}:{size}:{seed}"), weights first, then the graph.
+The recipe (regime, density, edge count) is recorded in meta.json, not in data.json.
+The previous harder-cohort generator (G(n, p) with p ~ U[0.1, 0.4]) is kept in the harder-family branch history.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import random
 from typing import Any, cast
 
+from src.cg.bppc.a_data import random_conflicts
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-SIZE_CONFIG = {
-    "small": {"n_range": (20, 24)},
-    "medium": {"n_range": (30, 35)},
-    "large": {"n_range": (40, 45)},
+REGIMES = {
+    "UA": {"weight_range": (20, 100), "capacity": 150},
+    "DA": {"weight_range": (500, 2500), "capacity": 10000},
 }
 
-DEFAULT_CONFIG = {"weight_range": (20, 100), "capacity": 150, "density_range": (0.1, 0.4)}
+# One published density per regime (Sadykov-Vanderbeck grid 0.1-0.9).
+DENSITY = {"UA": 0.5, "DA": 0.5}
+
+SIZE_CONFIG = {
+    "small": {"UA": 30, "DA": 30},
+    "medium": {"UA": 35, "DA": 35},
+    "large": {"UA": 40, "DA": 40},
+}
+
+
+def regime_for_seed(seed: int) -> str:
+    return "DA" if seed % 2 == 0 else "UA"
 
 
 @dataclass
@@ -42,17 +72,30 @@ class BPPCInstance(JsonDataMixin):
         return cast("BPPCInstance", super().from_json_file(path))
 
 
+def sv_instance(size_label: str, n: int, regime: str, rho: float, rnd: random.Random) -> BPPCInstance:
+    """One Sadykov-Vanderbeck arbitrary-graph instance (weights first, then the graph, from one stream)."""
+    cfg = REGIMES[regime]
+    lo, hi = cfg["weight_range"]
+    weights = [rnd.randint(lo, hi) for _ in range(n)]
+    conflicts = sorted([a, b] for a, b in random_conflicts(n, rho, rnd))
+    return BPPCInstance(size_label, n, cfg["capacity"], weights, conflicts)
+
+
+def recipe_record(seed: int, size: str) -> dict[str, Any]:
+    regime = regime_for_seed(seed)
+    n = SIZE_CONFIG[size][regime]
+    return {"recipe": f"sadykov-vanderbeck-2013-{regime.lower()}", "regime": regime, "density": DENSITY[regime],
+            "n_items": n, "n_conflicts": math.ceil(DENSITY[regime] * n * (n - 1) / 2 - 1e-9)}
+
+
 class BPPCGenerator(BaseInstanceGenerator[BPPCInstance]):
     def generate_instance(self, *, seed: int | None = None, size_label: str = "medium") -> BPPCInstance:
         if size_label not in SIZE_CONFIG:
             raise ValueError(f"Unknown size_label '{size_label}'. Expected one of {list(SIZE_CONFIG)}.")
-        cfg = DEFAULT_CONFIG
-        rng = random.Random(seed)
-        n = rng.randint(*SIZE_CONFIG[size_label]["n_range"])
-        density = rng.uniform(*cfg["density_range"])
-        weights = [rng.randint(*cfg["weight_range"]) for _ in range(n)]
-        conflicts = [[a, b] for a in range(n) for b in range(a + 1, n) if rng.random() < density]
-        return BPPCInstance(size_label, n, cfg["capacity"], weights, conflicts)
+        seed = 0 if seed is None else seed
+        regime = regime_for_seed(seed)
+        rnd = random.Random(f"bppc-litgen:{regime}:{size_label}:{seed}")
+        return sv_instance(size_label, SIZE_CONFIG[size_label][regime], regime, DENSITY[regime], rnd)
 
 
 def generate_bppc_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:

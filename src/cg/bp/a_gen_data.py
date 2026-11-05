@@ -1,3 +1,24 @@
+"""1D bin packing instances generated with the Scholl, Klein and Juergens (1997) data set 1 recipe.
+
+Source: A. Scholl, R. Klein, C. Juergens (1997), "BISON: A fast hybrid procedure for exactly solving the
+one-dimensional bin packing problem", Computers & Operations Research 24(7):627-645, data set 1, as distributed in
+BPPLIB (M. Delorme, M. Iori, S. Martello (2018), "BPPLIB: a library for bin packing and cutting stock problems",
+Optimization Letters 12:235-250; https://github.com/mdelorme2/BPPLIB, "Scholl 1": 720 instances, n between 50 and
+500, c between 100 and 150).
+
+Data set 1 is a full factorial design (20 instances per cell, names N<a>C<b>W<c>_<letter>):
+  - n in {50, 100, 200, 500} items (N1..N4),
+  - capacity c in {100, 120, 150} (C1, C2, C3),
+  - integer weights drawn independently and uniformly from [1, 100], [20, 100] or [30, 100] (W1, W2, W4).
+
+This generator follows one cell family exactly: SCHOLL_CLASS (capacity and weight range), weights i.i.d. uniform
+integers, and the three size labels use the three smallest published sizes, small/medium/large = N1/N2/N3 =
+50/100/200 items (no shrinking; the arc-flow MIP of src/cg/bp/arcflow.py proved
+optimality well within the 60 s protocol on every pilot seed; litgen_suite rejects any instance where it does not,
+Threads = 1). Weights come from Python's random.Random(seed).randint; BISON's random-number
+stream is not reproduced (the published files are not used as evaluation instances).
+The paper-era generator (factor-scaled sizes of 10-60 % of a random capacity) is preserved in the paper code base.
+"""
 from __future__ import annotations
 # ruff: noqa: I001
 
@@ -9,30 +30,22 @@ from typing import Any, cast
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 # ---------------------------------------------------------------------------
-# Problem config
+# Problem config (Scholl data set 1; see the module docstring)
 # ---------------------------------------------------------------------------
 
+SCHOLL_CLASS = {"name": "scholl1-C2W2", "capacity": 120, "weight_range": (20, 100)}
+
 DEFAULT_CONFIG = {
-    "n_items_range": (12, 25),
-    "bin_capacity_range": (80, 160),
-    "size_min_frac": 0.10,
-    "size_max_frac": 0.60,
     "bin_unit": "volume_units",
     "item_name_prefix": "Shipment_",
 }
 
+# Number of items per size label: the published Scholl sizes N1, N2, N3.
 SIZE_SCALING = {
-    "small": {"n_item_factor": 0.7, "capacity_factor": 0.8},
-    "medium": {"n_item_factor": 1.0, "capacity_factor": 1.0},
-    "large": {"n_item_factor": 1.4, "capacity_factor": 1.2},
+    "small": {"n_items": 50},
+    "medium": {"n_items": 100},
+    "large": {"n_items": 200},
 }
-
-
-def _scale_range(rng: tuple[int, int], factor: float, *, minimum: int = 1) -> tuple[int, int]:
-    low, high = rng
-    new_low = max(minimum, round(low * factor))
-    new_high = max(new_low, round(high * factor))
-    return new_low, new_high
 
 
 @dataclass
@@ -76,8 +89,22 @@ class BinPackingInstance(JsonDataMixin):
         return cast("BinPackingInstance", super().from_json_file(path))
 
 
+def first_fit_decreasing_bins(sizes: list[int], demands: list[int], capacity: int) -> int:
+    """Number of bins used by first-fit decreasing: a valid upper bound on the optimum."""
+    loads: list[int] = []
+    for size, count in sorted(zip(sizes, demands), reverse=True):
+        for _ in range(count):
+            for b, load in enumerate(loads):
+                if load + size <= capacity:
+                    loads[b] += size
+                    break
+            else:
+                loads.append(size)
+    return len(loads)
+
+
 class BinPackingGenerator(BaseInstanceGenerator[BinPackingInstance]):
-    """Synthetic bin packing generator (identical bins, size-labeled)."""
+    """Scholl data set 1 bin packing generator (SCHOLL_CLASS); n is set by the size label."""
 
     def __init__(self, *, size_label: str = "medium", seed: int = 0) -> None:
         self.default_size_label = size_label
@@ -94,29 +121,24 @@ class BinPackingGenerator(BaseInstanceGenerator[BinPackingInstance]):
             raise ValueError(f"Unknown size_label '{size}'. Expected one of {list(SIZE_SCALING)}.")
 
         cfg = DEFAULT_CONFIG
-        scale = SIZE_SCALING[size]
         rng = random.Random(seed if seed is not None else self.default_seed)
-
-        n_items_range = _scale_range(cfg["n_items_range"], scale["n_item_factor"], minimum=3)
-        cap_range = _scale_range(cfg["bin_capacity_range"], scale["capacity_factor"], minimum=5)
-
-        n_items = rng.randint(*n_items_range)
-        bin_capacity = rng.randint(*cap_range)
-
-        items: list[BPItem] = []
-        for i in range(n_items):
-            min_size = max(1, int(cfg["size_min_frac"] * bin_capacity))
-            max_size = max(min_size, int(cfg["size_max_frac"] * bin_capacity))
-            size_val = rng.randint(min_size, max_size)
-            size_val = min(size_val, bin_capacity)
-            items.append(BPItem(id=i, name=f"{cfg.get('item_name_prefix', 'Item_')}{i}", size=size_val))
-
+        w_lo, w_hi = SCHOLL_CLASS["weight_range"]
+        items = [
+            BPItem(id=i, name=f"{cfg['item_name_prefix']}{i}", size=rng.randint(w_lo, w_hi))
+            for i in range(SIZE_SCALING[size]["n_items"])
+        ]
         return BinPackingInstance(
             instance_size=size,
-            bin_capacity=bin_capacity,
-            bin_unit=cfg.get("bin_unit", "units"),
+            bin_capacity=SCHOLL_CLASS["capacity"],
+            bin_unit=cfg["bin_unit"],
             items=items,
         )
+
+
+def recipe_record(seed: int, size: str) -> dict[str, Any]:
+    """Recipe metadata of a benchmark instance (for meta.json)."""
+    return {"recipe": SCHOLL_CLASS["name"], "bin_capacity": SCHOLL_CLASS["capacity"],
+            "weight_range": list(SCHOLL_CLASS["weight_range"]), "n_items": SIZE_SCALING[size]["n_items"]}
 
 
 def generate_bp_instance(

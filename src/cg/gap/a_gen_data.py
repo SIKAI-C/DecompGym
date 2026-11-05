@@ -1,6 +1,32 @@
+"""Generalized assignment (minimization) instances generated with the Chu-Beasley / Yagiura type D and E recipes.
+
+Sources:
+  - P. C. Chu, J. E. Beasley (1997), "A genetic algorithm for the generalised assignment problem", Computers &
+    Operations Research 24(1):17-23 (types A-D; OR-Library gapinfo, https://people.brunel.ac.uk/~mastjjb/jeb/orlib/gapinfo.html);
+  - M. Laguna, J. P. Kelly, J. L. Gonzalez-Velarde, F. Glover (1995), EJOR 81:176-189 (type E);
+  - M. Yagiura, T. Ibaraki, F. Glover (2004), INFORMS JOC 16(2):133-151, and (2006) EJOR 169:548-569 (types D and E
+    as minimization problems; instance archive https://www-or.amp.i.kyoto-u.ac.jp/~yagiura/gap/).
+Notation here: machines j (Yagiura's agents), jobs i, resource a[i][j], cost c[i][j], capacity b[j], m machines.
+  - Type D: a_ij ~ U{1, ..., 100}; c_ij = 111 - a_ij + e_ij with e_ij ~ U{-10, ..., 10}.
+  - Type E: a_ij = floor(1 - 10 ln x_ij), x_ij ~ U(0, 1]; c_ij = floor(1000 / a_ij - 10 y_ij), y_ij ~ U[0, 1).
+  - Both: b_j = floor(0.8 * sum_i a_ij / m).
+The integer conventions (floor for E's a and c and for b, integer noise for D) were checked against the published
+files (Yagiura's d*/e* files as redistributed by fontanf/generalizedassignmentsolver): D: c + a - 111 spans exactly
+[-10, 10]; E: a in [1, 91] with P(a = k) matching floor (not rounding), c - 1000 / a in (-11, 0]; b = floor(0.8 sum / m).
+Draw order: per job i, per machine j (a_ij then the cost noise), with Python's random.Random.
+
+Adaptations (named): (1) size: Yagiura's D/E sets have n >= 100 and m in {5, ..., 80}; here the
+published ratio n/m = 5 (e.g. (m, n) = (20, 100)) is selected and m is shrunk (SIZE_SCALING) so that the monolithic MIP proves optimality within 60 s (aim; litgen_suite rejects any instance where it does not)
+(Threads = 1). (2) type mix: even benchmark seeds draw type D, odd seeds type E (seeds 0-2 give D, E, D).
+(3) feasibility policy: the instance with redraw index k = 0 is drawn from random.Random(f"gap-litgen:{seed}:{k}");
+if it has no feasible assignment, k is increased and the instance is redrawn (the type and redraw index are recorded in meta.json).
+Feasibility is decided by a greedy sufficient check and, if that fails, an exact feasibility MIP.
+The paper-era generator (independent costs with machine bias, capacity 0.9 sum a) is preserved in the paper code base.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import random
 from typing import Any, cast
@@ -8,28 +34,72 @@ from typing import Any, cast
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-SIZE_SCALING = {"small": 0.7, "medium": 1.0, "large": 1.15}
+# Litgen sizes: (machines m, jobs n) with the published ratio n / m = 5.
+SIZE_SCALING = {"small": {"m": 4, "n": 20}, "medium": {"m": 6, "n": 30}, "large": {"m": 8, "n": 40}}
 
+GAP_TYPES = {
+    "D": {"resource_range": (1, 100), "cost_base": 111, "cost_noise": 10, "capacity_share": 0.8},
+    "E": {"exp_scale": 10.0, "cost_numerator": 1000.0, "cost_noise": 10.0, "capacity_share": 0.8},
+}
 
 DEFAULT_CONFIG = {
-    "n_jobs_range": (5, 8),
-    "n_machines_range": (2, 3),
-    "resource_min": 2,
-    "resource_max": 8,
-    "base_cost_min": 8.0,
-    "base_cost_max": 18.0,
-    "machine_bias_scale": 0.25,
-    "capacity_tightness": 0.9,
     "job_name_prefix": "Order_",
     "machine_name_prefix": "Plant_",
 }
 
 
-def _scale_range(rng: tuple[int, int], scale: float, minimum: int = 1) -> tuple[int, int]:
-    low, high = rng
-    new_low = max(minimum, round(low * scale))
-    new_high = max(new_low, round(high * scale))
-    return new_low, new_high
+def gap_type_for_seed(seed: int) -> str:
+    return "D" if seed % 2 == 0 else "E"
+
+
+def draw_type_de(rng: random.Random, gap_type: str, n_jobs: int, n_machines: int) -> tuple[list[list[int]], list[list[float]], list[int]]:
+    """One type D or E draw: a[i][j], c[i][j], b[j] (see the module docstring)."""
+    cfg = GAP_TYPES[gap_type]
+    a = [[0] * n_machines for _ in range(n_jobs)]
+    c = [[0.0] * n_machines for _ in range(n_jobs)]
+    for i in range(n_jobs):
+        for j in range(n_machines):
+            if gap_type == "D":
+                a[i][j] = rng.randint(*cfg["resource_range"])
+                c[i][j] = float(cfg["cost_base"] - a[i][j] + rng.randint(-cfg["cost_noise"], cfg["cost_noise"]))
+            else:
+                x = 1.0 - rng.random()  # U(0, 1]
+                a[i][j] = math.floor(1.0 - cfg["exp_scale"] * math.log(x))
+                c[i][j] = float(math.floor(cfg["cost_numerator"] / a[i][j] - cfg["cost_noise"] * rng.random()))
+    b = [math.floor(cfg["capacity_share"] * sum(a[i][j] for i in range(n_jobs)) / n_machines) for j in range(n_machines)]
+    return a, c, b
+
+
+def _greedy_feasible(a: list[list[int]], b: list[int]) -> bool:
+    """Sufficient check: jobs by decreasing minimum resource, each to the fitting machine with the most slack left."""
+    left = list(b)
+    for i in sorted(range(len(a)), key=lambda i: -min(a[i])):
+        fits = [j for j in range(len(b)) if a[i][j] <= left[j]]
+        if not fits:
+            return False
+        j = max(fits, key=lambda j: (left[j] - a[i][j]) / max(1, b[j]))
+        left[j] -= a[i][j]
+    return True
+
+
+def gap_feasible(a: list[list[int]], b: list[int]) -> bool:
+    """Exact feasibility: the greedy check, else a feasibility MIP (Threads = 1)."""
+    if _greedy_feasible(a, b):
+        return True
+    import gurobipy as gp
+    from gurobipy import GRB
+
+    with gp.Env(params={"OutputFlag": 0, "Threads": 1, "TimeLimit": 30.0}) as env, gp.Model("gap_feasibility", env=env) as model:
+        n, m = len(a), len(b)
+        x = model.addVars(n, m, vtype=GRB.BINARY)
+        model.addConstrs(x.sum(i, "*") == 1 for i in range(n))
+        model.addConstrs(gp.quicksum(a[i][j] * x[i, j] for i in range(n)) <= b[j] for j in range(m))
+        model.optimize()
+        if model.Status == GRB.OPTIMAL:
+            return True
+        if model.Status == GRB.INFEASIBLE:
+            return False
+        raise RuntimeError(f"GAP feasibility check undecided (status {model.Status})")
 
 
 @dataclass
@@ -109,52 +179,30 @@ class GAPGenerator(BaseInstanceGenerator[GAPInstance]):
             raise ValueError(f"Unknown size_label '{size}'. Expected one of {list(SIZE_SCALING)}.")
 
         cfg = DEFAULT_CONFIG
-        scale = SIZE_SCALING[size]
-        rng = random.Random(seed if seed is not None else self.default_seed)
+        bench_seed = seed if seed is not None else self.default_seed
+        n_machines, n_jobs = SIZE_SCALING[size]["m"], SIZE_SCALING[size]["n"]
+        gap_type = gap_type_for_seed(bench_seed)
+        for k in range(1000):
+            rng = random.Random(f"gap-litgen:{bench_seed}:{k}")
+            a, c, b = draw_type_de(rng, gap_type, n_jobs, n_machines)
+            if gap_feasible(a, b):
+                break
+        else:
+            raise RuntimeError("no feasible GAP draw within 1000 redraws")
 
-        n_jobs = rng.randint(*_scale_range(cfg["n_jobs_range"], scale, minimum=2))
-        n_machines = rng.randint(*_scale_range(cfg["n_machines_range"], scale, minimum=2))
-
-        a = [[0] * n_machines for _ in range(n_jobs)]
-        c = [[0.0] * n_machines for _ in range(n_jobs)]
-        for i in range(n_jobs):
-            base_cost = rng.uniform(cfg["base_cost_min"], cfg["base_cost_max"])
-            for j in range(n_machines):
-                a_ij = rng.randint(cfg["resource_min"], cfg["resource_max"])
-                bias = (rng.random() - 0.5) * 2 * cfg["machine_bias_scale"] * base_cost
-                a[i][j] = a_ij
-                c[i][j] = round(base_cost + bias, 2)
-
-        total_per_machine = [sum(a[i][j] for i in range(n_jobs)) for j in range(n_machines)]
-        capacities = []
-        for j in range(n_machines):
-            base = total_per_machine[j] * cfg["capacity_tightness"]
-            cap = max(
-                max(a[i][j] for i in range(n_jobs)),
-                int(base) + rng.randint(0, cfg["resource_max"]),
-            )
-            capacities.append(cap)
-
-        machines = [
-            GAPMachine(id=j, name=f"{cfg.get('machine_name_prefix', 'Machine_')}{j}", capacity=int(capacities[j]))
-            for j in range(n_machines)
+        machines = [GAPMachine(id=j, name=f"{cfg['machine_name_prefix']}{j}", capacity=b[j]) for j in range(n_machines)]
+        jobs = [
+            GAPJob(id=i, name=f"{cfg['job_name_prefix']}{i}",
+                   assignments=[GAPAssignment(machine_id=j, resource=a[i][j], cost=c[i][j]) for j in range(n_machines)])
+            for i in range(n_jobs)
         ]
-
-        jobs: list[GAPJob] = []
-        for i in range(n_jobs):
-            assignments = [
-                GAPAssignment(machine_id=j, resource=int(a[i][j]), cost=float(c[i][j])) for j in range(n_machines)
-            ]
-            jobs.append(GAPJob(id=i, name=f"{cfg.get('job_name_prefix', 'Job_')}{i}", assignments=assignments))
-
+        self.last_recipe = {"recipe": "yagiura-type-" + gap_type, "gap_type": gap_type, "redraw_index": k,
+                            "n_machines": n_machines, "n_jobs": n_jobs}
         return GAPInstance(instance_size=size, machines=machines, jobs=jobs)
 
 
-def generate_gap_instance(
-    seed: int,
-    size: str = "medium",
-    output_dir: str | Path | None = None,
-) -> dict[str, Any]:
+def generate_gap_instance_with_recipe(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """(data, recipe metadata) from one generation; the recipe goes to meta.json, never to data.json."""
     gen = GAPGenerator(size_label=size, seed=seed)
     inst = gen.generate_instance(seed=seed, size_label=size)
     data = inst.to_dict()
@@ -162,7 +210,15 @@ def generate_gap_instance(
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
-    return data
+    return data, gen.last_recipe
+
+
+def generate_gap_instance(
+    seed: int,
+    size: str = "medium",
+    output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    return generate_gap_instance_with_recipe(seed, size, output_dir)[0]
 
 
 # Extra-large scale-up tier (exploration; the paper sizes above are unchanged).
