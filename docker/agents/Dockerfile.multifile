@@ -1,0 +1,13 @@
+# Multi-file agent image for the large-scale PDPTW C++ track only (src/agent/multifile.py).
+# It is the frozen paper image plus one file; the paper image, its tag and its worker files are not changed.
+# Build (from the repository root, only on an explicit request):
+#   docker build --platform linux/arm64 -f docker/agents/Dockerfile.multifile \
+#     --build-arg BASE=decompbench-agents-v2:20261013 -t decompgym-agents-multifile-v1:20261105 .
+# Pin BASE to the paper image ID recorded in the runtime evidence (sha256:...) when building for a campaign.
+ARG BASE=decompbench-agents-v2:20261013
+FROM ${BASE}
+USER 0:0
+COPY --chmod=0555 docker/agents/multifile_worker.py /opt/decompbench/
+USER 1000:1000
+WORKDIR /work
+ENTRYPOINT ["python3", "-I", "-B", "/opt/decompbench/multifile_worker.py"]

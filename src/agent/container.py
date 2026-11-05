@@ -106,6 +106,10 @@ def save_state(path, value):
 
 class DockerRuntime:
     LABEL = "io.decompbench.runtime"
+    # The image's trusted worker and the collector's output ceiling. The paper path uses these defaults; only the
+    # multi-file runtime (src/agent/multifile.py, PDPTW C++ track) overrides them in a subclass.
+    WORKER = "/opt/decompbench/worker.py"
+    COLLECT_OUTPUT_BYTES = 8 * 1024 * 1024
 
     def __init__(self, *, executable="docker", seccomp_profile: Path):
         self.executable = executable
@@ -260,7 +264,7 @@ class DockerRuntime:
                 if "/" in volume or not (destination == "/auth" or destination.startswith("/auth/")):
                     raise ValueError("Credentials must use a named volume under /auth")
                 args.extend(["--mount", f"type=volume,src={volume},dst={destination}"])
-            created = self.command(*args, state["image_id"], "-I", "-B", "/opt/decompbench/worker.py", *command)
+            created = self.command(*args, state["image_id"], "-I", "-B", self.WORKER, *command)
             if created.returncode:
                 raise ContainerError("Docker worker creation failed")
             inspected = self.inspect(state["name"])
@@ -324,9 +328,9 @@ class DockerRuntime:
         # The execution container has gone, so no task process can mutate these volumes.
         collector = state["name"] + "-collect"
         args = [*self.cli("run"), "--rm", "--name", collector, "--pull", "never", "--network", "none", "--user", "1000:1000", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only", "--log-driver", "none", "--pids-limit", "32", "--memory", "256m", "--cpus", "1",
-                "--mount", f"type=volume,src={state['work_volume']},dst=/work,readonly", "--mount", f"type=volume,src={state['record_volume']},dst=/record,readonly", "--entrypoint", "python3", state["image_id"], "-I", "-B", "/opt/decompbench/worker.py", "collect", *state["artifacts"]]
+                "--mount", f"type=volume,src={state['work_volume']},dst=/work,readonly", "--mount", f"type=volume,src={state['record_volume']},dst=/record,readonly", "--entrypoint", "python3", state["image_id"], "-I", "-B", self.WORKER, "collect", *state["artifacts"]]
         try:
-            collected = bounded_process(args, timeout=30)
+            collected = bounded_process(args, timeout=30) if self.COLLECT_OUTPUT_BYTES == 8 * 1024 * 1024 else bounded_process(args, timeout=30, max_output_bytes=self.COLLECT_OUTPUT_BYTES)
             if collected.returncode or collected.timed_out or collected.output_limited:
                 raise ContainerError("Artifact collector failed after worker cleanup")
             packet = json.loads(collected.stdout)
