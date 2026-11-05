@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import math
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 import gurobipy as gp
@@ -502,6 +503,59 @@ def build_ef_lp(I: int, J: int, fixed: np.ndarray, capacity: np.ndarray, cost: n
     return md, {"y": y, "dem": dem, "cap": cap, "cover": cover, "num_vars": int(md.NumVars), "num_constrs": int(md.NumConstrs)}
 
 
+def build_ef_lp_lean(I: int, J: int, fixed: np.ndarray, capacity: np.ndarray, cost: np.ndarray, demand: np.ndarray,
+                     prob: np.ndarray, env: gp.Env) -> tuple[gp.Model, dict]:
+    """The same strong-linking extensive-form LP as build_ef_lp (same variables, row blocks, row order and senses),
+    built with one variable vector z = (x scenario-major (s, i, j), y) and CSR blocks given directly by their index
+    arithmetic to addMConstr, every temporary freed before the solve (lean build for the Stage 1 controls)."""
+    S = demand.shape[0]
+    IJ = I * J
+    N = S * IJ
+    md = gp.Model(env=env)
+    ub = np.concatenate([np.broadcast_to(demand[:, None, :], (S, I, J)).ravel(), np.ones(I)])
+    obj = np.concatenate([(prob[:, None, None] * cost[None, :, :]).ravel(), np.asarray(fixed, dtype=float)])
+    z = md.addMVar(N + I, lb=0.0, ub=ub, obj=obj, name="z")
+    del obj
+    md.ModelSense = GRB.MINIMIZE
+    # demand rows (s, j): sum_i x_sij = d_sj
+    r = np.arange(S * J, dtype=np.int64)
+    idx = ((r // J) * IJ + r % J)[:, None] + J * np.arange(I, dtype=np.int64)[None, :]
+    A = sp.csr_matrix((np.ones(idx.size), idx.ravel(), np.arange(0, idx.size + 1, I, dtype=np.int64)), shape=(S * J, N + I))
+    del r, idx
+    dem = md.addMConstr(A, z, "=", demand.ravel().astype(float))
+    del A
+    # capacity rows (s, i): sum_j x_sij - u_i y_i <= 0
+    r = np.arange(S * I, dtype=np.int64)
+    idx = np.empty((S * I, J + 1), dtype=np.int64)
+    idx[:, :J] = ((r // I) * IJ + (r % I) * J)[:, None] + np.arange(J, dtype=np.int64)[None, :]
+    idx[:, J] = N + r % I
+    val = np.ones((S * I, J + 1))
+    val[:, J] = -np.asarray(capacity, dtype=float)[r % I]
+    A = sp.csr_matrix((val.ravel(), idx.ravel(), np.arange(0, idx.size + 1, J + 1, dtype=np.int64)), shape=(S * I, N + I))
+    del r, idx, val
+    cap = md.addMConstr(A, z, "<", np.zeros(S * I))
+    del A
+    # strong linking rows where d_sj > 0: x_sij - d_sj y_i <= 0
+    keep = np.nonzero(ub[:N] > 0)[0]
+    nk = len(keep)
+    idx = np.empty(2 * nk, dtype=np.int64)
+    idx[0::2] = keep
+    idx[1::2] = N + (keep // J) % I
+    val = np.empty(2 * nk)
+    val[0::2] = 1.0
+    val[1::2] = -ub[keep]
+    A = sp.csr_matrix((val, idx, np.arange(0, 2 * nk + 1, 2, dtype=np.int64)), shape=(nk, N + I))
+    del keep, idx, val, ub
+    md.addMConstr(A, z, "<", np.zeros(nk))
+    del A
+    C = sp.csr_matrix((np.asarray(capacity, dtype=float), np.arange(N, N + I, dtype=np.int64), np.array([0, I], dtype=np.int64)),
+                      shape=(1, N + I))
+    cover = md.addMConstr(C, z, ">", np.array([float(demand.sum(axis=1).max())]), name="cover")
+    md.update()
+    return md, {"y": z[N:], "dem": dem, "cap": cap, "cover": cover, "num_vars": int(md.NumVars),
+                "num_constrs": int(md.NumConstrs), "builder": "lean"}
+
+
 def ef_duals(info: dict, attr: str, S: int, I: int, J: int, prob: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Per-scenario (v, alpha) from extensive-form row duals (scaled back by the probabilities)."""
     pd = np.asarray(getattr(info["dem"], attr), dtype=float).reshape(S, J)
@@ -516,18 +570,20 @@ def ef_duals(info: dict, attr: str, S: int, I: int, J: int, prob: np.ndarray) ->
 class SCFLCompactLP(_Base):
     """Decomposition-free bound control: the strong-linking extensive-form LP (module docstring)."""
 
-    def __init__(self, *, method: int = 2, crossover: int = 0, publish_margin: float = 30.0, **kw) -> None:
+    def __init__(self, *, method: int = 2, crossover: int = 0, publish_margin: float = 30.0, lean: bool = False, **kw) -> None:
         super().__init__(**kw)
         self.method, self.crossover, self.publish_margin = method, crossover, publish_margin
+        self.lean = lean   # build_ef_lp_lean (Stage 1 controls) instead of build_ef_lp (the 11-03 probes)
 
     def run(self, data_path: str) -> dict[str, Any]:
         self.start(data_path)
         inst = self.inst
         env = make_env(self.threads, self.soft_mem_gb, self.seed, self.mem_limit_gb)
-        out: dict[str, Any] = {"method": self.method, "crossover": self.crossover, "termination_reason": "deadline_during_build"}
+        out: dict[str, Any] = {"method": self.method, "crossover": self.crossover, "termination_reason": "deadline_during_build",
+                               "builder": "lean" if self.lean else "plain"}
         model = None
         try:
-            model, info = build_ef_lp(inst.I, inst.J, inst.fixed, inst.capacity, inst.cost, inst.demand, inst.prob, env)
+            model, info = (build_ef_lp_lean if self.lean else build_ef_lp)(inst.I, inst.J, inst.fixed, inst.capacity, inst.cost, inst.demand, inst.prob, env)
             out.update(build_seconds=self.elapsed(), num_vars=info["num_vars"], num_constrs=info["num_constrs"])
             margin = min(self.publish_margin if self.method == 2 else 5.0, 0.1 * self.time_limit)
             if self.left() - margin > 0.01:
@@ -548,21 +604,21 @@ class SCFLCompactLP(_Base):
                 st = int(model.Status)
                 out["gurobi_status"] = st
                 out["simplex_bounds"] = spx[-100:]
+                # Any multipliers are a valid certificate: try Pi after EVERY termination, then BarPi of a barrier
+                # run; the primal point is optional (Codex review of the Stage 1 runner, round 1 #1).
                 VA = yv = None
-                if st in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+                for attr, xattr in (("Pi", "X"), ("BarPi", "BarX")) if self.method == 2 else (("Pi", "X"),):
                     try:
-                        VA = ef_duals(info, "Pi", inst.S, inst.I, inst.J, inst.prob)
-                        yv = np.asarray(info["y"].X, dtype=float)
-                        out["certificate_source"] = "Pi"
-                    except gp.GurobiError:
-                        VA = None
-                if VA is None and self.method == 2:
-                    try:
-                        VA = ef_duals(info, "BarPi", inst.S, inst.I, inst.J, inst.prob)
-                        yv = np.asarray(info["y"].BarX, dtype=float)
-                        out["certificate_source"] = "BarPi"
+                        VA = ef_duals(info, attr, inst.S, inst.I, inst.J, inst.prob)
                     except (gp.GurobiError, AttributeError):
                         VA = None
+                        continue
+                    out["certificate_source"] = attr
+                    try:
+                        yv = np.asarray(getattr(info["y"], xattr), dtype=float)
+                    except (gp.GurobiError, AttributeError):
+                        yv = None
+                    break
                 if VA is not None and self.left() > 0:
                     cuts = self.single_cuts(np.arange(inst.S), VA[0], VA[1])
                     self.emit(lambda k: cert_bytes(cuts, version=k), force=True)
@@ -594,9 +650,10 @@ class SCFLJensen(_Base):
     """Decomposition-free aggregation control (module docstring): G = g0, 2 g0, 4 g0, ... cluster-mean scenarios
     while G <= S / 2 and time remains; each solved reduced LP publishes its cluster duals, one cut per scenario."""
 
-    def __init__(self, *, g0: int = 10, method: int = 2, **kw) -> None:
+    def __init__(self, *, g0: int = 10, method: int = 2, lean: bool = False, **kw) -> None:
         super().__init__(**kw)
         self.g0, self.method = g0, method
+        self.lean = lean   # build_ef_lp_lean (Stage 1) instead of build_ef_lp (the 11-03 probes)
 
     def run(self, data_path: str) -> dict[str, Any]:
         from src.bd.scfl.f_heuristic import cluster_scenarios
@@ -604,13 +661,15 @@ class SCFLJensen(_Base):
         inst = self.inst
         env = make_env(self.threads, self.soft_mem_gb, self.seed, self.mem_limit_gb)
         log = []
+        prev: list = []
         G = self.g0
         reason = "time_limit"
         try:
             while G <= max(self.g0, inst.S // 2) and self.left() > 1.0:
                 t = time.perf_counter()
                 labels, red = cluster_scenarios(inst, G)
-                model, info = build_ef_lp(inst.I, inst.J, inst.fixed, inst.capacity, inst.cost, red.demand, red.prob, env)
+                model, info = (build_ef_lp_lean if self.lean else build_ef_lp)(inst.I, inst.J, inst.fixed, inst.capacity,
+                                                                               inst.cost, red.demand, red.prob, env)
                 try:
                     model.Params.TimeLimit = max(0.01, self.left() - 2.0)
                     model.Params.Method = self.method
@@ -620,18 +679,38 @@ class SCFLJensen(_Base):
                     entry = {"G": int(red.S), "status": int(model.Status), "seconds": round(time.perf_counter() - t, 2)}
                     if ok:
                         entry["jensen_value"] = float(model.ObjVal)
-                        Vg, Ag = ef_duals(info, "Pi", red.S, inst.I, inst.J, red.prob)
+                    Vg = None   # duals of a complete OR incomplete reduced solve are valid cuts (round 1 #1)
+                    for attr in ("Pi", "BarPi") if self.method == 2 else ("Pi",):
+                        try:
+                            Vg, Ag = ef_duals(info, attr, red.S, inst.I, inst.J, red.prob)
+                            entry["dual_source"] = attr
+                            break
+                        except (gp.GurobiError, AttributeError):
+                            Vg = None
                 finally:
                     model.dispose()
                 log.append(entry)
-                if not ok:
-                    break
-                if self.left() > 0:
+                if Vg is not None and self.left() > 0:
                     V, A = Vg[labels], Ag[labels]
                     cuts = self.single_cuts(np.arange(inst.S), V, A)
+                    if not ok and prev:
+                        # an incomplete solve may be weaker: keep the previous version's cuts first, then the new
+                        # ones within the size limit (the certificate never loses earlier cuts)
+                        used = int(sum(int(term_sizes(inst.cost, t[1][None, :], t[2][None, :])[0]) for c in prev for t in c))
+                        extra = []
+                        for c in cuts:
+                            sz = int(term_sizes(inst.cost, c[0][1][None, :], c[0][2][None, :])[0])
+                            if used + sz > self.cert_limit:
+                                break
+                            extra.append(c)
+                            used += sz
+                        cuts = prev + extra
+                    prev = cuts
                     self.emit(lambda k: cert_bytes(cuts, version=k), force=True)
                     entry["terms"] = len(cuts)
                     entry["published_at"] = round(self.elapsed(), 2)
+                if not ok:
+                    break
                 if red.S >= inst.S // 2:
                     reason = "largest_G_done"
                     break
@@ -871,12 +950,15 @@ class SCFLLagrangian(_Base):
 
 # ---------------------------------------------------------------- exact LP_hi (protocol 3.4)
 
-def exact_master_value(path: str, inst: SCFLInstance, y_float, bits: int = 20) -> tuple[Any, dict]:
+def exact_master_value(path: str, inst: SCFLInstance, y_float, bits: int = 20, witness: str | None = None,
+                       scenario_seconds: float = 3600.0) -> tuple[Any, dict]:
     """Exact objective of an exactly feasible extensive-form LP point near y_float: y rounded UP to the grid 2^-bits
     (keeps the cover row and only enlarges capacities), then per scenario a vertex of the strong-linking recourse LP
     (dual simplex); on this grid the scaled data are integral, so the vertex flows are multiples of 2^-bits: they are
     rounded and checked exactly in integers (demand equalities, capacities, strong linking, x >= 0). The value is
-    computed with the instance's exact unit costs (decimal text). Returns (Fraction or None, info)."""
+    computed with the instance's exact unit costs (decimal text). Returns (Fraction or None, info). With `witness` (a
+    path ending in .npz) the exactly checked proof is archived: the grid y numerators yk, K = 2^bits and the integer
+    flow numerators X[s] (flows = X / K), so LP_hi can be re-verified in integer arithmetic without any solver."""
     from fractions import Fraction
     from src.bd.scfl.h_view_xl import load_exact
     obj = load_exact(path)
@@ -899,9 +981,10 @@ def exact_master_value(path: str, inst: SCFLInstance, y_float, bits: int = 20) -
     rec = RecourseLP(inst, env)
     acc = 0
     bad = 0
+    keep = [] if witness else None
     try:
         for s in range(S):
-            res = rec.solve(s, yg, 3600.0, vub=True, flows=True)
+            res = rec.solve(s, yg, scenario_seconds, vub=True, flows=True)
             if res["status"] != "optimal":
                 return None, {"reason": f"scenario {s}: {res['status']}"}
             X = np.rint(res["flows"] * K).astype(np.int64)
@@ -911,8 +994,14 @@ def exact_master_value(path: str, inst: SCFLInstance, y_float, bits: int = 20) -
                 bad += 1
                 return None, {"reason": f"scenario {s}: rounded flows not exactly feasible"}
             acc += sum(map(int.__mul__, Cn, X.ravel().tolist()))
+            if keep is not None:
+                keep.append(X.astype(np.int64))
     finally:
         rec.dispose()
         env.dispose()
     val = sum((f * Fraction(int(k), K) for f, k in zip(fixed, yk.tolist())), Fraction(0)) + Fraction(acc, den * K * S)
-    return val, {"bits": bits, "grid_shift": float(np.abs(yg - y).max())}
+    info: dict[str, Any] = {"bits": bits, "grid_shift": float(np.abs(yg - y).max())}
+    if keep is not None:
+        np.savez_compressed(witness, yk=yk, K=np.int64(K), X=np.stack(keep))
+        info["witness_file"] = Path(witness).name
+    return val, info

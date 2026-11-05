@@ -81,24 +81,8 @@ def load_instance(path: str | Path) -> UFLInst:
     return UFLInst(np.asarray(obj["f"], dtype=float), D, obj.get("name") or Path(path).stem, obj.get("meta"))
 
 
-KG_FIXED = {"a": (100, 200), "b": (1000, 2000), "c": (10000, 20000)}
-
-
-def make_kg(N: int, fclass: str, seed: int, symmetric: bool = True) -> dict:
-    """Koerkel-Ghosh-style instance (Koerkel 1989; Ghosh 2003; the UflLib gs/ga classes) at n = m = N: integer
-    costs D_ij ~ U{1000..2000} (symmetric: D = D^T, upper triangle drawn), fixed costs ~ U{f_lo..f_hi} by class
-    (a: 100-200, b: 1000-2000, c: 10000-20000); numpy default_rng(seed), D first, then f. The keys Xc and Xf are
-    placeholders so that src/bd/ufl/a_gen_data.UFLInstance can read the file."""
-    rng = np.random.default_rng(seed)
-    D = rng.integers(1000, 2001, size=(N, N), dtype=np.int64)
-    if symmetric:
-        D = np.triu(D) + np.triu(D, 1).T
-    lo, hi = KG_FIXED[fclass]
-    f = rng.integers(lo, hi + 1, size=N, dtype=np.int64)
-    name = f"kg{'s' if symmetric else 'a'}{N}{fclass}_g{seed}"
-    return {"name": name, "m": N, "n": N, "f": f.tolist(), "D": D.tolist(), "Xc": [[0, 0]] * N, "Xf": [[0, 0]] * N,
-            "meta": {"generator": "Koerkel-Ghosh style (make_kg): D ~ U{1000..2000}, f ~ U by class; numpy default_rng(seed)",
-                     "class": fclass, "symmetric": symmetric, "seed": seed, "N": N}}
+# The Koerkel-Ghosh generator lives in src/bd/ufl/a_data_xl.py (the scale-up instance recipe, pinned there).
+from src.bd.ufl.a_data_xl import KG_FIXED, make_kg  # noqa: E402,F401  (re-exported for the 11-03 probe scripts)
 
 
 def write_instance(obj: dict, path: str | Path) -> str:
@@ -716,24 +700,63 @@ def build_compact(inst: UFLInst, env: gp.Env, relax: bool) -> tuple[gp.Model, di
     return md, {"y": y, "x": x, "assign": assign, "num_vars": int(md.NumVars), "num_constrs": int(md.NumConstrs)}
 
 
+def build_compact_lean(inst: UFLInst, env: gp.Env, relax: bool) -> tuple[gp.Model, dict]:
+    """The same compact model as build_compact (same variables, rows, row order and senses), built with one variable
+    vector z = (x customer-major, y) and three CSR blocks passed to addMConstr, with every NumPy/SciPy temporary freed
+    before the solve (protocol v4 section 14: the decomposition-free control must not be killed by builder memory).
+    Rows: 'assign' (n rows, sum_i x_ij = 1), 'link' (m n rows, x_ij - y_i <= 0), 'cover' (sum_i y_i >= 1)."""
+    m, n = inst.m, inst.n
+    N = m * n
+    md = gp.Model(env=env)
+    obj = np.concatenate([np.ascontiguousarray(inst.D.T).ravel(), inst.f.astype(float)])
+    if relax:
+        z = md.addMVar(N + m, lb=0.0, ub=1.0, obj=obj, vtype=GRB.CONTINUOUS, name="z")
+    else:
+        vt = np.full(N + m, GRB.CONTINUOUS)
+        vt[N:] = GRB.BINARY
+        z = md.addMVar(N + m, lb=0.0, ub=1.0, obj=obj, vtype=vt, name="z")
+        del vt
+    del obj
+    md.ModelSense = GRB.MINIMIZE
+    A = sp.csr_matrix((np.ones(N), np.arange(N, dtype=np.int64), np.arange(0, N + 1, m, dtype=np.int64)), shape=(n, N + m))
+    assign = md.addMConstr(A, z, "=", np.ones(n), name="assign")
+    del A
+    idx = np.empty(2 * N, dtype=np.int64)
+    idx[0::2] = np.arange(N, dtype=np.int64)
+    idx[1::2] = N + np.arange(N, dtype=np.int64) % m        # x index j*m + i -> facility i
+    val = np.empty(2 * N)
+    val[0::2], val[1::2] = 1.0, -1.0
+    L = sp.csr_matrix((val, idx, np.arange(0, 2 * N + 1, 2, dtype=np.int64)), shape=(N, N + m))
+    del idx, val
+    md.addMConstr(L, z, "<", np.zeros(N), name="link")
+    del L
+    C = sp.csr_matrix((np.ones(m), np.arange(N, N + m, dtype=np.int64), np.array([0, m], dtype=np.int64)), shape=(1, N + m))
+    md.addMConstr(C, z, ">", np.ones(1), name="cover")
+    md.update()
+    return md, {"y": z[N:], "x": z[:N], "assign": assign, "num_vars": int(md.NumVars), "num_constrs": int(md.NumConstrs),
+                "builder": "lean"}
+
+
 class UFLCompactLP(_Base):
     """Decomposition-free bound control: the compact LP (module docstring), barrier (method=2, Crossover off) or dual
     simplex (method=1), one thread, Gurobi MemLimit. Certificate: (j, v_j) from the assignment-row duals (Pi of a
     complete or SUBOPTIMAL solve; BarPi of an incomplete barrier solve, published publish_margin seconds before the
     deadline). Dual-simplex mid-solve objective values (dual feasible, unperturbed) are solver-reported bounds."""
 
-    def __init__(self, *, method: int = 2, crossover: int = 0, publish_margin: float = 30.0, **kw) -> None:
+    def __init__(self, *, method: int = 2, crossover: int = 0, publish_margin: float = 30.0, lean: bool = False, **kw) -> None:
         super().__init__(**kw)
         self.method, self.crossover, self.publish_margin = method, crossover, publish_margin
+        self.lean = lean   # build_compact_lean (Stage 1 controls) instead of build_compact (the 11-03 probes)
 
     def run(self, data_path: str) -> dict[str, Any]:
         self.start(data_path)
         inst = self.inst
         env = make_env(self.threads, self.soft_mem_gb, self.seed, self.mem_limit_gb)
-        out: dict[str, Any] = {"method": self.method, "crossover": self.crossover, "termination_reason": "deadline_during_build"}
+        out: dict[str, Any] = {"method": self.method, "crossover": self.crossover, "termination_reason": "deadline_during_build",
+                               "builder": "lean" if self.lean else "plain"}
         model = None
         try:
-            model, info = build_compact(inst, env, relax=True)
+            model, info = (build_compact_lean if self.lean else build_compact)(inst, env, relax=True)
             out.update(build_seconds=self.elapsed(), num_vars=info["num_vars"], num_constrs=info["num_constrs"])
             margin = min(self.publish_margin if self.method == 2 else 5.0, 0.1 * self.time_limit)
             if self.left() - margin > 0.01:
@@ -754,19 +777,22 @@ class UFLCompactLP(_Base):
                 st = int(model.Status)
                 out["gurobi_status"] = st
                 out["simplex_bounds"] = spx[-100:]
+                # Any multipliers are a valid certificate (the checker's safe bound): try Pi after EVERY termination
+                # (complete or incomplete), then BarPi of a barrier run; the primal point is optional (Codex review
+                # of the Stage 1 runner, round 1 #1).
                 v = yv = None
-                if st in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+                for attr, xattr in (("Pi", "X"), ("BarPi", "BarX")) if self.method == 2 else (("Pi", "X"),):
                     try:
-                        v, yv = np.asarray(info["assign"].Pi, dtype=float), np.asarray(info["y"].X, dtype=float)
-                        out["certificate_source"] = "Pi"
-                    except gp.GurobiError:
-                        v = None
-                if v is None and self.method == 2:
-                    try:
-                        v, yv = np.asarray(info["assign"].BarPi, dtype=float), np.asarray(info["y"].BarX, dtype=float)
-                        out["certificate_source"] = "BarPi"
+                        v = np.asarray(getattr(info["assign"], attr), dtype=float)
                     except (gp.GurobiError, AttributeError):
                         v = None
+                        continue
+                    out["certificate_source"] = attr
+                    try:
+                        yv = np.asarray(getattr(info["y"], xattr), dtype=float)
+                    except (gp.GurobiError, AttributeError):
+                        yv = None
+                    break
                 if v is not None and self.left() > 0:
                     v = np.where(np.isfinite(v), v, 0.0)
                     srt = Sorted(inst.D)
@@ -799,14 +825,18 @@ class UFLCompactLP(_Base):
 class UFLCompactMIP(_Base):
     """Compact MIP (binary y, continuous x), primal baseline; incumbents and the MIP bound are published."""
 
+    def __init__(self, *, lean: bool = False, **kw) -> None:
+        super().__init__(**kw)
+        self.lean = lean
+
     def run(self, data_path: str) -> dict[str, Any]:
         self.start(data_path)
         inst = self.inst
         env = make_env(self.threads, self.soft_mem_gb, self.seed, self.mem_limit_gb)
-        out: dict[str, Any] = {"termination_reason": "deadline_during_build"}
+        out: dict[str, Any] = {"termination_reason": "deadline_during_build", "builder": "lean" if self.lean else "plain"}
         model = None
         try:
-            model, info = build_compact(inst, env, relax=False)
+            model, info = (build_compact_lean if self.lean else build_compact)(inst, env, relax=False)
             out["build_seconds"] = self.elapsed()
             yl = info["y"].tolist()
             errors: list[BaseException] = []

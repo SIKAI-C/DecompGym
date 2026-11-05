@@ -1,0 +1,460 @@
+{
+ "family": "ufl",
+ "protocol": "DecompBench/docs/2026-11-03-scaleup-protocol-v4.md sections 3, 4, 6, 14, 15, 16",
+ "T": 900.0,
+ "checkpoints": [
+  60.0,
+  300.0,
+  600.0,
+  900.0
+ ],
+ "resources": {
+  "cpus": 1,
+  "mem": "16G (Slurm cgroup = process budget)",
+  "gurobi_threads": 1,
+  "gurobi_mem_limit_gb": 15.5,
+  "slurm_time_per_arm_task": "01:00:00",
+  "slurm_time_per_reference_task": "03:00:00 (T = 3600 s)"
+ },
+ "checker": {
+  "canonical": "src/experiments/xl_certificate.check_versions_supervised (forked checker, one hard per-attempt deadline, family format converted to the canonical one inside it); views: xl_certificate.ufl_view (ufl-v1), src/bd/scfl/h_view_xl.scfl_view (scfl-v1); no memory_bytes frozen, so every memory failure is infrastructure",
+  "budget_seconds_per_attempt": 600,
+  "max_bytes": 268435456,
+  "max_nonzeros_expanded": 2000000,
+  "max_master_nonzeros": 20000000,
+  "max_abs_coef": 1000000000000.0,
+  "token_chars": 64,
+  "decimal_exponent": 400,
+  "gurobi_mem_gb": 8.0,
+  "version_rule": "last complete stored version received strictly before each checkpoint; final version checked first"
+ },
+ "publication_volume_cap_bytes": 4294967296,
+ "rules": {
+  "eps_b": 1e-05,
+  "eps_p": 0.001,
+  "naive_quality_gap": 0.005,
+  "naive_speed_ratio": 3.0,
+  "saved_fraction": 0.25,
+  "control_speed_ratio": 2.0,
+  "control_saved_seconds": 225.0,
+  "primal_gate": false,
+  "max_reference_rel_width": 1e-06,
+  "stage1_pass": "jointly >= 3 of 4 instances",
+  "holdout_pass": "2 of 2 fresh instances, scored only after Stage 1 passed",
+  "headline": "final_target for every tier: the engineered arm meets bound_target at T and every bound control misses it",
+  "bound_target": "cert_ok and (LP_hi - LB_cert)/max(|LP_hi|, 1) <= eps_b, LP_hi from the frozen rigorous interval",
+  "t_bound": "first checkpoint (60/300/600/900 s) meeting bound_target (censored at T)",
+  "naive_separation": "naive LP-master bgap_LP - engineered bgap_LP >= 0.005 at T (exact), or t_naive (censored at T) >= 3 t_eng AND t_naive - t_eng >= 0.25 T",
+  "primal": "reported, not gated (protocol v4 section 14: the primal side is saturated for both families; the bound is the only headline): z_best = best verified incumbent of any arm at T; near_best = gap <= eps_p; the primal control and the naive integer Benders are reported against the engineered LP-rounding incumbent. A primal evaluation that cannot finish within the task allocation leaves only the primal metrics undefined",
+  "method_ok": "every arm is fixed evaluator code whose method is settled before the run: the engineered arms are Benders LP phases (UFL: subgradient warm-start cuts + purging; SCFL: Jensen cluster-dual seed cuts + core), the intended section 14 configurations; eng_plain (same initialization as naive_lp: shared greedy design + lower-bound cuts) is the matched-start diagnostic. bound_target therefore needs no separate method audit in Stage 1; agent runs keep the audit",
+  "bound_claim_refutation": "a solver-reported bound above z_best (relative 1e-6) is a refuted claim: infrastructure (rerun)",
+  "publication_volume": "certificate versions received after the per-arm volume cap are recorded (time, size, sha256) but not stored and never eligible; the arm is scored on its last stored version and the overflow is reported",
+  "pruning": "after the canonical result is persisted, stored certificate files that no checkpoint selected are deleted (their receipt records stay in events.jsonl)",
+  "lagrangian": "diagnostic (itself a decomposition; the method audit decides method_ok)",
+  "mip": "reported baseline, not a gate",
+  "decision_procedure": "an instance is decided only when every panel arm has a complete result with a valid identity; infrastructure in a decision arm makes it pending (rerun), never a beaten control; a tier passes Stage 1 with >= 3 of 4 passes (fails once 3 is impossible), then needs its holdout 2 of 2; tiers are decided in tier_order, a fallback tier is run and read only after its primary tier was rejected; the family keeps the first retained tier",
+  "reference_rule": "an interval is usable only if rigorous (LP_lo <= LP_hi, both exact) with relative width <= max_reference_rel_width; otherwise the instance stays pending (reference rerun with a longer T), never a failure",
+  "no_switching": "no change of headline, thresholds, arms, seeds or instances after any Stage 1 result is read",
+  "oom_rule": "as k-median: a SIGKILL before T is a resource outcome only with a kernel-confirmed OOM kill of the arm",
+  "result_identity": "as k-median plus the family: instance, arm, family, T, panel sha256, frozen instance sha256 and every frozen code sha256; references read from the results directory (holdout, fallback tiers) must match their reference seal (record sha256, witness hashes, instance hash, family and name), written by scaleup_bdlp_panel.py --seal before that part's arms are submitted",
+  "fractional_domain": "SCFL: every panel instance satisfies max_i u_i <= its smallest positive scenario total, so the cover row is the exact recourse-feasible domain at fractional y (checked at generation and at the freeze)",
+  "attempts": "as k-median: fresh attempt directories, exactly one scored attempt per arm (earliest complete, valid identity, no infrastructure)"
+ },
+ "arms": {
+  "engineered": "eng",
+  "naive_bound": "naive_lp",
+  "bound_controls": [
+   "lp_bar",
+   "lp_dual",
+   "empty",
+   "analytical",
+   "oneshot_greedy",
+   "pool",
+   "ils"
+  ],
+  "primal_control": "ils",
+  "primal_naive": "naive_int",
+  "diagnostics": [
+   "eng_plain",
+   "eng_nostab",
+   "naive_int",
+   "lagr",
+   "mip"
+  ],
+  "all": [
+   "eng",
+   "eng_plain",
+   "eng_nostab",
+   "naive_lp",
+   "naive_int",
+   "lp_bar",
+   "lp_dual",
+   "empty",
+   "analytical",
+   "oneshot_greedy",
+   "pool",
+   "ils",
+   "lagr",
+   "mip"
+  ],
+  "configs": {
+   "eng": {
+    "class": "src.bd.ufl.g_bound_xl.UFLEngLP",
+    "kwargs": {
+     "lagr_warm": 0.1,
+     "lagr_cap": 60.0,
+     "purge_age": 5
+    }
+   },
+   "eng_plain": {
+    "class": "src.bd.ufl.g_bound_xl.UFLEngLP",
+    "kwargs": {}
+   },
+   "eng_nostab": {
+    "class": "src.bd.ufl.g_bound_xl.UFLEngLP",
+    "kwargs": {
+     "lagr_warm": 0.1,
+     "lagr_cap": 60.0,
+     "purge_age": 5,
+     "stabilize": false
+    }
+   },
+   "naive_lp": {
+    "class": "src.bd.ufl.g_bound_xl.UFLNaiveLP",
+    "kwargs": {}
+   },
+   "naive_int": {
+    "class": "src.bd.ufl.g_bound_xl.UFLNaiveInt",
+    "kwargs": {}
+   },
+   "lp_bar": {
+    "class": "src.bd.ufl.g_bound_xl.UFLCompactLP",
+    "kwargs": {
+     "method": 2,
+     "lean": true,
+     "mem_limit_gb": 15.5
+    }
+   },
+   "lp_dual": {
+    "class": "src.bd.ufl.g_bound_xl.UFLCompactLP",
+    "kwargs": {
+     "method": 1,
+     "lean": true,
+     "mem_limit_gb": 15.5
+    }
+   },
+   "empty": {
+    "class": "src.bd.ufl.g_bound_xl.UFLStatic",
+    "kwargs": {
+     "kind": "empty"
+    }
+   },
+   "analytical": {
+    "class": "src.bd.ufl.i_controls_xl.UFLAnalytical",
+    "kwargs": {}
+   },
+   "oneshot_greedy": {
+    "class": "src.bd.ufl.g_bound_xl.UFLStatic",
+    "kwargs": {
+     "kind": "oneshot_greedy"
+    }
+   },
+   "pool": {
+    "class": "src.bd.ufl.g_bound_xl.UFLPool",
+    "kwargs": {}
+   },
+   "ils": {
+    "class": "src.bd.ufl.g_bound_xl.UFLILS",
+    "kwargs": {}
+   },
+   "lagr": {
+    "class": "src.bd.ufl.g_bound_xl.UFLLagrangian",
+    "kwargs": {}
+   },
+   "mip": {
+    "class": "src.bd.ufl.g_bound_xl.UFLCompactMIP",
+    "kwargs": {
+     "lean": true,
+     "mem_limit_gb": 15.5
+    }
+   }
+  },
+  "reference": {
+   "class": "src.bd.ufl.g_bound_xl.UFLEngLP",
+   "kwargs": {
+    "lagr_warm": 0.1,
+    "lagr_cap": 60.0,
+    "purge_age": 5,
+    "conv_tol": 1e-09,
+    "cert_interval": 60.0
+   }
+  },
+  "trivial_certificate_controls": {
+   "empty": "no cuts",
+   "analytical": "closed-form radius cuts at the R cheapest cost levels per customer (k-median recipe), src/bd/ufl/i_controls_xl.analytical_cuts",
+   "oneshot": "exact cuts at the shared initializer's design; ils: at each new best design of the ILS control",
+   "pool": "deterministic no-feedback oracle pool, seed 20261103 (g_bound_xl Pool)"
+  }
+ },
+ "runtime": {
+  "enforced": {
+   "python": "3.11.6",
+   "gurobi": "13.0.1"
+  },
+  "recorded": [
+   "numpy",
+   "scipy",
+   "host",
+   "slurm ids"
+  ]
+ },
+ "tiers": {
+  "N4000": {
+   "headline": "final_target",
+   "stage1": [
+    "kgs4000b_g11",
+    "kgs4000b_g12",
+    "kgs4000c_g13",
+    "kgs4000c_g14"
+   ],
+   "holdout": [
+    "kgs4000b_g21",
+    "kgs4000c_g22"
+   ],
+   "rationale": "protocol v4 section 14: N = 4000 classes b and c (compact LP out of memory; engineered reaches 1e-5 in 180-240 s, naive LP-master 0.39-0.58% short); fresh seeds (the probes used g1), one seed per instance so that no two instances share a connection matrix (D is drawn first from the seed)"
+  },
+  "N3000c": {
+   "headline": "final_target",
+   "stage1": [
+    "kgs3000c_g31",
+    "kgs3000c_g32",
+    "kgs3000c_g33",
+    "kgs3000c_g34"
+   ],
+   "holdout": [
+    "kgs3000c_g41",
+    "kgs3000c_g42"
+   ],
+   "run_if_rejected": "N4000",
+   "rationale": "protocol v4 section 14 fallback: N = 3000 class c (barrier 0.18% short at 900 s)"
+  }
+ },
+ "tier_order": [
+  "N4000",
+  "N3000c"
+ ],
+ "instances": {
+  "kgs4000b_g11": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 4000,
+    "class": "b",
+    "seed": 11,
+    "symmetric": true
+   },
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000b_g12": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 4000,
+    "class": "b",
+    "seed": 12,
+    "symmetric": true
+   },
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000c_g13": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 4000,
+    "class": "c",
+    "seed": 13,
+    "symmetric": true
+   },
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000c_g14": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 4000,
+    "class": "c",
+    "seed": 14,
+    "symmetric": true
+   },
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000b_g21": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 4000,
+    "class": "b",
+    "seed": 21,
+    "symmetric": true
+   },
+   "tier": "N4000",
+   "part": "holdout"
+  },
+  "kgs4000c_g22": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 4000,
+    "class": "c",
+    "seed": 22,
+    "symmetric": true
+   },
+   "tier": "N4000",
+   "part": "holdout"
+  },
+  "kgs3000c_g31": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 3000,
+    "class": "c",
+    "seed": 31,
+    "symmetric": true
+   },
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g32": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 3000,
+    "class": "c",
+    "seed": 32,
+    "symmetric": true
+   },
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g33": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 3000,
+    "class": "c",
+    "seed": 33,
+    "symmetric": true
+   },
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g34": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 3000,
+    "class": "c",
+    "seed": 34,
+    "symmetric": true
+   },
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g41": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 3000,
+    "class": "c",
+    "seed": 41,
+    "symmetric": true
+   },
+   "tier": "N3000c",
+   "part": "holdout"
+  },
+  "kgs3000c_g42": {
+   "generator": {
+    "recipe": "Koerkel-Ghosh (UflLib), src/bd/ufl/a_data_xl.make_kg",
+    "N": 3000,
+    "class": "c",
+    "seed": 42,
+    "symmetric": true
+   },
+   "tier": "N3000c",
+   "part": "holdout"
+  }
+ },
+ "instance_paths": "outputs/scaleup/instances/ufl/<name>.json (generated by --gen; hashes frozen at the freeze)",
+ "status": "PREREGISTERED (2026-11-05): tiers, seeds, arms, thresholds and rules frozen before any run; instance hashes, LP* intervals and code hashes are added by the additive freeze only",
+ "references": {
+  "kgs4000b_g11": {
+   "instance_sha256": null,
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000b_g12": {
+   "instance_sha256": null,
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000c_g13": {
+   "instance_sha256": null,
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000c_g14": {
+   "instance_sha256": null,
+   "tier": "N4000",
+   "part": "stage1"
+  },
+  "kgs4000b_g21": {
+   "instance_sha256": null,
+   "tier": "N4000",
+   "part": "holdout"
+  },
+  "kgs4000c_g22": {
+   "instance_sha256": null,
+   "tier": "N4000",
+   "part": "holdout"
+  },
+  "kgs3000c_g31": {
+   "instance_sha256": null,
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g32": {
+   "instance_sha256": null,
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g33": {
+   "instance_sha256": null,
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g34": {
+   "instance_sha256": null,
+   "tier": "N3000c",
+   "part": "stage1"
+  },
+  "kgs3000c_g41": {
+   "instance_sha256": null,
+   "tier": "N3000c",
+   "part": "holdout"
+  },
+  "kgs3000c_g42": {
+   "instance_sha256": null,
+   "tier": "N3000c",
+   "part": "holdout"
+  }
+ },
+ "lp_star_frozen": {
+  "intervals": {}
+ },
+ "code_sha256_at_preparation": {},
+ "preregistration": {
+  "sha256": "3a28656fe90c0acf207ddc8b49aaab5bdffb7a419140b084acb63a6b889fee49",
+  "excluded_fields": [
+   "status",
+   "references",
+   "lp_star_frozen",
+   "code_sha256_at_preparation",
+   "code_commit",
+   "freeze",
+   "preregistration"
+  ]
+ }
+}

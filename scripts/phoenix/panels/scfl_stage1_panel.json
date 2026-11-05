@@ -1,0 +1,474 @@
+{
+ "family": "scfl",
+ "protocol": "DecompBench/docs/2026-11-03-scaleup-protocol-v4.md sections 3, 4, 6, 14, 15, 16",
+ "T": 900.0,
+ "checkpoints": [
+  60.0,
+  300.0,
+  600.0,
+  900.0
+ ],
+ "resources": {
+  "cpus": 1,
+  "mem": "16G (Slurm cgroup = process budget)",
+  "gurobi_threads": 1,
+  "gurobi_mem_limit_gb": 15.5,
+  "slurm_time_per_arm_task": "01:00:00",
+  "slurm_time_per_reference_task": "03:00:00 (T = 3600 s)"
+ },
+ "checker": {
+  "canonical": "src/experiments/xl_certificate.check_versions_supervised (forked checker, one hard per-attempt deadline, family format converted to the canonical one inside it); views: xl_certificate.ufl_view (ufl-v1), src/bd/scfl/h_view_xl.scfl_view (scfl-v1); no memory_bytes frozen, so every memory failure is infrastructure",
+  "budget_seconds_per_attempt": 600,
+  "max_bytes": 268435456,
+  "max_nonzeros_expanded": 2000000,
+  "max_master_nonzeros": 20000000,
+  "max_abs_coef": 1000000000000.0,
+  "token_chars": 64,
+  "decimal_exponent": 400,
+  "gurobi_mem_gb": 8.0,
+  "version_rule": "last complete stored version received strictly before each checkpoint; final version checked first"
+ },
+ "publication_volume_cap_bytes": 4294967296,
+ "rules": {
+  "eps_b": 1e-05,
+  "eps_p": 0.001,
+  "naive_quality_gap": 0.005,
+  "naive_speed_ratio": 3.0,
+  "saved_fraction": 0.25,
+  "control_speed_ratio": 2.0,
+  "control_saved_seconds": 225.0,
+  "primal_gate": false,
+  "max_reference_rel_width": 1e-06,
+  "stage1_pass": "jointly >= 3 of 4 instances",
+  "holdout_pass": "2 of 2 fresh instances, scored only after Stage 1 passed",
+  "headline": "final_target for every tier: the engineered arm meets bound_target at T and every bound control misses it",
+  "bound_target": "cert_ok and (LP_hi - LB_cert)/max(|LP_hi|, 1) <= eps_b, LP_hi from the frozen rigorous interval",
+  "t_bound": "first checkpoint (60/300/600/900 s) meeting bound_target (censored at T)",
+  "naive_separation": "naive LP-master bgap_LP - engineered bgap_LP >= 0.005 at T (exact), or t_naive (censored at T) >= 3 t_eng AND t_naive - t_eng >= 0.25 T",
+  "primal": "reported, not gated (protocol v4 section 14: the primal side is saturated for both families; the bound is the only headline): z_best = best verified incumbent of any arm at T; near_best = gap <= eps_p; the primal control and the naive integer Benders are reported against the engineered LP-rounding incumbent. A primal evaluation that cannot finish within the task allocation leaves only the primal metrics undefined",
+  "method_ok": "every arm is fixed evaluator code whose method is settled before the run: the engineered arms are Benders LP phases (UFL: subgradient warm-start cuts + purging; SCFL: Jensen cluster-dual seed cuts + core), the intended section 14 configurations; eng_plain (same initialization as naive_lp: shared greedy design + lower-bound cuts) is the matched-start diagnostic. bound_target therefore needs no separate method audit in Stage 1; agent runs keep the audit",
+  "bound_claim_refutation": "a solver-reported bound above z_best (relative 1e-6) is a refuted claim: infrastructure (rerun)",
+  "publication_volume": "certificate versions received after the per-arm volume cap are recorded (time, size, sha256) but not stored and never eligible; the arm is scored on its last stored version and the overflow is reported",
+  "pruning": "after the canonical result is persisted, stored certificate files that no checkpoint selected are deleted (their receipt records stay in events.jsonl)",
+  "lagrangian": "diagnostic (itself a decomposition; the method audit decides method_ok)",
+  "mip": "reported baseline, not a gate",
+  "decision_procedure": "an instance is decided only when every panel arm has a complete result with a valid identity; infrastructure in a decision arm makes it pending (rerun), never a beaten control; a tier passes Stage 1 with >= 3 of 4 passes (fails once 3 is impossible), then needs its holdout 2 of 2; tiers are decided in tier_order, a fallback tier is run and read only after its primary tier was rejected; the family keeps the first retained tier",
+  "reference_rule": "an interval is usable only if rigorous (LP_lo <= LP_hi, both exact) with relative width <= max_reference_rel_width; otherwise the instance stays pending (reference rerun with a longer T), never a failure",
+  "no_switching": "no change of headline, thresholds, arms, seeds or instances after any Stage 1 result is read",
+  "oom_rule": "as k-median: a SIGKILL before T is a resource outcome only with a kernel-confirmed OOM kill of the arm",
+  "result_identity": "as k-median plus the family: instance, arm, family, T, panel sha256, frozen instance sha256 and every frozen code sha256; references read from the results directory (holdout, fallback tiers) must match their reference seal (record sha256, witness hashes, instance hash, family and name), written by scaleup_bdlp_panel.py --seal before that part's arms are submitted",
+  "fractional_domain": "SCFL: every panel instance satisfies max_i u_i <= its smallest positive scenario total, so the cover row is the exact recourse-feasible domain at fractional y (checked at generation and at the freeze)",
+  "attempts": "as k-median: fresh attempt directories, exactly one scored attempt per arm (earliest complete, valid identity, no infrastructure)"
+ },
+ "arms": {
+  "engineered": "eng",
+  "naive_bound": "naive_lp",
+  "bound_controls": [
+   "lp_bar",
+   "lp_dual",
+   "jensen",
+   "empty",
+   "analytical",
+   "oneshot_greedy",
+   "oneshot_saa",
+   "pool",
+   "heur"
+  ],
+  "primal_control": "heur",
+  "primal_naive": "naive_int",
+  "diagnostics": [
+   "eng_plain",
+   "eng_nostab",
+   "naive_int",
+   "lagr",
+   "mip"
+  ],
+  "all": [
+   "eng",
+   "eng_plain",
+   "eng_nostab",
+   "naive_lp",
+   "naive_int",
+   "lp_bar",
+   "lp_dual",
+   "jensen",
+   "empty",
+   "analytical",
+   "oneshot_greedy",
+   "oneshot_saa",
+   "pool",
+   "heur",
+   "lagr",
+   "mip"
+  ],
+  "configs": {
+   "eng": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLEngLP",
+    "kwargs": {
+     "jensen_seed": 50
+    }
+   },
+   "eng_plain": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLEngLP",
+    "kwargs": {}
+   },
+   "eng_nostab": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLEngLP",
+    "kwargs": {
+     "jensen_seed": 50,
+     "stabilize": false
+    }
+   },
+   "naive_lp": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLNaiveLP",
+    "kwargs": {}
+   },
+   "naive_int": {
+    "class": "src.bd.scfl.c_naive_bd.SCFLNaiveBenders",
+    "kwargs": {}
+   },
+   "lp_bar": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLCompactLP",
+    "kwargs": {
+     "method": 2,
+     "lean": true,
+     "mem_limit_gb": 15.5
+    }
+   },
+   "lp_dual": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLCompactLP",
+    "kwargs": {
+     "method": 1,
+     "lean": true,
+     "mem_limit_gb": 15.5
+    }
+   },
+   "jensen": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLJensen",
+    "kwargs": {
+     "lean": true,
+     "mem_limit_gb": 15.5
+    }
+   },
+   "empty": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLStatic",
+    "kwargs": {
+     "kind": "empty"
+    }
+   },
+   "analytical": {
+    "class": "src.bd.scfl.i_controls_xl.SCFLAnalytical",
+    "kwargs": {}
+   },
+   "oneshot_greedy": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLStatic",
+    "kwargs": {
+     "kind": "oneshot_greedy"
+    }
+   },
+   "oneshot_saa": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLStatic",
+    "kwargs": {
+     "kind": "oneshot_saa"
+    }
+   },
+   "pool": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLPool",
+    "kwargs": {}
+   },
+   "heur": {
+    "class": "src.bd.scfl.i_controls_xl.SCFLHeurOneShot",
+    "kwargs": {
+     "mode": "saa"
+    }
+   },
+   "lagr": {
+    "class": "src.bd.scfl.g_bound_xl.SCFLLagrangian",
+    "kwargs": {}
+   },
+   "mip": {
+    "class": "src.bd.scfl.b_mip_xl.SCFLExtensiveMIP",
+    "kwargs": {
+     "strong": true,
+     "mem_limit_gb": 15.5
+    }
+   }
+  },
+  "reference": {
+   "class": "src.bd.scfl.g_bound_xl.SCFLEngLP",
+   "kwargs": {
+    "jensen_seed": 50,
+    "conv_tol": 1e-09,
+    "cert_interval": 60.0
+   }
+  },
+  "trivial_certificate_controls": {
+   "empty": "no cuts",
+   "analytical": "uncapacitated-relaxation cuts (alpha = 0) at the r-th smallest unit cost per customer, r = 1..R, one term per scenario, src/bd/scfl/i_controls_xl.analytical_terms",
+   "oneshot": "exact cuts at the shared initializer's design; oneshot_saa: at a 10-scenario SAA design; heur: at the best design of the SAA + local-search control, in a reserve of max(60 s, 0.1 T)",
+   "pool": "deterministic no-feedback oracle pool, seed 20261103 (g_bound_xl Pool)",
+   "jensen": "cluster-mean extensive-form LPs (G = 10, 20, 40, ...), duals as cuts"
+  }
+ },
+ "runtime": {
+  "enforced": {
+   "python": "3.11.6",
+   "gurobi": "13.0.1"
+  },
+  "recorded": [
+   "numpy",
+   "scipy",
+   "host",
+   "slurm ids"
+  ]
+ },
+ "tiers": {
+  "cap114_S5000": {
+   "headline": "final_target",
+   "stage1": [
+    "cap114_s5000_g11",
+    "cap114_s5000_g12",
+    "cap114_s5000_g13",
+    "cap114_s5000_g14"
+   ],
+   "holdout": [
+    "cap114_s5000_g21",
+    "cap114_s5000_g22"
+   ],
+   "rationale": "protocol v4 section 14: S = 5000, cap114 preferred (compact LP out of memory; engineered Jensen-seeded reaches 1e-5 in 240 s; naive LP-master 11% short; Jensen control 0.19%)"
+  },
+  "cap111_S5000": {
+   "headline": "final_target",
+   "stage1": [
+    "cap111_s5000_g31",
+    "cap111_s5000_g32",
+    "cap111_s5000_g33",
+    "cap111_s5000_g34"
+   ],
+   "holdout": [
+    "cap111_s5000_g41",
+    "cap111_s5000_g42"
+   ],
+   "run_if_rejected": "cap114_S5000",
+   "rationale": "fallback named by section 14's probes (cap111 S5000: engineered 60 s, naive 13%, Jensen 0.068%, compact LP out of memory)"
+  }
+ },
+ "tier_order": [
+  "cap114_S5000",
+  "cap111_S5000"
+ ],
+ "instances": {
+  "cap114_s5000_g11": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap114",
+    "base_sha256": "da4e7d25b11594e1621406e3a1ec8d2dce402d14f576ccaa88b42409afee221b",
+    "S": 5000,
+    "seed": 11
+   },
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g12": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap114",
+    "base_sha256": "da4e7d25b11594e1621406e3a1ec8d2dce402d14f576ccaa88b42409afee221b",
+    "S": 5000,
+    "seed": 12
+   },
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g13": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap114",
+    "base_sha256": "da4e7d25b11594e1621406e3a1ec8d2dce402d14f576ccaa88b42409afee221b",
+    "S": 5000,
+    "seed": 13
+   },
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g14": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap114",
+    "base_sha256": "da4e7d25b11594e1621406e3a1ec8d2dce402d14f576ccaa88b42409afee221b",
+    "S": 5000,
+    "seed": 14
+   },
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g21": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap114",
+    "base_sha256": "da4e7d25b11594e1621406e3a1ec8d2dce402d14f576ccaa88b42409afee221b",
+    "S": 5000,
+    "seed": 21
+   },
+   "tier": "cap114_S5000",
+   "part": "holdout"
+  },
+  "cap114_s5000_g22": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap114",
+    "base_sha256": "da4e7d25b11594e1621406e3a1ec8d2dce402d14f576ccaa88b42409afee221b",
+    "S": 5000,
+    "seed": 22
+   },
+   "tier": "cap114_S5000",
+   "part": "holdout"
+  },
+  "cap111_s5000_g31": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap111",
+    "base_sha256": "16b09017bb73164a5490fe9cd71a36da9269c702e8559b542e23a84d4e25774a",
+    "S": 5000,
+    "seed": 31
+   },
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g32": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap111",
+    "base_sha256": "16b09017bb73164a5490fe9cd71a36da9269c702e8559b542e23a84d4e25774a",
+    "S": 5000,
+    "seed": 32
+   },
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g33": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap111",
+    "base_sha256": "16b09017bb73164a5490fe9cd71a36da9269c702e8559b542e23a84d4e25774a",
+    "S": 5000,
+    "seed": 33
+   },
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g34": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap111",
+    "base_sha256": "16b09017bb73164a5490fe9cd71a36da9269c702e8559b542e23a84d4e25774a",
+    "S": 5000,
+    "seed": 34
+   },
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g41": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap111",
+    "base_sha256": "16b09017bb73164a5490fe9cd71a36da9269c702e8559b542e23a84d4e25774a",
+    "S": 5000,
+    "seed": 41
+   },
+   "tier": "cap111_S5000",
+   "part": "holdout"
+  },
+  "cap111_s5000_g42": {
+   "generator": {
+    "recipe": "OR-Library CAP base + Bodur et al. (2017) Sec. 4.4 scenarios, src/bd/scfl/a_data_xl.make_instance",
+    "base": "cap111",
+    "base_sha256": "16b09017bb73164a5490fe9cd71a36da9269c702e8559b542e23a84d4e25774a",
+    "S": 5000,
+    "seed": 42
+   },
+   "tier": "cap111_S5000",
+   "part": "holdout"
+  }
+ },
+ "instance_paths": "outputs/scaleup/instances/scfl/<name>.json (generated by --gen; hashes frozen at the freeze)",
+ "status": "PREREGISTERED (2026-11-05): tiers, seeds, arms, thresholds and rules frozen before any run; instance hashes, LP* intervals and code hashes are added by the additive freeze only",
+ "references": {
+  "cap114_s5000_g11": {
+   "instance_sha256": null,
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g12": {
+   "instance_sha256": null,
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g13": {
+   "instance_sha256": null,
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g14": {
+   "instance_sha256": null,
+   "tier": "cap114_S5000",
+   "part": "stage1"
+  },
+  "cap114_s5000_g21": {
+   "instance_sha256": null,
+   "tier": "cap114_S5000",
+   "part": "holdout"
+  },
+  "cap114_s5000_g22": {
+   "instance_sha256": null,
+   "tier": "cap114_S5000",
+   "part": "holdout"
+  },
+  "cap111_s5000_g31": {
+   "instance_sha256": null,
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g32": {
+   "instance_sha256": null,
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g33": {
+   "instance_sha256": null,
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g34": {
+   "instance_sha256": null,
+   "tier": "cap111_S5000",
+   "part": "stage1"
+  },
+  "cap111_s5000_g41": {
+   "instance_sha256": null,
+   "tier": "cap111_S5000",
+   "part": "holdout"
+  },
+  "cap111_s5000_g42": {
+   "instance_sha256": null,
+   "tier": "cap111_S5000",
+   "part": "holdout"
+  }
+ },
+ "lp_star_frozen": {
+  "intervals": {}
+ },
+ "code_sha256_at_preparation": {},
+ "preregistration": {
+  "sha256": "44ff49853093000046a1f69ea846443dfa7eabd866615749bf0f7721651f78fc",
+  "excluded_fields": [
+   "status",
+   "references",
+   "lp_star_frozen",
+   "code_sha256_at_preparation",
+   "code_commit",
+   "freeze",
+   "preregistration"
+  ]
+ }
+}

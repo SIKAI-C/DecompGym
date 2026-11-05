@@ -1,0 +1,2 @@
+--reference ufl outputs/scaleup/instances/ufl/kgs3000c_g41.json
+--reference ufl outputs/scaleup/instances/ufl/kgs3000c_g42.json

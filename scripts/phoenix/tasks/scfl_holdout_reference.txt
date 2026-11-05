@@ -1,0 +1,2 @@
+--reference scfl outputs/scaleup/instances/scfl/cap114_s5000_g21.json
+--reference scfl outputs/scaleup/instances/scfl/cap114_s5000_g22.json
