@@ -1,33 +1,48 @@
-"""Railway crew scheduling (RCSP): small instances cut from the van Rossum (2026) benchmark.
+"""Railway crew scheduling (RCSP): small instances cut from the van Rossum (2026) benchmark by time windows.
 
 Problem (B.T.C. van Rossum, "Branch and Price for Railway Crew Scheduling: Benchmark Instances and Computational
-Study", 2026; semantics as in the scale-up RCSP): choose a minimum-cost set of duties covering every task at least
-once. A duty is a path SOURCE -> CONNECTION* -> SINK in the connection graph whose SOURCE and SINK use the same crew
-base, and it must
+Study", arXiv:2606.10081, Section 2; semantics as in the scale-up RCSP): choose a minimum-cost set of duties covering
+every task at least once. A duty is a path SOURCE -> CONNECTION* -> SINK in the connection graph whose SOURCE and
+SINK use the same crew base, and it must
 - last at most 9.5 h (34 200 s; the duty length is the sum of the connection durations, SOURCE and SINK included);
 - contain a break connection a (timeBeforeBreak(a) >= 0; a 30-min meal break) with
   before(a) = (durations of the connections before a) + timeBeforeBreak(a) <= 5.5 h (19 800 s) and
   after(a) = timeAfterBreak(a) + (durations of the connections after a) <= 5.5 h.
 Cost: the sum of the connection costs (1 per second of duty time plus 28 800 on every SOURCE connection).
 
-Instances. The benchmark's smallest instances (90+ tasks) are too large for an exact 60 s MIP, so each instance is
-an induced sub-instance of one benchmark instance (instance and best-known solution files vendored in `benchmark/`,
-MIT licence). A plain time window does not work: the benchmark connects only some task pairs, so most tasks of a
-short window lie in no feasible duty. The truncation rule is therefore:
-1. sort the duties of the benchmark's published best-known solution of the variant by the start of their first task;
-2. from a uniformly random position, take consecutive duties until their tasks reach the lower end of the size
-   range; the draw is repeated when the task count exceeds the upper end;
+Why a cut and not the paper's generator (option A). The benchmark generator (paper Section 4.1) chains a gravity
+demand model, a line-planning MIP, a PESP timetable over 06:00-22:00 and greedy rolling-stock scheduling before it
+builds tasks and connections; the line costs, line capacities, frequencies, PESP weights and the rolling-stock rules
+are not specified well enough to reimplement, and even its smallest output (2 large stations, a full day) has 90+
+tasks. Only its last two steps are fully specified, and the benchmark files already are their output. We therefore
+cut sub-instances from published benchmark instances (option B) by a rule that ignores every published solution:
+1. parent instance and variant: seeds < 100 (evaluation) use the evaluation parents EVAL_PARENTS[seed % 3], seeds
+   >= 100 (calibration and development) use the disjoint DEV_PARENTS[seed % 3]; the variant is "multi" for odd seeds
+   and "single" for even seeds (the paper's two variants, same tasks and task-task connections);
+2. time window: a window of SIZE_CONFIG[size]["window_hours"] hours (7 / 9.5 / 12 h; longer windows let the 5.5 h break
+   rules and, above 9.5 h, the duty-length rule exclude paths, though the size rule below may shorten them) whose start t0 is a uniformly random whole minute in [first task start, last task
+   end - window] of the parent; keep the tasks that start and end inside the window. Structural size rule
+   (declared; it reads no cost and no solution): while the kept tasks admit more than SIZE_CONFIG[size]
+   ["max_duties"] feasible duties, the window end moves 15 minutes earlier. This bounds the duty enumeration of the
+   60 s exact references, since the duty count varies by two orders of magnitude between parents;
 3. keep every connection of the variant between two kept tasks and every SOURCE / SINK connection of a kept task,
-   with all their fields (type, break times, duration, cost); nothing is recomputed. The chosen best-known duties stay
-   feasible (so every task is covered), and the other kept connections let duties recombine.
-Tasks are renumbered 0..n-1 by (start, end, original index) and connections 0..m-1 in their original order; the
-original indices are kept in `source`. Stations and crew bases keep their benchmark indices.
-Sizes: small 12-15 tasks, medium 18-22, large 25-30. Seeds 0 and 2 are single-depot (s2_t90, s3_t172), seed 1 is
-multi-depot (s2_t122).
+   with all their fields (type, break times, duration, cost); nothing is recomputed;
+4. postprocessing, as the paper's own postprocessing step (Section 4.1, "Postprocessing"): remove every task that is
+   in no feasible duty of the sub-instance, rebuild, and repeat until every task is coverable (this also removes
+   isolated tasks). A window that keeps no task is redrawn (declared rule; never triggered by the size table).
+The published best-known duties are never read. The benchmark timetable is hourly periodic, so windows of one parent
+differ little; the parents and variants supply the variety.
+Tasks are renumbered 0..n-1 by (start, end, original index) and connections 0..m-1 in their original order. The
+agent-visible data carry no parent name, window or original indices (they go to `provenance.json` next to
+data.json, written by `generate_rcsp_instance`). Stations and crew bases keep their benchmark station indices.
+Vendored parents (`benchmark/`, MIT licence): evaluation s2_t90, s2_t122, s3_t172; development s2_t118, s2_t120,
+s3_t168 (all from the benchmark's tiny group; s{S}_t{T} = S large stations, T tasks).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 import random
 from typing import Any, cast
@@ -38,15 +53,18 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 MAX_DUTY = 34_200  # 9.5 h
 MAX_WORK = 19_800  # 5.5 h
 BENCHMARK = Path(__file__).resolve().parent / "benchmark"
-SOURCES = ("s2_t90", "s2_t122", "s3_t172")
+EVAL_PARENTS = ("s2_t90", "s2_t122", "s3_t172")
+DEV_PARENTS = ("s2_t118", "s2_t120", "s3_t168")
+FIRST_DEV_SEED = 100
 
 SIZE_CONFIG = {
-    "small": {"tasks": (12, 15)},
-    "medium": {"tasks": (18, 22)},
-    "large": {"tasks": (25, 30)},
+    "small": {"window_hours": 7.0, "max_duties": 2_000},
+    "medium": {"window_hours": 9.5, "max_duties": 20_000},
+    "large": {"window_hours": 12.0, "max_duties": 40_000},
 }
 
-DEFAULT_CONFIG = {"max_draws": 500}
+DEFAULT_CONFIG = {"max_draws": 100, "shrink_seconds": 900}
+RECIPE_VERSION = "rcsp-window-v2-20261105"
 
 
 @dataclass
@@ -131,17 +149,16 @@ def _read(name: str, variant: str) -> dict[str, Any]:
     tasks = {int(r[0]): [int(x) for x in r[1:6]] for r in rows("tasks.txt")}
     conns = [[int(r[0]), r[1], *(int(x) for x in r[2:8])] for r in rows(f"connections_{variant}_depot.txt")]
     conns.sort(key=lambda c: c[0])
-    by_index = {c[0]: c for c in conns}
-    best = [[by_index[int(x)][3] for x in line[:-1]] for line in rows(f"solution_{variant}_depot.txt")]
     return {"tasks": tasks, "connections": conns, "stations": sorted(int(r[0]) for r in rows("stations.txt")),
-            "bases": sorted(int(r[0]) for r in rows(f"crewbases_{variant}_depot.txt")), "best_duties": best}
+            "bases": sorted(int(r[0]) for r in rows(f"crewbases_{variant}_depot.txt"))}
 
 
-def cut(raw: dict[str, Any], keep: list[int], variant: str, size: str, source: dict[str, Any]) -> RCSPInstance:
-    """The induced sub-instance on the kept task ids (renumbered by start, end, original id)."""
+def cut(raw: dict[str, Any], keep: list[int], variant: str, size: str) -> tuple[RCSPInstance, list[int], list[int]]:
+    """The induced sub-instance on the kept task ids (renumbered by start, end, original id), with the original task
+    and connection ids of its tasks and connections."""
     keep = sorted(keep, key=lambda t: (raw["tasks"][t][0], raw["tasks"][t][1], t))
     new = {t: k for k, t in enumerate(keep)}
-    conns = []
+    conns, origin = [], []
     for c in raw["connections"]:
         kind, a, b = c[1], c[2], c[3]
         if kind == "SOURCE" and b in new:
@@ -152,42 +169,78 @@ def cut(raw: dict[str, Any], keep: list[int], variant: str, size: str, source: d
             row = [kind, new[a], new[b]]
         else:
             continue
-        conns.append([len(conns), *row, *c[4:8], c[0]])
-    source = {**source, "task_ids": keep, "connection_ids": [c.pop() for c in conns]}
-    return RCSPInstance(size, variant, len(keep), [raw["tasks"][t] for t in keep], raw["stations"], raw["bases"], conns, source)
+        conns.append([len(conns), *row, *c[4:8]])
+        origin.append(c[0])
+    inst = RCSPInstance(size, variant, len(keep), [raw["tasks"][t] for t in keep], raw["stations"], raw["bases"], conns,
+                        {"recipe": "time-window sub-instance of a van Rossum (2026) benchmark instance"})
+    return inst, keep, origin
+
+
+def window_cut(raw: dict[str, Any], t0: int, t1: int, variant: str, size: str) -> tuple[RCSPInstance, list[int], list[int], int]:
+    """Steps 2-4 of the module docstring for the window [t0, t1]: the tasks inside it, then the paper's
+    postprocessing. Returns the instance, its original task and connection ids, and its number of feasible duties."""
+    keep = [t for t, row in raw["tasks"].items() if row[0] >= t0 and row[1] <= t1]
+    while True:
+        inst, ids, origin = cut(raw, keep, variant, size)
+        duties = enumerate_duties(inst)
+        covered = {t for _, path, _ in duties for t in path}
+        if len(covered) == inst.n_tasks:
+            return inst, ids, origin, len(duties)
+        keep = [ids[k] for k in sorted(covered)]
+
+
+def _too_many_duties(raw: dict[str, Any], t0: int, t1: int, variant: str, cap: int) -> bool:
+    """True if the tasks inside [t0, t1] admit more than `cap` feasible duties (before postprocessing, which only
+    removes tasks that lie in no duty and so leaves the count unchanged)."""
+    keep = [t for t, row in raw["tasks"].items() if row[0] >= t0 and row[1] <= t1]
+    try:
+        enumerate_duties(cut(raw, keep, variant, "probe")[0], limit=cap)
+    except RuntimeError:
+        return True
+    return False
 
 
 class RCSPGenerator(BaseInstanceGenerator[RCSPInstance]):
-    def generate_instance(self, *, seed: int | None = None, size_label: str = "medium") -> RCSPInstance:
+    def draw(self, seed: int, size_label: str) -> tuple[RCSPInstance, dict[str, Any]]:
         if size_label not in SIZE_CONFIG:
             raise ValueError(f"Unknown size_label '{size_label}'. Expected one of {list(SIZE_CONFIG)}.")
-        seed = 0 if seed is None else int(seed)
-        rng = random.Random(f"rcsp-{size_label}-{seed}")
-        name = SOURCES[seed % len(SOURCES)]
-        variant = "multi" if seed % 3 == 1 else "single"
+        seed = int(seed)
+        parents = DEV_PARENTS if seed >= FIRST_DEV_SEED else EVAL_PARENTS
+        name = parents[seed % len(parents)]
+        variant = "multi" if seed % 2 == 1 else "single"
         raw = _read(name, variant)
-        lo_n, hi_n = SIZE_CONFIG[size_label]["tasks"]
-        duties = sorted(raw["best_duties"], key=lambda d: (raw["tasks"][d[0]][0], d))
+        hours, cap = SIZE_CONFIG[size_label]["window_hours"], SIZE_CONFIG[size_label]["max_duties"]
+        span = int(round(hours * 3600))
+        first = min(row[0] for row in raw["tasks"].values())
+        last = max(row[1] for row in raw["tasks"].values()) - span
+        rng = random.Random(f"rcsp-{size_label}-{seed}")
         for draw in range(DEFAULT_CONFIG["max_draws"]):
-            first = rng.randrange(len(duties))
-            keep: set[int] = set()
-            last = first
-            while last < len(duties) and len(keep) < lo_n:
-                keep |= set(duties[last])
-                last += 1
-            if not lo_n <= len(keep) <= hi_n:
-                continue
-            inst = cut(raw, sorted(keep), variant, size_label, {"benchmark": name, "best_known_duties": [first, last], "draw": draw})
-            if {t for _, path, _ in enumerate_duties(inst) for t in path} != set(range(inst.n_tasks)):
-                raise RuntimeError("a kept best-known duty is infeasible in the sub-instance")
-            return inst
-        raise RuntimeError(f"no admissible {size_label} sub-instance for seed {seed}")
+            t0 = first + 60 * rng.randint(0, max(0, (last - first) // 60))
+            t1 = t0 + span
+            # Structural size rule: shorten the window from the right until it admits at most `cap` feasible duties.
+            while t1 > t0 and _too_many_duties(raw, t0, t1, variant, cap):
+                t1 -= DEFAULT_CONFIG["shrink_seconds"]
+            inst, ids, origin, n_duties = window_cut(raw, t0, t1, variant, size_label)
+            if inst.n_tasks:
+                files = [BENCHMARK / name / f for f in ("tasks.txt", f"connections_{variant}_depot.txt", f"crewbases_{variant}_depot.txt", "stations.txt")]
+                provenance = {"recipe_version": RECIPE_VERSION, "seed": seed, "size": size_label, "benchmark": name, "variant": variant,
+                              "upstream": "https://github.com/BartvanRossum/rcsp-benchmark (MIT), files vendored in src/cg/rcsp/benchmark",
+                              "file_sha256": {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in files},
+                              "window": [t0, t1], "window_shortened_seconds": t0 + span - t1, "draw": draw, "n_duties": n_duties,
+                              "task_ids": ids, "connection_ids": origin}
+                return inst, provenance
+        raise RuntimeError(f"no nonempty {size_label} window for seed {seed}")
+
+    def generate_instance(self, *, seed: int | None = None, size_label: str = "medium") -> RCSPInstance:
+        return self.draw(0 if seed is None else int(seed), size_label)[0]
 
 
 def generate_rcsp_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:
-    inst = RCSPGenerator().generate_instance(seed=seed, size_label=size)
+    inst, provenance = RCSPGenerator().draw(seed, size)
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Provenance stays outside data.json: agents receive only data.json and prompt.txt.
+        (out_dir / "provenance.json").write_text(json.dumps(provenance, indent=2))
     return inst.to_dict()

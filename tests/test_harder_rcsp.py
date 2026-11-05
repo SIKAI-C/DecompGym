@@ -70,13 +70,23 @@ def generated():
     return [RCSPInstance.from_dict(generate_rcsp_instance(seed, size)) for size in ("small", "medium") for seed in range(3)]
 
 
-def test_rcsp_generator_sizes_and_coverage(generated):
-    from src.cg.rcsp.a_gen_data import SIZE_CONFIG, enumerate_duties
+def test_rcsp_generator_windows_coverage_and_parents(generated):
+    from src.cg.rcsp.a_gen_data import DEV_PARENTS, EVAL_PARENTS, SIZE_CONFIG, RCSPGenerator, enumerate_duties
 
     for inst in generated:
-        lo, hi = SIZE_CONFIG[inst.instance_size]["tasks"]
-        assert lo <= inst.n_tasks <= hi
+        assert inst.n_tasks > 0
         assert {t for _, path, _ in enumerate_duties(inst) for t in path} == set(range(inst.n_tasks))
+        assert set(inst.source) == {"recipe"}  # no parent name, window or original indices in the agent data
+    for size, cfg in SIZE_CONFIG.items():
+        for seed in (0, 1, 2, 100, 101):  # evaluation and development parents (generation only, no solve)
+            inst, prov = RCSPGenerator().draw(seed, size)
+            assert prov["benchmark"] in (DEV_PARENTS if seed >= 100 else EVAL_PARENTS)
+            assert prov["variant"] == ("multi" if seed % 2 else "single")
+            lo, hi = prov["window"]
+            assert hi - lo == round(cfg["window_hours"] * 3600) - prov["window_shortened_seconds"]
+            assert prov["window_shortened_seconds"] % 900 == 0 and prov["n_duties"] <= cfg["max_duties"]
+            assert all(lo <= t[0] and t[1] <= hi for t in inst.tasks)
+    assert not set(DEV_PARENTS) & set(EVAL_PARENTS)
 
 
 def test_rcsp_labelling_matches_enumeration(generated):
@@ -107,7 +117,7 @@ def test_rcsp_reference_matches_the_mip(tmp_path):
     from src.cg.rcsp.d_verifier import verify_solution
 
     pytest.importorskip("gurobipy")
-    generate_rcsp_instance(1, "medium", tmp_path)
+    generate_rcsp_instance(102, "small", tmp_path)  # a development parent
     path = str(tmp_path / "data.json")
     mono = RCSPBaseline().run(path)
     ref = RCSPColumnGeneration(time_limit=30).run(path)

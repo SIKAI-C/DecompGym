@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import gurobipy as gp
@@ -28,6 +29,8 @@ class CLRPBaseline(BaseBaseline[CLRPInstance, gp.Model]):
         self.params = {"Threads": 1, "MIPGap": 0.0, "MIPGapAbs": 0.5, **(params or {})}
 
     def load_instance(self, instance_name: str) -> CLRPInstance:
+        # The time limit covers loading and model construction as well as the solve.
+        self._started = time.perf_counter()
         return CLRPInstance.from_json_file(instance_name)
 
     def build_model(self, inst: CLRPInstance) -> gp.Model:
@@ -101,8 +104,15 @@ class CLRPBaseline(BaseBaseline[CLRPInstance, gp.Model]):
             for S in CVRPBaseline.violated_sets(inst.n_customers, inst.vehicle_capacity, q, flow):
                 cb.cbCut(gp.quicksum(x[u, v] for (u, v) in arcs if node(u) in S and node(v) not in S) >= math.ceil(sum(q[i] for i in S) / inst.vehicle_capacity - 1e-9))
 
+        if "TimeLimit" in self.params:
+            remaining = float(self.params["TimeLimit"]) - (time.perf_counter() - self._started)
+            if remaining <= 0:
+                raise RuntimeError("model construction used up the time limit")
+            model.Params.TimeLimit = remaining
         model.Params.PreCrush = 1
         model.optimize(callback)
+        if "TimeLimit" in self.params and time.perf_counter() - self._started > float(self.params["TimeLimit"]):
+            raise RuntimeError("the MIP certificate arrived after the end-to-end time limit")
         if model.Status != GRB.OPTIMAL or math.ceil(model.ObjBound - 1e-6) < model.ObjVal - 1e-6:
             raise RuntimeError(f"Baseline model not proved optimal (status={model.Status}, bound={model.ObjBound}, incumbent={model.ObjVal})")
         m = inst.n_depots

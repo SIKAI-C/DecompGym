@@ -29,7 +29,7 @@ Input file data.json contains:
   - "n_tasks": int; "tasks": list of n_tasks rows [startTime, endTime, startStation, endStation, duration] (tasks 0..n_tasks-1)
   - "crew_bases": list of station indices a duty may start and end at; "stations": all station indices
   - "connections": list of rows [index, type, startBlock, endBlock, timeBeforeBreak, timeAfterBreak, duration, cost], where type is "SOURCE" (startBlock = base station, endBlock = task), "CONNECTION" (task -> task) or "SINK" (startBlock = task, endBlock = base station); there is at most one connection per (type, startBlock, endBlock)
-  - "variant", "instance_size", "source": descriptive only
+  - "variant", "instance_size", "source": descriptive only (the instance is a time window of a synthetic benchmark day; times are seconds from midnight)
 
 Examples from this instance:
 {examples}

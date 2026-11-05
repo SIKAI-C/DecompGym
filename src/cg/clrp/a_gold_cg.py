@@ -9,7 +9,7 @@ Phase I uses one artificial per customer. Pricing is exact, one problem per depo
 customer subset has its cheapest route from that depot precomputed (`src.utils.subset_routes`), and its
 reduced cost is c_r - sum_{i in r} (pi_i + q_i mu_d + nu_id). At the converged root LP value LB, any plan
 cheaper than an upper bound UB uses only columns with reduced cost <= UB - LB (the y_d terms are
-nonnegative by LP duality), so the integer master over those columns and binary y is exact.
+nonnegative once the dual of y_d <= 1 is accounted for), so the integer master over those columns and binary y is exact.
 `enumerate=False` is the price-and-branch shortcut: root column generation, then one integer master.
 """
 from __future__ import annotations

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import gurobipy as gp
@@ -25,6 +26,8 @@ class RCSPBaseline(BaseBaseline[RCSPInstance, gp.Model]):
         self.params = {"Threads": 1, "MIPGap": 0.0, "MIPGapAbs": 0.5, **(params or {})}
 
     def load_instance(self, instance_name: str) -> RCSPInstance:
+        # The time limit covers loading, duty enumeration and model construction as well as the solve.
+        self._started = time.perf_counter()
         return RCSPInstance.from_json_file(instance_name)
 
     def build_model(self, inst: RCSPInstance) -> gp.Model:
@@ -47,10 +50,18 @@ class RCSPBaseline(BaseBaseline[RCSPInstance, gp.Model]):
         return model
 
     def solve_model(self, inst: RCSPInstance, model: gp.Model) -> BaselineSolution[gp.Model]:
+        build = time.perf_counter() - self._started
+        if "TimeLimit" in self.params:
+            remaining = float(self.params["TimeLimit"]) - build
+            if remaining <= 0:
+                raise RuntimeError(f"duty enumeration and model construction took {build:.1f} s, beyond the time limit")
+            model.Params.TimeLimit = remaining
         model.optimize()
+        if "TimeLimit" in self.params and time.perf_counter() - self._started > float(self.params["TimeLimit"]):
+            raise RuntimeError("the MIP certificate arrived after the end-to-end time limit")
         if model.Status != GRB.OPTIMAL or math.ceil(model.ObjBound - 1e-6) < model.ObjVal - 1e-6:
             raise RuntimeError(f"Baseline model not proved optimal (status={model.Status}, bound={model.ObjBound}, incumbent={model.ObjVal})")
         x, duties = model._x, model._duties  # type: ignore[attr-defined]
         plan = [{"depot": base, "tasks": list(path)} for k, (base, path, _) in enumerate(duties) if x[k].X > 0.5]
         return BaselineSolution(objective=float(model.ObjVal), vars={}, best_bound=float(model.ObjBound), model_state=model,
-                                metadata={"duties": plan, "n_duties_enumerated": len(duties)})
+                                metadata={"duties": plan, "n_duties_enumerated": len(duties), "build_seconds": build})

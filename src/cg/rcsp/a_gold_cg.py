@@ -2,7 +2,7 @@
 
 Master: set covering over duties (sum over duties containing task t >= 1; one artificial per task in phase I), so
 the duals pi are nonnegative. Pricing is a resource-constrained shortest path on the acyclic connection graph with the
-labels of van Rossum (2026, Appendix A), as in the scale-up pricer: (reduced cost c, duty length w, time without a
+labels of van Rossum (2026, Section 3.1.1), as in the scale-up pricer: (reduced cost c, duty length w, time without a
 break beta, break flag b, crew base). Along a connection a = (i, j): c += cost_a - pi_j, w += dur_a; the break is
 taken on a break connection whenever w + timeBeforeBreak(a) <= 5.5 h (beta = timeAfterBreak(a), b = 1), otherwise
 beta += dur_a; labels need w <= 9.5 h and beta <= 5.5 h (before the break beta = w). Taking the latest admissible
@@ -118,8 +118,8 @@ class RCSPColumnGeneration:
         self.batch, self.tol = batch, tol
 
     @staticmethod
-    def duty_cost(inst: RCSPInstance, duty: Duty) -> int:
-        g = inst.graph()
+    def duty_cost(inst: RCSPInstance, duty: Duty, g: dict[str, dict] | None = None) -> int:
+        g = inst.graph() if g is None else g
         b, tasks = duty
         chain = [g["SOURCE"][(b, tasks[0])]] + [g["CONNECTION"][p] for p in zip(tasks, tasks[1:])] + [g["SINK"][(tasks[-1], b)]]
         return int(sum(c[7] for c in chain))
@@ -147,6 +147,7 @@ class RCSPColumnGeneration:
         inst = RCSPInstance.from_json_file(instance_name)
         n = inst.n_tasks
         pricer = DutyPricer(inst)
+        graph = inst.graph()
         self.runtime.check()
         pool: list[Duty] = []
         cost: dict[Duty, int] = {}
@@ -175,7 +176,7 @@ class RCSPColumnGeneration:
                     lb = float(lp.ObjVal) + n * min_rc if all(art[t].X <= 1e-6 for t in range(n)) else None
                     break
                 for _, col in new:
-                    cost[col] = self.duty_cost(inst, col)
+                    cost[col] = self.duty_cost(inst, col, graph)
                     pool.append(col)
         except Exception as exc:
             if "budget" not in str(exc).lower() and "time limit" not in str(exc).lower():
@@ -187,7 +188,7 @@ class RCSPColumnGeneration:
         if self.enumerate and lb is not None and chosen is not None and not proved:
             for _, col in pricer.price(pi, ub - lb + 1e-6, enumerate_all=True):
                 if col not in cost:
-                    cost[col] = self.duty_cost(inst, col)
+                    cost[col] = self.duty_cost(inst, col, graph)
             candidates = sorted(cost)
             enumerated, value = self._integer_master(n, candidates, cost, self.runtime.remaining())
             if enumerated is not None and value < ub - 1e-9:
