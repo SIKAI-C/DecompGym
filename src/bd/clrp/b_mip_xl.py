@@ -11,13 +11,15 @@ Objective: opening costs + travel costs + vehicle cost per route (one per arc le
 """
 from __future__ import annotations
 
-from typing import Any
+import math
+import time
+from typing import Any, Callable
 
 import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from src.bd.clrp.a_data import CLRPInstance
+from src.bd.clrp.a_data import CLRPInstance, load_prodhon
 
 
 def build_clrp_mip(inst: CLRPInstance, cost: np.ndarray, env: gp.Env | None = None) -> tuple[gp.Model, dict[str, Any]]:
@@ -111,3 +113,93 @@ def route_cost(inst: CLRPInstance, cost: np.ndarray, routes: list[dict[str, Any]
         return None
     opened = sorted({r["depot"] for r in routes})
     return total + float(inst.opening_cost[opened].sum())
+
+
+class CLRPCompactMIP:
+    """The compact MIP (build_clrp_mip, unchanged) with the solver interface of the decomposition references, for the
+    protocol v4 runner (scripts/phoenix/scaleup_cg_stage1.py): every integer solution is decoded (decode_routes) and
+    re-checked with route_cost before it is published; bounds are Gurobi's best bounds rounded up (all costs are
+    integral: ceil'd travel costs, integer opening and vehicle costs), never above the incumbent. Memory: SoftMemLimit
+    on the environment before construction, as the v3.1 calibration runner did."""
+
+    def __init__(self, *, time_limit: float = 3600.0, threads: int = 1, on_incumbent: Callable | None = None,
+                 on_bound: Callable | None = None, soft_mem_gb: float | None = None, seed: int = 0) -> None:
+        self.time_limit, self.threads, self.soft_mem_gb, self.seed = time_limit, threads, soft_mem_gb, seed
+        self.on_incumbent = on_incumbent or (lambda routes: None)
+        self.on_bound = on_bound or (lambda bound: None)
+
+    def run(self, data_path: str) -> dict[str, Any]:
+        t0 = time.perf_counter()
+        deadline = t0 + self.time_limit
+        inst = load_prodhon(data_path)
+        cost = inst.travel("ceil")
+        env = gp.Env(empty=True)
+        env.setParam("OutputFlag", 0)
+        env.setParam("Threads", self.threads)
+        env.setParam("Seed", self.seed)
+        if self.soft_mem_gb:
+            env.setParam("SoftMemLimit", self.soft_mem_gb)
+        env.start()
+        model, v = build_clrp_mip(inst, cost, env)
+        arcs = v["arcs"]
+        xs = [v["x"][a] for a in arcs]
+        integral = bool(np.all(inst.opening_cost == np.round(inst.opening_cost)) and float(inst.vehicle_cost).is_integer())
+        build = time.perf_counter() - t0
+        best: dict[str, Any] = {"obj": math.inf, "routes": None, "bound": -math.inf, "first": None, "rejected": 0}
+
+        def offer(values: list[float]) -> None:
+            try:
+                routes = decode_routes(inst, dict(zip(arcs, values)))
+            except (KeyError, IndexError):   # a malformed integer point (should not happen): never published
+                best["rejected"] += 1
+                return
+            obj = route_cost(inst, cost, routes)
+            if obj is None:
+                best["rejected"] += 1
+                return
+            if obj < best["obj"]:
+                best.update(obj=obj, routes=routes)
+                if best["first"] is None:
+                    best["first"] = time.perf_counter() - t0
+                self.on_incumbent(routes)
+
+        def bound(value: float) -> None:
+            if math.isfinite(value) and value > -1e90:
+                b = float(math.ceil(value - 1e-6 * max(1.0, abs(value)))) if integral else value - 1e-6 * max(1.0, abs(value))
+                if best["obj"] < math.inf:
+                    b = min(b, float(best["obj"]))
+                if b > best["bound"]:
+                    best["bound"] = b
+                    self.on_bound(b)
+
+        def callback(mdl, where):
+            if time.perf_counter() > deadline:
+                mdl.terminate()
+                return
+            if where == GRB.Callback.MIPSOL:
+                offer(mdl.cbGetSolution(xs))
+            elif where == GRB.Callback.MIP:
+                bound(mdl.cbGet(GRB.Callback.MIP_OBJBND))
+
+        reason = "time_limit"
+        if deadline - time.perf_counter() > 0.01:
+            model.Params.TimeLimit = deadline - time.perf_counter()
+            if integral:   # integer objective: stop only at a proof within less than one unit (Codex review CG-1 #7)
+                model.Params.MIPGap = 0.0
+                model.Params.MIPGapAbs = 0.5
+            model.optimize(callback)
+            if model.SolCount:
+                offer(model.getAttr("X", xs))
+            if model.Status in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.INTERRUPTED, GRB.MEM_LIMIT):
+                bound(float(model.ObjBound))
+            reason = {GRB.OPTIMAL: "optimal" if integral else "tolerance_optimal",
+                      GRB.MEM_LIMIT: "memory_limit"}.get(model.Status, "time_limit")
+        out = {"best_objective": best["obj"] if best["routes"] else None,
+               "global_lb": best["bound"] if best["bound"] > -math.inf else None, "termination_reason": reason,
+               "routes": best["routes"], "build_seconds": build, "num_vars": int(model.NumVars),
+               "num_constrs": int(model.NumConstrs), "rejected_points": best["rejected"],
+               "first_incumbent_seconds": best["first"], "node_count": float(model.NodeCount),
+               "total_seconds": time.perf_counter() - t0}
+        model.dispose()
+        env.dispose()
+        return out
