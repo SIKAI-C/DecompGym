@@ -24,6 +24,8 @@ from src.utils.subset_routes import RouteTable
 
 
 class CVRPColumnGeneration:
+    max_customers = 21
+
     def __init__(self, *, time_limit: float = 60.0, enumerate: bool = True, batch: int = 50) -> None:
         self.runtime = ReferenceRuntime(time_limit)
         self.enumerate = enumerate
@@ -52,6 +54,9 @@ class CVRPColumnGeneration:
         started = time.perf_counter()
         inst = CVRPInstance.from_json_file(instance_name)
         n = inst.n_customers
+        if n > self.max_customers:
+            # The subset table holds 2^n x n int64 labels plus a dense 2^n x n membership matrix (about 1.4 GB at n = 22).
+            raise ValueError(f"the subset-table reference supports at most {self.max_customers} customers (got {n})")
         d = np.array([[inst.dist(i, j) for j in range(n + 1)] for i in range(n + 1)])
         table = RouteTable(d[0, 1:], d[1:, 1:], d[1:, 0], np.array(inst.demand[1:]), inst.capacity)
         self.runtime.check()
@@ -77,8 +82,11 @@ class CVRPColumnGeneration:
                 order = np.argsort(rc)[: self.batch + len(pool)]
                 new = [int(c) for c in order if rc[c] < -1e-6 and int(c) not in in_pool][: self.batch]
                 if not new:
-                    # Lagrangian bound: a plan has at most n routes, each with reduced cost >= min(0, min rc).
-                    lb = float(lp.ObjVal) + n * min(0.0, float(rc.min())) if all(art[i].X <= 1e-6 for i in range(n)) else None
+                    # Lagrangian bound from the duals themselves (valid whatever the LP's primal accuracy): a plan has at
+                    # most n routes, each with reduced cost >= min(0, min rc) (pricing is exhaustive over subsets), and an
+                    # artificial column has reduced cost big - dual.
+                    lb = (math.fsum(duals) + n * min(0.0, float(rc.min()) - 1e-9) + math.fsum(min(0.0, big - v) for v in duals)
+                          if all(art[i].X <= 1e-6 for i in range(n)) else None)
                     break
                 pool += new
                 in_pool.update(new)

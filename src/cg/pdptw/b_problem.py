@@ -13,9 +13,9 @@ BASE_PROMPT_PDPTW = """You are an expert operations research engineer and Python
 
 You are given a pickup and delivery problem with time windows (PDPTW):
   - Node 0 is the depot. Request k (k = 1..n) is picked up at node k and delivered at node n + k.
-  - Each node has coordinates (x, y), a demand (+q at a pickup, -q at its delivery), a time window [ready, due] and a service time.
-  - Travel time and travel distance from i to j both equal floor(10 * euclidean_distance(i, j)) / 10.
-  - Identical vehicles of capacity Q, unlimited in number; each route starts and ends at the depot within the depot's window.
+  - Each node has integer coordinates (x, y), a demand (+q at a pickup, -q at its delivery), a time window [ready, due] and a service time.
+  - Travel time and travel distance from i to j both equal round(1000 * euclidean_distance(i, j)), the scaled Euclidean distance rounded to the nearest integer. Ready times, due times and service times are integers in the same unit.
+  - Identical vehicles of capacity Q, unlimited in number; each route leaves the depot at the depot's ready time and must be back by the depot's due time.
   - Each request is served by one vehicle, which visits its pickup before its delivery. The load must stay within [0, Q] at all times.
   - A vehicle may wait if it arrives before ready; service must start no later than due.
   - Objective: minimize total travel distance.
@@ -37,7 +37,7 @@ Assume gurobipy and NumPy are available; the Python standard library is also all
 {{
   "status": "optimal | feasible | infeasible | error",
   "method": "column_generation",
-  "objective_value": <total distance>,
+  "objective_value": <total distance, an integer>,
   "solution": {{
     "routes": [[<node>, ...], ...]
   }}

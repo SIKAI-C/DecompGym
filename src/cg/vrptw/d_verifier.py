@@ -69,6 +69,8 @@ def verify_solution(data: Any, output: Any, tol: float | None = None) -> dict[st
         total += length
     if len(seen) != n:
         return _result(False, f"{n - len(seen)} customer(s) not served")
+    if len(solution["routes"]) > int(d.get("vehicles", n)):
+        return _result(False, f"{len(solution['routes'])} routes exceed the fleet limit {d.get('vehicles')}")
     return _result(True, "ok", round(total, 6))
 
 

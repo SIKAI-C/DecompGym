@@ -15,7 +15,8 @@ class VRPTWBaseline(BaseBaseline[VRPTWInstance, gp.Model]):
 
     def __init__(self, *, params: dict[str, Any] | None = None, verbose: bool = False) -> None:
         super().__init__(verbose=verbose)
-        self.params = {"Threads": 1, **(params or {})}
+        # Exact proof: the objective lies on the 0.1 grid, so a bound within 0.05 of the incumbent proves it.
+        self.params = {"Threads": 1, "MIPGap": 0.0, "MIPGapAbs": 0.05, **(params or {})}
 
     def load_instance(self, instance_name: str) -> VRPTWInstance:
         return VRPTWInstance.from_json_file(instance_name)
@@ -37,6 +38,7 @@ class VRPTWBaseline(BaseBaseline[VRPTWInstance, gp.Model]):
         model.addConstrs((x.sum(i, "*") == 1 for i in C), name="out")
         model.addConstrs((x.sum("*", j) == 1 for j in C), name="in")
         model.addConstr(t[0] == inst.ready[0])
+        model.addConstr(x.sum(0, "*") <= inst.vehicles, name="fleet")
         for (i, j) in arcs:
             if j == 0:
                 if i != 0:

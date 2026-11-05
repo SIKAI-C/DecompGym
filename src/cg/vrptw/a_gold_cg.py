@@ -37,6 +37,13 @@ def time_grid(inst, n_nodes: int):
     return d10, [to10(v) for v in inst.ready], [to10(v) for v in inst.due], [to10(v) for v in inst.service]
 
 
+def lagrangian_bound(duals: list[float], n_nodes: int, min_rc: float, penalty: float) -> float:
+    """A lower bound valid for ANY duals (no reliance on the LP's primal accuracy): every plan uses at most n_nodes
+    routes, each with reduced cost >= min_rc (exact pricing; 1e-8 covers label arithmetic), and each artificial
+    column (cost `penalty`, used at most once) has reduced cost penalty - dual."""
+    return math.fsum(duals[1:]) + n_nodes * min(0.0, min_rc - 1e-8) + math.fsum(min(0.0, penalty - v) for v in duals[1:])
+
+
 def artificial_cost(inst, n_nodes: int) -> float:
     """Exceeds the cost of any route set: every route costs at most twice its customers' depot distances (+ rounding)."""
     return 1.0 + sum(2 * inst.dist(0, i) + 0.2 for i in range(1, n_nodes + 1)) * 2
@@ -115,13 +122,18 @@ class RootColumnGeneration:
                 cover = lp.addConstrs(gp.quicksum(lam[r] for r, route in enumerate(routes) if i in route) + art[i] == 1 for i in C)
                 lp.setObjective(gp.quicksum(route_cost(inst, route) * lam[r] for r, route in enumerate(routes)) + artificial_cost(inst, len(C)) * art.sum(), GRB.MINIMIZE)
                 self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
+                if lp.Status != GRB.OPTIMAL:
+                    raise RuntimeError(f"restricted master LP not optimal (status={lp.Status})")
                 duals = [0.0] + [cover[i].Pi for i in C]
-                new = [r for _, r in espprc(inst, duals, self.runtime) if r not in routes]
+                found = espprc(inst, duals, self.runtime)
+                new = [r for _, r in found if r not in routes]
                 if self.verbose:
                     print(f"[cg {it}] lp={lp.ObjVal:.3f} new={len(new)}")
                 if not new:
-                    # The LP value is a bound only when no artificial coverage remains.
-                    lp_bound = float(lp.ObjVal) if all(art[i].X <= 1e-6 for i in C) else None
+                    # Lagrangian bound from the duals; reported only when no artificial coverage remains.
+                    min_rc = min([-1e-6] + [rc for rc, _ in found])
+                    bound = lagrangian_bound(duals, len(C), min_rc, artificial_cost(inst, len(C)))
+                    lp_bound = bound if all(art[i].X <= 1e-6 for i in C) else None
                     termination = "lp_converged"
                     break
                 routes.extend(new)
@@ -150,17 +162,59 @@ class BranchAndPrice:
     """Exact branch-and-price: set-partitioning master, heuristic-then-exact ESPPRC pricing, branching on arc flows.
 
     Child x_ij = 0 forbids arc (i, j); child x_ij = 1 forbids every other arc leaving i and entering j
-    (depot arcs excepted). Node bounds are rounded up to the one-decimal distance grid.
+    (depot arcs excepted). Node bounds: once exact pricing finds no column with reduced cost below -1e-6, every
+    route has reduced cost >= min(-1e-6, most negative returned), and a plan has at most n_nodes routes, so the
+    Lagrangian bound sum(duals) + n_nodes * min_rc (+ the artificial columns' negative reduced costs) is a valid lower
+    bound for whatever duals the LP returns (`lagrangian_bound`); it is then rounded up to the objective grid
+    (`grid`: 0.1 for truncated one-decimal distances). The penalized master (artificial coverage) is a relaxation of
+    the node's master, so its bound is valid too; a node whose bound is below the incumbent while artificial coverage
+    remains is NOT declared infeasible: the reference stops with an error instead (no false certificate).
     """
 
     instance_class = VRPTWInstance
+    grid = 0.1
 
     def __init__(self, *, time_limit: float = 60.0, n_neighbors: int = 6) -> None:
         self.runtime = ReferenceRuntime(time_limit)
         self.n_neighbors = n_neighbors
 
+    # Elementary pricing: the scale-up's vectorized labelling (`src.cg.vrptw.pricing.TWPricer`) with an ng-memory of
+    # every customer (ng = n, so ng-routes are exactly the elementary routes), up to `max_ng` customers (its dominance
+    # surface has n 2^(n-1) load cells); above that, the pure-Python `espprc`. Exact rounds must report complete=True,
+    # otherwise the stage fails (never a false bound).
+    max_ng = 18
+
     def pricer(self, inst, duals, *, forbidden, neighbors):
-        return espprc(inst, duals, self.runtime, forbidden=forbidden, neighbors=neighbors)
+        n = inst.n_customers
+        if n > self.max_ng:
+            return espprc(inst, duals, self.runtime, forbidden=forbidden, neighbors=neighbors)
+        import numpy as np
+        from src.cg.vrptw.a_data import VRPTWInstance as TenthsInstance
+        from src.cg.vrptw.pricing import INF, TWPricer
+        from src.utils.reference_runtime import ReferenceLimit
+
+        if getattr(self, "_tw", None) is None or self._tw[0] is not inst:
+            d10, R, D, S = time_grid(inst, n)
+            tenths = TenthsInstance("subset", np.array([inst.x, inst.y], dtype=float).T, np.array(inst.demand, dtype=np.int64),
+                                    np.array(R, dtype=np.int64), np.array(D, dtype=np.int64), np.array(S, dtype=np.int64),
+                                    int(inst.capacity), int(getattr(inst, "vehicles", n)), np.array(d10, dtype=np.int64))
+            self._tw = (inst, TWPricer(tenths, ng=n), np.array(d10, dtype=float))
+        _, tw, d10 = self._tw
+        Cc, c_out, c_in = d10[1:, 1:].copy(), d10[0, 1:].copy(), d10[1:, 0].copy()
+        for (i, j) in forbidden:
+            if i and j:
+                Cc[i - 1, j - 1] = INF
+            elif j:
+                c_out[j - 1] = INF
+            elif i:
+                c_in[i - 1] = INF
+        exact = neighbors is None
+        # Costs and prizes in tenths; reduced costs back in distance units.
+        res = tw.price(10.0 * np.asarray(duals[1:], dtype=float), 0.0, Cc, c_out, c_in, exact=exact, beam=0 if exact else 200,
+                       deadline=time.perf_counter() + max(0.0, self.runtime.remaining()), tol=1e-5)
+        if exact and not res["complete"]:
+            raise ReferenceLimit("exact pricing did not complete (time limit or resource guard)")
+        return [(rc / 10.0, tuple(c + 1 for c in path)) for rc, path in res["routes"]]
 
     def n_nodes(self, inst) -> int:
         return inst.n_customers
@@ -184,17 +238,27 @@ class BranchAndPrice:
             cover = lp.addConstrs(gp.quicksum(lam[k] for k, r in enumerate(cols) if i in r) + art[i] == 1 for i in C)
             lp.setObjective(gp.quicksum(route_cost(inst, r) * lam[k] for k, r in enumerate(cols)) + artificial_cost(inst, len(C)) * art.sum(), GRB.MINIMIZE)
             self.runtime.optimize(lp, role="restricted_master", allow_incumbent=False)
+            if lp.Status != GRB.OPTIMAL:
+                raise RuntimeError(f"node master LP not optimal (status={lp.Status})")
             duals = [0.0] + [cover[i].Pi for i in C]
             new = [r for _, r in self.pricer(inst, duals, forbidden=forbidden, neighbors=self.neighbors) if r not in self.seen]
+            exact = None
             if not new:
-                new = [r for _, r in self.pricer(inst, duals, forbidden=forbidden, neighbors=None) if r not in self.seen]
+                exact = self.pricer(inst, duals, forbidden=forbidden, neighbors=None)
+                new = [r for _, r in exact if r not in self.seen]
             if not new:
-                if any(art[i].X > 1e-6 for i in C):
-                    return None, {}
-                return float(lp.ObjVal), {cols[k]: lam[k].X for k in range(len(cols)) if lam[k].X > 1e-6}
+                # Exact pricing returns its most negative routes first; none means every route has rc >= -1e-6.
+                min_rc = min([-1e-6] + [rc for rc, _ in exact])
+                bound = lagrangian_bound(duals, len(C), min_rc, artificial_cost(inst, len(C)))
+                artificial = any(art[i].X > 1e-6 for i in C)
+                return bound, {cols[k]: lam[k].X for k in range(len(cols)) if lam[k].X > 1e-6}, artificial
             for r in new:
                 self.seen.add(r)
                 pool.append(r)
+
+    def snap(self, value: float) -> float:
+        """A valid lower bound rounded up to the objective grid."""
+        return round(math.ceil(value / self.grid - 1e-9) * self.grid, 6)
 
     def _integer_master(self, inst, pool, limit):
         C = range(1, self.n_nodes(inst) + 1)
@@ -226,16 +290,18 @@ class BranchAndPrice:
         else:
             best, ub = None, math.inf
         stack, root_lb, nodes, termination = [frozenset()], None, 0, "optimal"
-        snap = lambda v: math.ceil(v * 10 - 1e-6) / 10
+        snap = self.snap
         try:
             while stack:
                 forbidden = stack.pop()
                 nodes += 1
-                lp, lam = self._node_lp(inst, pool, forbidden)
-                if lp is None or snap(lp) >= ub - 1e-9:
-                    root_lb = root_lb if root_lb is not None or lp is None else snap(lp)
-                    continue
+                lp, lam, artificial = self._node_lp(inst, pool, forbidden)
                 root_lb = snap(lp) if root_lb is None else root_lb
+                if snap(lp) >= ub - 1e-9:
+                    continue
+                if artificial:
+                    raise RuntimeError("branch-and-price found no feasible routing plan" if best is None else
+                                       "a node keeps artificial coverage below the incumbent: its infeasibility is not certified")
                 routes, value = self._integer_master(inst, pool, 2.0)
                 if routes is not None and value < ub - 1e-9:
                     best, ub = routes, value
@@ -249,6 +315,9 @@ class BranchAndPrice:
                 if not frac:
                     routes = [list(r) for r, v in lam.items() if v > 0.5]
                     value = sum(route_cost(inst, tuple(r)) for r in routes)
+                    if sorted(c for r in routes for c in r) != list(range(1, n + 1)) or snap(lp) < value - 1e-9:
+                        # Closing the node needs a verified partition whose cost meets the node's certified bound.
+                        raise RuntimeError("an integral node could not be certified (partition or bound mismatch)")
                     if value < ub - 1e-9:
                         best, ub = routes, value
                     continue
@@ -265,6 +334,10 @@ class BranchAndPrice:
         if best is None:
             raise RuntimeError("branch-and-price found no feasible routing plan")
         proved = termination == "optimal" and not stack
+        fleet = getattr(inst, "vehicles", None)
+        if fleet is not None and len(best) > fleet:
+            # The master has no fleet row: its optimum is a relaxation's, valid only if it respects the fleet limit.
+            raise RuntimeError(f"the reference plan ({'proved' if proved else termination}) uses {len(best)} routes > fleet limit {fleet}")
         return {
             "best_objective": round(ub, 6), "global_lb": round(ub, 6) if proved else root_lb, "global_ub": round(ub, 6),
             "root_lp": root_lb, "termination_reason": "optimal" if proved else termination, "iters": nodes,

@@ -1,28 +1,79 @@
-"""Pickup and delivery with time windows (PDPTW), Li-Lim-style random instances.
+"""Pickup and delivery with time windows (PDPTW): the Li & Lim (2001) construction on random Solomon subsets.
 
-Node 0 is the depot; nodes 1..n are pickups and n+1..2n the matching deliveries (request k = (k, n+k)).
-Each request is carried by one vehicle, picked up before it is delivered, with vehicle load within
-[0, Q] throughout. Travel time equals Euclidean distance rounded down to one decimal; the objective is
-total distance with an unlimited fleet.
+Source: H. Li and A. Lim, "A metaheuristic for the pickup and delivery problem with time windows", Proc. 13th IEEE
+ICTAI, 2001, pp. 160-167 (instances: https://www.sintef.no/projectweb/top/pdptw/li-lim-benchmark/). The benchmark is
+built from Solomon's (1987) VRPTW instances by solving each VRPTW heuristically and pairing customers at random
+inside each route of that solution (Li & Lim 2001, Section 5.1: random pairing within the routes obtained by the
+Li-Lim-Huang VRPTW heuristic; also arXiv:2511.07681). Comparing every local Li & Lim 100-customer file with its
+Solomon parent (e.g. lr101 vs r101; all 56 files) shows these observed properties:
+- every Solomon customer keeps its coordinates, ready time, due date and service time; depot, capacity and the
+  25-vehicle fleet are the parent's;
+- in each pair the pickup keeps its own Solomon demand q and the delivery gets -q (its own demand is discarded);
+- a route with an odd number of customers leaves one customer unpaired: it becomes a pickup with service time 0, and
+  a new delivery node is added at the same location with the same window, the customer's original service time and
+  demand -q (lr101 has 6 such nodes, 106 tasks; lr201 has 2, 102 tasks).
+The files do not contain the generating routes, so the visit order behind each pair's direction is not observable.
+Inferred reconstruction (our choice): the pickup is the customer visited first on the heuristic route, which keeps
+that route feasible (every published pair passes a depot-pickup-delivery-depot timing check). This generator applies
+the construction to a random subset of a Solomon file:
+- parent file and customer subset: the frozen VRPTW sampling protocol (`src.cg.vrptw.a_gen_data`: slot
+  k = 3 * size_index + seed takes class (R1, R2, C1, C2, RC1, RC2)[k mod 6], a uniform file of the class and a
+  uniform subset of n_customers of its 100 customers), with the stream "lilim-subset/<size>/<seed>";
+- heuristic VRPTW solution (named substitution for the Li-Lim-Huang heuristic): Solomon's sequential insertion
+  heuristic I1 (Solomon 1987; mu = 1, lambda = 1, alpha1 = 0.5, routes seeded by the farthest unrouted customer; `src.cg.vrptw.heuristic.basic_initializer`),
+  evaluated under this family's distance convention below (Li & Lim's own heuristic solutions are not published);
+- pairing: each route's customers are shuffled by the instance stream and paired consecutively (a uniform random
+  matching); with an odd count the last shuffled customer is the unpaired one;
+- numbering: requests are ordered by their pickup's parent customer number; request k has pickup node k and
+  delivery node n + k (n = number of requests), node 0 = depot.
+The heuristic routes stay feasible after pairing (generation asserts it), so every instance is feasible.
+
+Frozen convention, identical to the scale-up PDPTW (`src.cg.pdptw.a_data`, PyVRP's VRPLIB conversion of Li & Lim):
+- distance = travel time = round(1000 x Euclidean distance) (nearest integer; Solomon coordinates are integers, so a
+  tie never occurs and the value is computed exactly with an integer square root); ready, due and service times are
+  the parent's integers multiplied by 1000, so data.json stores them in the same unit and all arithmetic is integral;
+- a route leaves the depot at its ready time, waits when early, starts service no later than due, and returns by the
+  depot's due time; load starts at 0, never exceeds the capacity; pickup before delivery on the same route;
+- fleet: at most the parent's 25 vehicles; a plan never has more routes than requests and the requests here are far
+  fewer than 25, so the limit cannot bind (generation asserts it) and the model states an unlimited fleet;
+- objective: total distance only (SINTEF ranks vehicles first; its best-known values are not optima here).
+Size adaptation: Li & Lim's smallest set has 100 customers (about 53 requests); n_customers is shrunk and depends on
+the parent's horizon type (type 1: 10 / 12 / 14, type 2: 8 / 11 / 14 customers), calibrated on pilot seeds 100+
+(never the evaluation seeds 0-2) so that the MIP and the branch-and-price reference prove optimality within 60 s with
+one thread. The number of requests is (n_customers + number of odd
+heuristic routes) / 2, so it varies slightly with the instance.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import math
 from pathlib import Path
 import random
 from typing import Any, cast
 
+import numpy as np
+
+from src.cg.vrptw.solomon import CLASSES, CLASS_FILES, load_solomon
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
+SIZES = ("small", "medium", "large")
+# Keyed by the parent's horizon type (calibrated on pilot seeds 100+): a type-2 parent with 20 customers defeated the
+# labelling reference, 14 type-2 customers solve in < 7 s. Type-1 C1 parents with loose windows (c103/c104) have a
+# heavy MIP tail: c109 exceeds the 60 s MIP at 20 customers, c104 takes 32 s at 18 and exceeds 60 s at 16, while all
+# six c103/c104 pilots solve at 14 (MIP <= 26.7 s, reference <= 11.3 s); type 1 is therefore capped at 14 as well.
 SIZE_CONFIG = {
-    "small": {"n_requests": 4},
-    "medium": {"n_requests": 6},
-    "large": {"n_requests": 8},
+    "small": {"n_customers": {"1": 10, "2": 8}},
+    "medium": {"n_customers": {"1": 12, "2": 11}},
+    "large": {"n_customers": {"1": 14, "2": 14}},
 }
+SCALE = 1000
 
-DEFAULT_CONFIG = {"grid": 100, "demand_range": (10, 30), "capacity": 60, "service_time": 10, "horizon": 600, "window_width_range": (60, 150)}
+
+def scaled_distance(dx: int, dy: int) -> int:
+    """round(1000 x sqrt(dx^2 + dy^2)) for integers, exactly: floor((floor(2000 d) + 1) / 2)."""
+    return (math.isqrt(4 * SCALE * SCALE * (dx * dx + dy * dy)) + 1) // 2
 
 
 @dataclass
@@ -30,55 +81,108 @@ class PDPTWInstance(JsonDataMixin):
     instance_size: str
     n_requests: int
     capacity: int
-    x: list[float]
-    y: list[float]
+    x: list[int]
+    y: list[int]
     demand: list[int]  # +q at a pickup, -q at its delivery, 0 at the depot
-    ready: list[float]
-    due: list[float]
-    service: list[float]
+    ready: list[int]  # thousandths of the parent's time unit
+    due: list[int]
+    service: list[int]
 
     def __post_init__(self) -> None:
         if len(self.x) != 2 * self.n_requests + 1:
             raise ValueError("expected 2 * n_requests + 1 nodes")
+        for name in ("x", "y", "ready", "due", "service"):
+            values = getattr(self, name)
+            if any(float(v) != int(v) for v in values):
+                raise ValueError(f"{name} must be integers")
+            setattr(self, name, [int(v) for v in values])
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> PDPTWInstance:
         return cast("PDPTWInstance", super().from_json_file(path))
 
-    def dist(self, i: int, j: int) -> float:
-        return math.floor(10.0 * math.hypot(self.x[i] - self.x[j], self.y[i] - self.y[j])) / 10.0
+    def dist(self, i: int, j: int) -> int:
+        return scaled_distance(self.x[i] - self.x[j], self.y[i] - self.y[j])
 
 
 class PDPTWGenerator(BaseInstanceGenerator[PDPTWInstance]):
     def generate_instance(self, *, seed: int | None = None, size_label: str = "medium") -> PDPTWInstance:
         if size_label not in SIZE_CONFIG:
             raise ValueError(f"Unknown size_label '{size_label}'. Expected one of {list(SIZE_CONFIG)}.")
-        cfg = DEFAULT_CONFIG
-        rng = random.Random(seed)
-        n = SIZE_CONFIG[size_label]["n_requests"]
-        g, H, svc = cfg["grid"], cfg["horizon"], cfg["service_time"]
-        pts = [(g / 2, g / 2)] + [(float(rng.randint(0, g)), float(rng.randint(0, g))) for _ in range(2 * n)]
-        d = lambda a, b: math.floor(10.0 * math.hypot(pts[a][0] - pts[b][0], pts[a][1] - pts[b][1])) / 10.0
-        demand, ready, due = [0] * (2 * n + 1), [0.0] * (2 * n + 1), [float(H)] * (2 * n + 1)
-        for k in range(1, n + 1):
-            p, q = k, n + k
-            demand[p] = rng.randint(*cfg["demand_range"])
-            demand[q] = -demand[p]
-            # Pickup window first; the delivery window opens once the direct trip is possible.
-            latest_p = H - svc - d(p, q) - svc - d(q, 0)
-            wp = rng.randint(*cfg["window_width_range"])
-            a_p = rng.randint(math.ceil(d(0, p)), max(math.ceil(d(0, p)), int(latest_p) - wp))
-            ready[p], due[p] = float(a_p), float(min(a_p + wp, latest_p))
-            wq = rng.randint(*cfg["window_width_range"])
-            a_q = math.ceil(ready[p] + svc + d(p, q))
-            ready[q], due[q] = float(a_q), float(min(a_q + wq, H - svc - d(q, 0)))
-        return PDPTWInstance(size_label, n, cfg["capacity"], [p[0] for p in pts], [p[1] for p in pts], demand, ready, due, [0.0] + [float(svc)] * (2 * n))
+        return build_instance(int(seed or 0), size_label)[0]
+
+
+def build_instance(seed: int, size_label: str) -> tuple[PDPTWInstance, dict[str, Any]]:
+    from src.cg.pdptw.d_verifier import route_issue
+    from src.cg.vrptw.a_data import VRPTWInstance as GridInstance
+    from src.cg.vrptw.heuristic import basic_initializer
+
+    stream = f"lilim-subset/{size_label}/{seed}"
+    rng = random.Random(stream)
+    cls = CLASSES[(3 * SIZES.index(size_label) + seed) % len(CLASSES)]
+    parent = rng.choice(CLASS_FILES[cls])
+    sol = load_solomon(parent)
+    cfg = SIZE_CONFIG[size_label]["n_customers"]
+    m = cfg if isinstance(cfg, int) else cfg[parent[-3]]  # keyed by horizon type: r101 -> "1", rc208 -> "2"
+    customers = sorted(rng.sample(range(1, 101), m))
+    rows = [sol.rows[0]] + [sol.rows[c] for c in customers]  # (x, y, q, ready, due, service)
+    pts = [(r[0], r[1]) for r in rows]
+    dist = np.array([[scaled_distance(a[0] - b[0], a[1] - b[1]) for b in pts] for a in pts], dtype=np.int64)
+    col = lambda k, scale=1: np.array([r[k] * scale for r in rows], dtype=np.int64)
+    grid = GridInstance(parent, np.array(pts, dtype=float), col(2), col(3, SCALE), col(4, SCALE), col(5, SCALE), sol.capacity, sol.vehicles, dist)
+    routes = basic_initializer(grid)  # subset positions 1..m
+    pairs: list[tuple[int, int | None]] = []  # (pickup, delivery) as subset positions; None = duplicated location
+    for route in routes:
+        order = list(route)
+        rng.shuffle(order)
+        for a, b in zip(order[0::2], order[1::2]):
+            pairs.append((a, b) if route.index(a) < route.index(b) else (b, a))
+        if len(order) % 2:
+            pairs.append((order[-1], None))
+    pairs.sort(key=lambda p: p[0])
+    n = len(pairs)
+    if n > sol.vehicles:
+        raise ValueError("the fleet limit could bind; the unlimited-fleet model would differ from the parent's")
+    node = {"x": [pts[0][0]], "y": [pts[0][1]], "demand": [0], "ready": [rows[0][3]], "due": [rows[0][4]], "service": [rows[0][5]]}
+    deliveries = []
+    for p, d in pairs:
+        r = rows[p]
+        for key, value in zip(node, (r[0], r[1], r[2], r[3], r[4], r[5] if d is not None else 0)):
+            node[key].append(value)
+        r_d = rows[d] if d is not None else r  # the duplicate copies the pickup's location, window and service time
+        deliveries.append((r_d[0], r_d[1], -r[2], r_d[3], r_d[4], r_d[5]))
+    for row in deliveries:
+        for key, value in zip(node, row):
+            node[key].append(value)
+    inst = PDPTWInstance(size_label, n, sol.capacity, node["x"], node["y"], node["demand"],
+                         *([SCALE * v for v in node[key]] for key in ("ready", "due", "service")))
+    # The paired heuristic routes are a feasible plan (the construction keeps their visiting order).
+    new_id = {}
+    for k, (p, d) in enumerate(pairs, start=1):
+        new_id[p] = k
+        new_id[("dup", p) if d is None else d] = n + k
+    data = inst.to_dict()
+    for route in routes:
+        seq = []
+        for c in route:
+            seq.append(new_id[c])
+            if ("dup", c) in new_id:
+                seq.append(new_id[("dup", c)])
+        if route_issue(data, seq) is not None:
+            raise RuntimeError(f"{parent}: a paired heuristic route is infeasible ({route_issue(data, seq)})")
+    source = {"recipe": "Li & Lim (2001) pairing on a Solomon (1987) random subset", "parent": parent, "parent_class": cls,
+              "parent_customers": customers, "parent_vehicles": sol.vehicles, "heuristic_routes": len(routes),
+              "duplicated_deliveries": sum(d is None for _, d in pairs),
+              "requests": [[customers[p - 1], customers[d - 1] if d is not None else None] for p, d in pairs], "stream": stream}
+    return inst, source
 
 
 def generate_pdptw_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:
-    inst = PDPTWGenerator().generate_instance(seed=seed, size_label=size)
+    inst, source = build_instance(seed, size)
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Provenance stays out of data.json (the only file the agent sees).
+        (out_dir / "source.json").write_text(json.dumps(source, indent=2))
     return inst.to_dict()

@@ -12,7 +12,9 @@ class PDPTWBaseline:
     """Two-index arc MIP; a route-identity variable (the index of the route's first node) ties each pickup to its delivery."""
 
     def __init__(self, *, params: dict[str, Any] | None = None) -> None:
-        self.params = {"Threads": 1, **(params or {})}
+        # Integer distances: a bound within 0.5 of the incumbent proves it. Times are in thousandths (up to ~3.4e6), so
+        # the integrality tolerance is tightened: a big-M link with x = 1 - IntFeasTol must not open a whole time unit.
+        self.params = {"Threads": 1, "MIPGap": 0.0, "MIPGapAbs": 0.5, "IntFeasTol": 1e-9, **(params or {})}
 
     def run(self, path: str) -> dict[str, Any]:
         inst = PDPTWInstance.from_json_file(path)
@@ -48,9 +50,17 @@ class PDPTWBaseline:
                 m.addConstr(u[j] >= u[i] + inst.demand[j] - 2 * Q * (1 - x[i, j]))
                 m.addConstr(r[j] >= r[i] - N * (1 - x[i, j]))
                 m.addConstr(r[j] <= r[i] + N * (1 - x[i, j]))
+        # Rounded distances can violate the triangle inequality by a unit, so the pickup-to-delivery travel bound is the
+        # shortest-path distance over all nodes, not the direct arc (service times on the way only add to it).
+        sp = {(i, j): (0 if i == j else d[i, j]) for i in V for j in V}
+        for k in V:
+            for i in V:
+                for j in V:
+                    if sp[i, k] + sp[k, j] < sp[i, j]:
+                        sp[i, j] = sp[i, k] + sp[k, j]
         for k in range(1, n + 1):
             m.addConstr(r[k] == r[n + k])
-            m.addConstr(t[n + k] >= t[k] + inst.service[k] + d[k, n + k])
+            m.addConstr(t[n + k] >= t[k] + inst.service[k] + sp[k, n + k])
         m.setObjective(gp.quicksum(d[a] * x[a] for a in arcs), GRB.MINIMIZE)
         m.optimize()
         if m.Status != GRB.OPTIMAL:

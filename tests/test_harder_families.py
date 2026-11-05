@@ -10,12 +10,13 @@ from src.utils.output_contract import validate_output_contract
 
 
 # Codex review 4, finding 4: arrival 118.00000000000001 > 118 in floating point rejected the optimal PDPTW route.
+# Rewritten for the 1000x rounded-distance convention (2026-11-05): the route [1, 2, 3, 4] reaches node 4 at exactly 118064.
 PDPTW_EDGE = {
     "instance_size": "small", "n_requests": 2, "capacity": 60,
-    "x": [50.0, 51.0, 52.0, 53.0, 51.0], "y": [50.0, 51.0, 52.0, 53.0, 52.0],
+    "x": [50, 51, 52, 53, 51], "y": [50, 51, 52, 53, 52],
     "demand": [0, 10, 10, -10, -10],
-    "ready": [0.0, 83.0, 47.0, 96.0, 58.0], "due": [600.0, 143.0, 107.0, 156.0, 118.0],
-    "service": [0.0, 10.0, 10.0, 10.0, 10.0],
+    "ready": [0, 83000, 47000, 96000, 58000], "due": [600000, 143000, 107000, 156000, 118064],
+    "service": [0, 10000, 10000, 10000, 10000],
 }
 
 
@@ -30,7 +31,9 @@ def test_pdptw_verifier_accepts_route_meeting_a_deadline_exactly(tmp_path):
 
     result = verify_solution(PDPTW_EDGE, {"solution": {"routes": [[1, 2, 3, 4]]}})
     assert result["ok"], result
-    assert result["objective_value"] == pytest.approx(8.6)
+    assert result["objective_value"] == 8714
+    late = {**PDPTW_EDGE, "due": PDPTW_EDGE["due"][:4] + [118063]}
+    assert not verify_solution(late, {"solution": {"routes": [[1, 2, 3, 4]]}})["ok"]
 
 
 def test_pdptw_reference_finds_the_deadline_route(tmp_path):
@@ -39,7 +42,7 @@ def test_pdptw_reference_finds_the_deadline_route(tmp_path):
     path = _write(tmp_path, "data.json", PDPTW_EDGE)
     result = PDPTWBranchAndPrice(time_limit=20).run(str(path))
     assert result["termination_reason"] == "optimal"
-    assert result["best_objective"] == pytest.approx(8.6)
+    assert result["best_objective"] == 8714
 
 
 def test_routing_verifiers_respect_depot_opening_and_closing():
