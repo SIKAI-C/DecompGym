@@ -323,8 +323,8 @@ def freeze(args) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--raw", type=Path, default=ROOT.parent / "DecompBench-scaleup" / "outputs" / "scaleup" / "raw")
-    ap.add_argument("--refs", type=Path, default=ROOT.parent / "DecompBench-scaleup" / "outputs" / "scaleup" / "references")
+    ap.add_argument("--raw", type=Path, default=ROOT.parent / "DecompBench" / "outputs" / "scaleup" / "raw")
+    ap.add_argument("--refs", type=Path, default=ROOT.parent / "DecompBench" / "outputs" / "scaleup" / "references")
     ap.add_argument("--out", type=Path, default=ROOT / "outputs" / "scaleup" / "cg_v4")
     ap.add_argument("--families", nargs="+", default=["cvrp", "clrp", "bppc"])
     ap.add_argument("--clrp-holdout", nargs="*", default=None, help="two Prodhon stems for the CLRP holdout (user decision: no fresh Prodhon 100-customer instance exists; the freeze refuses stems already used as dev or Stage 1)")

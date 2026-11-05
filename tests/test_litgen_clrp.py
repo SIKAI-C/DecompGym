@@ -11,7 +11,7 @@ import pytest
 
 from src.cg.clrp.a_gen_data import DEFAULT_CONFIG, SIZE_CONFIG, CLRPInstance, generate_clrp_instance, packs, read_prodhon
 
-PRODHON = Path(__file__).resolve().parents[2] / "DecompBench-scaleup/outputs/scaleup/raw/lrp/prodhon"
+PRODHON = Path(__file__).resolve().parents[2] / "DecompBench/outputs/scaleup/raw/lrp/prodhon"
 
 
 @pytest.mark.parametrize("size", list(SIZE_CONFIG))
