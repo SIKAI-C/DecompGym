@@ -44,6 +44,41 @@ Assume gurobipy and NumPy are available; the Python standard library is also all
 """
 
 
+# Koerkel-Ghosh instances (no coordinates; general, possibly asymmetric costs). Paper-format data keeps BASE_PROMPT_UFL.
+BASE_PROMPT_UFL_KG = """You are an expert operations research engineer and Python programmer.
+
+You are given an Uncapacitated Facility Location (UFL) problem. Opening a facility incurs a fixed
+cost, and serving a customer from a facility incurs a connection cost. The goal is to decide which
+facilities to open and how to assign each customer so total open-plus-connection cost is minimized.
+
+- There are {m} (m) candidate facilities and {n} (n) customers. Facilities have no capacity limit.
+- Connection costs are general integers (not derived from coordinates; they need not satisfy the triangle
+  inequality{symmetry_note}).
+- Fixed opening costs (f), one per line:
+{f}
+- Connection cost matrix (D): each line is for one facility i, listing the cost to serve each customer j (i -> j):
+{D}
+
+All input data are stored in a JSON file named data.json with fields "m", "n", "f" (length m), "D" (m x n, row =
+facility, column = customer) and "instance_info" (provenance of the instance only).
+
+Task:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Reads the input data.json file.
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes a JSON file output.json with at least:
+   {{
+     "status": "optimal | feasible | infeasible | error",
+     "method": "benders_decomposition",
+     "objective_value": <float>,
+     "y": [0/1 list of length m indicating open facilities],
+     "x": [[0/1 matrix of shape (m, n) indicating assignments]]
+   }}
+
+{method_requirements}
+"""
+
+
 def _fmt_customers(Xc: list[list[Any]]) -> str:
     lines = []
     for j, pt in enumerate(Xc):
@@ -82,6 +117,8 @@ def _truncate_block(lines: list[str]) -> str:
 
 
 def render_prompt(data: dict[str, Any]) -> str:
+    if "Xc" not in data:
+        return _render_prompt_kg(data)
     m = data.get("m", 0)
     n = data.get("n", 0)
     Xc = data.get("Xc", [])
@@ -101,5 +138,18 @@ def render_prompt(data: dict[str, Any]) -> str:
         Xf=Xf_block,
         f=f_block,
         D=D_block,
+        method_requirements=method_requirements("bd"),
+    )
+
+
+def _render_prompt_kg(data: dict[str, Any]) -> str:
+    symmetric = (data.get("instance_info") or {}).get("symmetric")
+    note = "; in this instance D is symmetric, D[i][j] = D[j][i]" if symmetric else "; in this instance D is not symmetric" if symmetric is False else ""
+    return BASE_PROMPT_UFL_KG.format(
+        m=data.get("m", 0),
+        n=data.get("n", 0),
+        symmetry_note=note,
+        f=_fmt_fixed_costs(data.get("f", [])),
+        D=_fmt_distance_matrix(data.get("D", [])),
         method_requirements=method_requirements("bd"),
     )

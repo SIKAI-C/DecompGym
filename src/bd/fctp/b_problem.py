@@ -52,6 +52,53 @@ Assume gurobipy and NumPy are available; the Python standard library is also all
 """
 
 
+# Literature-recipe instances (balanced, square, capacity min(supply_i, demand_j)). Paper-format data keeps BASE_PROMPT_FCTP.
+BASE_PROMPT_FCTP_LIT = """You are an expert operations research engineer and Python programmer.
+
+You are given a fixed-charge transportation problem:
+  First choose which source-to-sink arcs to activate; each chosen arc costs a fixed fee and then allows flow up to
+  its capacity. Then decide shipment quantities so every sink's demand is met without exceeding any source's supply.
+  The total cost combines fixed activation and per-unit shipping. This mirrors "decide infrastructure first, operate flow second."
+  Parameters:
+  - There are m = {m} supply nodes and n = {n} demand nodes; every (i, j) arc may be used.
+  - Total supply equals total demand ({total}), so every source ships its whole supply and every sink receives exactly its demand.
+  - Each (i, j) arc has a fixed activation cost, a unit shipping cost, and a capacity equal to min(supply[i], demand[j]).
+  - Decision variables: y[i,j] in {{0,1}} indicates whether arc (i,j) is opened; x[i,j] >= 0 is quantity shipped,
+    with x[i,j] <= capacity[i][j] * y[i,j].
+
+The data for this instance is in data.json with fields:
+  - "supply": list length m
+  - "demand": list length n
+  - "unit_cost", "fixed_cost", "capacity": each an m x n matrix
+  - "instance_info": provenance of the instance only
+
+Sample rows (full data is in the JSON file):
+Supply vector:
+{supply}
+Demand vector:
+{demand}
+Fixed costs:
+{fixed_cost}
+Unit costs:
+{unit_cost}
+
+Task:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
+    {{
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition",
+      "objective_value": <float>,
+      "y": [[...]],  # m x n
+      "x": [[...]]   # m x n corresponding to the reported incumbent y and objective_value
+    }}
+
+{method_requirements}
+"""
+
+
 def _fmt_vector(name: str, vec: list[Any], limit: int = 5) -> str:
     if len(vec) <= limit:
         return f"  {name} = {vec}"
@@ -70,6 +117,18 @@ def _fmt_matrix(name: str, mat: list[list[Any]], limit: int = 4) -> str:
 def render_prompt(data: dict[str, Any]) -> str:
     m = data.get("m", 0)
     n = data.get("n", 0)
+    if data.get("instance_info"):
+        total = sum(data.get("supply", []))
+        return BASE_PROMPT_FCTP_LIT.format(
+            m=m,
+            n=n,
+            total=int(total) if float(total).is_integer() else total,
+            supply=_fmt_vector("supply", data.get("supply", [])),
+            demand=_fmt_vector("demand", data.get("demand", [])),
+            fixed_cost=_fmt_matrix("fixed_cost", data.get("fixed_cost", [])),
+            unit_cost=_fmt_matrix("unit_cost", data.get("unit_cost", [])),
+            method_requirements=method_requirements("bd"),
+        )
     return BASE_PROMPT_FCTP.format(
         m=m,
         n=n,

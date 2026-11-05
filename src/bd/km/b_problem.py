@@ -47,6 +47,46 @@ Assume gurobipy and NumPy are available; the Python standard library is also all
 """
 
 
+# TSPLIB-derived p-median instances (sites = customers). Paper-format data keeps BASE_PROMPT_KM.
+BASE_PROMPT_KM_TSP = """You are an expert operations research engineer and Python programmer.
+
+You are given a k-median (p-median) facility location problem:
+  - There are n = {n} nodes (points in the plane). Every node is a customer and also a candidate site (m = n = {m}).
+  - Pick exactly k = {k} sites to open. Each customer is then assigned (possibly fractionally) to open sites, paying
+    the assignment cost D[i][j] between site i and customer j.
+  - D[i][j] = floor(sqrt((x_i - x_j)^2 + (y_i - y_j)^2)), the Euclidean distance rounded down to an integer, so
+    D is symmetric with a zero diagonal (a node that is an open site serves itself at cost 0).
+  - The goal is to choose the k open sites so that the total assignment cost of all customers is minimal.
+
+The data for this instance lives in data.json with fields:
+  - "Xc": n x 2 node coordinates (customers)
+  - "Xf": m x 2 node coordinates (sites; identical to Xc)
+  - "D": m x n assignment costs (row = site i, column = customer j)
+  - "m", "n", "k", and "instance_info" (provenance of the instance only)
+
+Samples:
+Node coords (first few):
+{Xc}
+Cost rows:
+{D}
+
+Task:
+Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
+1) Loads data.json.
+2) Implements Benders decomposition according to the method requirements below.
+3) Writes output.json with at least:
+    {{
+      "status": "optimal | feasible | infeasible | error",
+      "method": "benders_decomposition",
+      "objective_value": <float>,
+      "y": [0/1 list length m],
+      "x": [[assignment matrix m x n]]
+    }}
+
+{method_requirements}
+"""
+
+
 def _fmt_matrix(name: str, mat: list[list[Any]], max_rows: int = 4) -> str:
     lines: list[str] = []
     for i, row in enumerate(mat[:max_rows]):
@@ -57,6 +97,15 @@ def _fmt_matrix(name: str, mat: list[list[Any]], max_rows: int = 4) -> str:
 
 
 def render_prompt(data: dict[str, Any]) -> str:
+    if data.get("instance_info"):
+        return BASE_PROMPT_KM_TSP.format(
+            m=data.get("m", 0),
+            n=data.get("n", 0),
+            k=data.get("k", 0),
+            Xc=_fmt_matrix("Xc", data.get("Xc", [])),
+            D=_fmt_matrix("D", data.get("D", [])),
+            method_requirements=method_requirements("bd"),
+        )
     return BASE_PROMPT_KM.format(
         m=data.get("m", 0),
         n=data.get("n", 0),
