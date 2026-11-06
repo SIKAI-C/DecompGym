@@ -19,7 +19,7 @@ cut sub-instances from published benchmark instances (option B) by a rule that i
 1. parent instance and variant: seeds < 100 (evaluation) use the evaluation parents EVAL_PARENTS[seed % 3], seeds
    >= 100 (calibration and development) use the disjoint DEV_PARENTS[seed % 3]; the variant is "multi" for odd seeds
    and "single" for even seeds (the paper's two variants, same tasks and task-task connections);
-2. time window: a window of SIZE_CONFIG[size]["window_hours"] hours (7 / 9.5 / 12 h; longer windows let the 5.5 h break
+2. time window: a window of SIZE_CONFIG[size]["window_hours"] hours (8 / 10 / 16 h; longer windows let the 5.5 h break
    rules and, above 9.5 h, the duty-length rule exclude paths, though the size rule below may shorten them) whose start t0 is a uniformly random whole minute in [first task start, last task
    end - window] of the parent; keep the tasks that start and end inside the window. Structural size rule
    (declared; it reads no cost and no solution): while the kept tasks admit more than SIZE_CONFIG[size]
@@ -31,7 +31,19 @@ cut sub-instances from published benchmark instances (option B) by a rule that i
    in no feasible duty of the sub-instance, rebuild, and repeat until every task is coverable (this also removes
    isolated tasks). A window that keeps no task is redrawn (declared rule; never triggered by the size table).
 The published best-known duties are never read. The benchmark timetable is hourly periodic, so windows of one parent
-differ little; the parents and variants supply the variety.
+differ little; the parents and variants supply the variety (a requested 16 h window spans almost the whole parent day,
+about 06:00-22:45, before the duty cap shrinks it, so two development seeds with the same parent and variant can give the
+same task set: 2 pairs among the 12 pilot seeds; the evaluation seeds 0, 1, 2 of one size use three different parents).
+The requested 16 h window is shorter than every parent day except s3_t172 (15.95 h), whose whole day exceeds the
+200 000-duty cap, so the window shrinks; provenance.json records the effective window, and the final instances were
+checked to keep a proper subset of the parent's tasks.
+Size calibration (round 2, 2026-11-05; development seeds 100-111 only; full-process exact column generation with the
+60 s budget, Threads = 1). The reference time is not monotone in the window: it is set by the hardness of the integer
+set-covering master over the duties within the LP gap, which spikes on single windows. Maximum over 12 pilot seeds:
+8 h / 8 000 duties 4.2 s; 10 h / 30 000 6.0 s; 16 h / 200 000 3.1 s. Rejected: 9.5 h / 20 000 (one seed unproved at
+60 s), 12 h / 80 000 (one seed unproved at 60 s; its MIP needed 208 s), the whole parent day (s2_t120, 232 000 and
+408 000 duties, unproved at 60 s). The set-covering MIP proved the 4 tested 16 h / 200 000 pilots within 3 s. Round 1
+used 7 / 9.5 / 12 h with caps 2 000 / 20 000 / 40 000.
 Tasks are renumbered 0..n-1 by (start, end, original index) and connections 0..m-1 in their original order. The
 agent-visible data carry no parent name, window or original indices (they go to `provenance.json` next to
 data.json, written by `generate_rcsp_instance`). Stations and crew bases keep their benchmark station indices.
@@ -58,13 +70,13 @@ DEV_PARENTS = ("s2_t118", "s2_t120", "s3_t168")
 FIRST_DEV_SEED = 100
 
 SIZE_CONFIG = {
-    "small": {"window_hours": 7.0, "max_duties": 2_000},
-    "medium": {"window_hours": 9.5, "max_duties": 20_000},
-    "large": {"window_hours": 12.0, "max_duties": 40_000},
+    "small": {"window_hours": 8.0, "max_duties": 8_000},
+    "medium": {"window_hours": 10.0, "max_duties": 30_000},
+    "large": {"window_hours": 16.0, "max_duties": 200_000},
 }
 
 DEFAULT_CONFIG = {"max_draws": 100, "shrink_seconds": 900}
-RECIPE_VERSION = "rcsp-window-v2-20261105"
+RECIPE_VERSION = "rcsp-window-v3-20261106"
 
 
 @dataclass

@@ -223,7 +223,7 @@ def generate_ufl_paper_instance(
 # Koerkel-Ghosh recipe (small-scale benchmark generator since 2026-11-05)
 # -----------------------
 
-KG_SIZE_CONFIG = {"small": {"n": 50}, "medium": {"n": 70}, "large": {"n": 90}}  # n = m; calibrated 2026-11-05 on pilot seeds >= 100
+KG_SIZE_CONFIG = {"small": {"n": 60}, "medium": {"n": 75}, "large": {"n": 100}}  # n = m; calibrated 2026-11-06 (round 2) on pilot seeds >= 100
 KG_SIZES = ("small", "medium", "large")
 KG_CLASSES = {"a": (100, 200), "b": (1000, 2000), "c": (10000, 20000)}  # opening-cost ranges (F_LO, F_HI)
 KG_COST_RANGE = (1000, 2000)  # connection-cost range (C_LO, C_HI)
@@ -298,7 +298,9 @@ def generate_ufl_instance(
 
     Adaptations (named):
     - size: the library has n = m = 250/500/750; we keep every distribution and shrink n = m to KG_SIZE_CONFIG[size]
-      so that the monolithic MIP proves optimality within 60 s on one thread;
+      with the calibration target that the reference Benders (60 s budget, one thread, full process) takes at most
+      30 s (small, medium) and 45 s (large) on pilot seeds >= 100 (in-process pilot times plus full-process checks); the monolithic MIP only proves optimality (MIPGap 0,
+      one thread, limit 1800 s);
     - instances: our seed s is instance number s + 1 of the generator stream for (n, class, symmetry), i.e. the file
       `<prefix><s + 1>` that the published program writes with `num_prob >= s + 1`;
     - class and symmetry per instance follow the declared schedule `kg_schedule` (not chosen by solver outcome);

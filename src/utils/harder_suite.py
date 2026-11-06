@@ -65,7 +65,8 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
                 (inst_dir / "meta.json").unlink(missing_ok=True)
                 continue
             meta = {"seed": seed, "size": size, "folder": folder, "ground_truth_objective": truth, "ground_truth_source": source,
-                    "reference_proved": bool(ref is not None and _certified(ref, tol)), "reference_seconds": (ref or {}).get("total_time")}
+                    "reference_proved": bool(ref is not None and _certified(ref, tol)), "reference_seconds": (ref or {}).get("total_time"),
+                    "mip_time_limit": mono_time_limit}
             (inst_dir / "meta.json").write_text(json.dumps(meta, indent=2))
             metas.append(meta)
     return metas

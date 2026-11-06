@@ -1,9 +1,9 @@
 """Strict generation of literature-recipe small-scale instances (CG families bp, csp, gap, bppc).
 
 An instance is published (meta.json written) only if
-  1. the monolithic MIP proves optimality within its Gurobi TimeLimit of 60 s (optimizer runtime; Threads = 1) and the
+  1. the monolithic MIP proves optimality within its Gurobi TimeLimit (1800 s; the paper sets no MIP limit) (optimizer runtime; Threads = 1, MIPGap = 0) and the
      harness verifier accepts its plan;
-  2. the decomposition reference returns a plan the verifier accepts; and
+  2. the decomposition reference returns a plan the verifier accepts, with total_time <= REF_TIME_LIMIT (60 s); and
   3. its objective lies within the 1 % rule: -1e-6 <= (z_ref - z_mip) / max(1, |z_mip|) <= 0.01 (a materially
      better reference than a proved optimum is an inconsistency).
 Otherwise the instance is rejected: meta.json is removed, a rejection.json records the reason, and RuntimeError is
@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 from src.utils.api import solve, verify
 
-MIP_TIME_LIMIT = 60.0
+MIP_TIME_LIMIT = 1800.0
 REF_TIME_LIMIT = 60.0
 GAP_RULE = 0.01
 
@@ -49,7 +49,7 @@ def generate_strict_suite(problem: str, *, gen: Callable[[int, str, Path], tuple
                 raise RuntimeError(f"{folder}: rejected: generation or prompt failed") from exc
             path = inst_dir / "data.json"
             results: dict[str, dict[str, Any]] = {}
-            for method, filename, options in (("monolithic", "gold_monolithic.json", {"params": {"TimeLimit": MIP_TIME_LIMIT, "Threads": 1}}),
+            for method, filename, options in (("monolithic", "gold_monolithic.json", {"params": {"TimeLimit": MIP_TIME_LIMIT, "Threads": 1, "MIPGap": 0.0}}),
                                               ("decomposition", "gold_cg.json", {"time_limit": REF_TIME_LIMIT, **(reference_options or {})})):
                 started = time.perf_counter()
                 try:
@@ -66,6 +66,8 @@ def generate_strict_suite(problem: str, *, gen: Callable[[int, str, Path], tuple
                 reason = f"monolithic MIP not proved optimal or not verified: {mono.get('error') or mono.get('verification')}"
             elif ref.get("error") or not (ref.get("verification") or {}).get("ok"):
                 reason = f"decomposition reference failed or not verified: {ref.get('error') or ref.get('verification')}"
+            elif not 0.0 <= float(ref.get("total_time", math.inf)) <= REF_TIME_LIMIT:
+                reason = f"decomposition reference time {ref.get('total_time')} s outside [0, {REF_TIME_LIMIT}] s"
             else:
                 z_mip, z_ref = float(mono["best_objective"]), float(ref["best_objective"])
                 gap = (z_ref - z_mip) / max(1.0, abs(z_mip))
@@ -75,7 +77,7 @@ def generate_strict_suite(problem: str, *, gen: Callable[[int, str, Path], tuple
                 _write(inst_dir / "rejection.json", {"folder": folder, "reason": reason})
                 raise RuntimeError(f"{folder}: rejected: {reason}")
             meta = {"seed": seed, "size": size, "folder": folder, "ground_truth_objective": float(mono["best_objective"]),
-                    "ground_truth_source": "monolithic_mip", "mip_time_limit": MIP_TIME_LIMIT, "mip_threads": 1,
+                    "ground_truth_source": "monolithic_mip", "mip_time_limit": MIP_TIME_LIMIT, "mip_threads": 1, "mip_gap": 0.0,
                     "mip_seconds": mono.get("total_time", mono.get("runtime")), "mip_bound": mono.get("global_lb"),
                     "reference_objective": float(ref["best_objective"]), "reference_gap": gap,
                     "reference_bound": ref.get("global_lb"), "reference_seconds": ref.get("total_time"), **recipe}

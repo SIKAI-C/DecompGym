@@ -29,10 +29,10 @@ def test_generator_follows_hookers_class_c_and_e_recipe():
     c = generate_lbbd_ps_instance(0, "medium")
     e = generate_lbbd_ps_instance(1, "large")
     assert (c["kind"], c["n_jobs"], c["n_facilities"]) == ("c", *SIZE_CONFIG["medium"]["c"])
-    assert c["deadline"] == [31] * 14 and c["capacity"] == [10] * 3  # 5 * 14 * 4 / 9 = 31.1
-    assert all(3 - i <= p < 10 * (3 - i) for i in range(3) for p in c["proc"][i])
-    assert all(10 * (i + 1) <= f < 20 * (i + 1) for i in range(3) for f in c["cost"][i])
-    assert (e["kind"], e["n_jobs"], e["n_facilities"], e["deadline"][0]) == ("e", 25, 5, 33)
+    assert c["deadline"] == [42] * 20 and c["capacity"] == [10] * 4  # 5 * 20 * 5 / 12 = 41.7
+    assert all(4 - i <= p < 10 * (4 - i) for i in range(4) for p in c["proc"][i])
+    assert all(10 * (i + 1) <= f < 20 * (i + 1) for i in range(4) for f in c["cost"][i])
+    assert (e["kind"], e["n_jobs"], e["n_facilities"], e["deadline"][0]) == ("e", *SIZE_CONFIG["large"]["e"], 33)
     assert all(row == e["rate"][0] for row in e["rate"]) and all(1 <= v <= 9 for v in e["rate"][0])
     assert generate_lbbd_ps_instance(1, "large") == e
     # Archive values: e m = 3 middle facility f in [20, 40) (e15j3m1.dat has 21..37), e m = 4 tops, c ties rounded down.

@@ -243,7 +243,7 @@ def generate_fctp_paper_instance(
 # -----------------------
 
 LIT_SIZES = ("small", "medium", "large")
-LIT_SIZE_CONFIG = {"small": {"n": 9}, "medium": {"n": 11}, "large": {"n": 13}}  # m = n; calibrated 2026-11-05 on pilot seeds >= 100
+LIT_SIZE_CONFIG = {"small": {"n": 11}, "medium": {"n": 13}, "large": {"n": 14}}  # m = n; calibrated 2026-11-06 (round 2) on pilot seeds >= 100
 LIT_FIXED_RANGE = (200, 800)  # f_ij, integers
 LIT_B = 20  # a_i, b_j integers in [1, B]; B = 20 as in the B = 20 classes of Data Sets 3-4 (and Agarwal-Aneja's set)
 LIT_THETAS = (0.0, 0.2, 0.5)
@@ -270,7 +270,9 @@ def generate_fctp_instance(
 
     Adaptations (named):
     - size: the literature has n = 15-120; we keep every distribution and shrink n = m to LIT_SIZE_CONFIG[size]
-      so that the monolithic MIP proves optimality within 60 s on one thread; B = 20 throughout;
+      with the calibration target that the reference Benders (60 s budget, one thread, full process) takes at most
+      30 s (small, medium) and 45 s (large) on pilot seeds >= 100 (in-process pilot times plus full-process checks); the monolithic MIP only proves optimality (MIPGap 0,
+      one thread, limit 1800 s); B = 20 throughout;
     - integer draws: f_ij ~ U{200..800}, a_i, b_j ~ U{1..B} (uniform integers, bounds included; the sources say
       "randomly generated in the interval");
     - balance: the sources do not state how balance is obtained; we redraw (a, b) together until sum a = sum b

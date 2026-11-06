@@ -34,7 +34,7 @@ class BinPackingBaseline(BaseBaseline[BinPackingInstance, gp.Model]):
         sizes, demands = _aggregate_items(inst)
         model, state = build_arcflow(sizes, demands, inst.bin_capacity, "bp_monolithic_arcflow")
         model.Params.OutputFlag = 1 if self.verbose else 0
-        model.Params.Threads = 1  # the 60 s single-thread reference protocol; user params may override
+        model.Params.Threads = 1  # single-thread reference default; the caller sets TimeLimit/MIPGap; user params may override
         for k, v in self.params.items():
             model.setParam(k, v)
         model._vars = state  # type: ignore[attr-defined]

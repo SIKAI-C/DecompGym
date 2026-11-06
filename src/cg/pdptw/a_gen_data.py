@@ -38,9 +38,9 @@ Frozen convention, identical to the scale-up PDPTW (`src.cg.pdptw.a_data`, PyVRP
   fewer than 25, so the limit cannot bind (generation asserts it) and the model states an unlimited fleet;
 - objective: total distance only (SINTEF ranks vehicles first; its best-known values are not optima here).
 Size adaptation: Li & Lim's smallest set has 100 customers (about 53 requests); n_customers is shrunk and depends on
-the parent's horizon type (type 1: 10 / 12 / 14, type 2: 8 / 11 / 14 customers), calibrated on pilot seeds 100+
-(never the evaluation seeds 0-2) so that the MIP and the branch-and-price reference prove optimality within 60 s with
-one thread. The number of requests is (n_customers + number of odd
+the parent's horizon type (type 1: 12 / 15 / 18, type 2: 12 / 15 / 18 customers), calibrated on pilot seeds 100+
+(never the evaluation seeds 0-2) so that the branch-and-price reference proves optimality within its 60 s budget and
+the monolithic MIP proves optimality within 1800 s, both with one thread. The number of requests is (n_customers + number of odd
 heuristic routes) / 2, so it varies slightly with the instance.
 """
 from __future__ import annotations
@@ -59,14 +59,14 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 SIZES = ("small", "medium", "large")
-# Keyed by the parent's horizon type (calibrated on pilot seeds 100+): a type-2 parent with 20 customers defeated the
-# labelling reference, 14 type-2 customers solve in < 7 s. Type-1 C1 parents with loose windows (c103/c104) have a
-# heavy MIP tail: c109 exceeds the 60 s MIP at 20 customers, c104 takes 32 s at 18 and exceeds 60 s at 16, while all
-# six c103/c104 pilots solve at 14 (MIP <= 26.7 s, reference <= 11.3 s); type 1 is therefore capped at 14 as well.
+# Keyed by the parent's horizon type (calibrated on pilot seeds 100+, full-process seconds). Type 2: the reference is
+# the limit (c204 times out at 20 customers, 17.0 s at 18; r204/r208/rc204/rc208 <= 30.4 s at 20). Type 1: the
+# reference stays <= 10.2 s up to 28 customers, but the MIP of C1 parents with loose windows is the limit: c104
+# exceeds the 1800 s MIP at 20 customers (2 of 3 pilots); at 18 every pilot MIP proves in <= 42 s.
 SIZE_CONFIG = {
-    "small": {"n_customers": {"1": 10, "2": 8}},
-    "medium": {"n_customers": {"1": 12, "2": 11}},
-    "large": {"n_customers": {"1": 14, "2": 14}},
+    "small": {"n_customers": {"1": 12, "2": 12}},
+    "medium": {"n_customers": {"1": 15, "2": 15}},
+    "large": {"n_customers": {"1": 18, "2": 18}},
 }
 SCALE = 1000
 

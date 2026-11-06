@@ -37,10 +37,13 @@ review), or [I] inferred from the statistics of the 30 published files ("Prodhon
   k uniform in {2, 3} and W_d = ceil(D / k * U[1.0, 1.2]) independently per depot (D = total demand), so k - 1
   depots never suffice ((k - 1) * 1.2 / k < 1) and k may (Prodhon-inspired; the multiplier range is ours).
 - [I] Opening costs uniform integers in [5 000, 15 000] (the 20- and 50-customer files range over 5 029-14 703).
-Adaptations (named): sizes shrink to n in {8, 10, 12} with m = 5 (Prodhon's smallest files have n = 20, m = 5;
-their exact references take minutes with Q = 150). Development seeds 100-117 (Threads = 1, end-to-end 60 s): our
-compact MIP needed 70-112 s at n = 18; at n = 14 it missed 60 s on 3 of 18 seeds (tight three-depot cases);
-at n = 12 it needed at most 5.9 s on all 18; the class follows a balanced schedule by seed: cluster count
+Adaptations (named): sizes shrink to n in {12, 14, 16} with m = 5 (Prodhon's smallest files have n = 20, m = 5).
+Size calibration (round 2, 2026-11-05; development seeds >= 100 only; full-process exact column generation with the
+60 s budget, Threads = 1): the reference's tail grows steeply with n under Q = 150 (Q = 70 seeds stay below 5 s at
+n = 20). Maximum over the Q = 150 pilot seeds: n = 12 0.5 s, n = 14 4.8 s, n = 16 12.0 s (10 seeds), n = 17 50.9 s
+(10 seeds), n = 18 above 55 s with one seed unproved at 60 s, n = 20 one seed failed (its route tables also need
+about m * 2^n * n * 16 bytes, so n <= 20 at m = 5). The compact MIP (1800 s limit, MIPGap 0) proved n = 16 pilots
+in 1-71 s. Earlier, 60 s-MIP calibration (round 1) had used n in {8, 10, 12}. The class follows a balanced schedule by seed: cluster count
 0 / 2 / 3 for seed mod 3 = 0 / 1 / 2, and Q = 70 for even seeds, 150 for odd seeds; feasibility rule: the depot
 capacities are redrawn until first-fit decreasing packs the customer demands into the depots (unlimited vehicles
 make every such packing routable, since q_i <= Q).
@@ -61,9 +64,9 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 SIZE_CONFIG = {
-    "small": {"n_customers": 8, "n_depots": 5},
-    "medium": {"n_customers": 10, "n_depots": 5},
-    "large": {"n_customers": 12, "n_depots": 5},
+    "small": {"n_customers": 12, "n_depots": 5},
+    "medium": {"n_customers": 14, "n_depots": 5},
+    "large": {"n_customers": 16, "n_depots": 5},
 }
 
 DEFAULT_CONFIG = {

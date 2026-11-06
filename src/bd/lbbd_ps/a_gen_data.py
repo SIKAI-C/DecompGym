@@ -57,14 +57,18 @@ import numpy as np
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-# (n_jobs, n_facilities) per class; every pair is an archive size. Calibrated on pilot seeds >= 100 (time-indexed
-# MIP, 1 thread, 60 s): c14j3m 20 pilots 0.02-1.6 s; c16j4m 26 pilots 0.05-1.0 s; e20j4m 6 pilots 0.2-3.5 s;
-# e25j5m 19 pilots 0.2-16.2 s. Rejected for heavy tails: c18j4m (1 of 20 pilots unproved at 60 s), c20j4m (14 pilots,
-# 1 unproved, 1 at 51 s; evaluation seed 0 took 59 s in a first generation), c24j4m (3 of 6 unproved), e30j6m (1 of 6).
+# (n_jobs, n_facilities) per class; every pair is an archive size. Round 2 (2026-11-05) calibration on pilot seeds >= 100
+# (c: even seeds, e: odd seeds): full-process LBBD reference (time_limit 60 s, 1 thread) and the time-indexed MIP proof
+# (MIPGap 0, 1 thread, limit 1800 s). The MIP proof binds first: rejected after an unproved 1800 s pilot MIP were
+# c26j4m (seed 104), c24j4m (seed 106), e55j10m (seed 101), e50j10m (seed 101) and e45j9m (seed 109); rejected on
+# the reference were c28j4m and c28j3m (seed 100 at the 60 s limit), c26j3m (3 of 6 at the limit), e60j10m (52.8 s)
+# and e70j10m / e60j8m / e80j8m (at the limit). Chosen large: c22j4m (reference 0.2-2.8 s on 6 pilots, MIP 0.7-6.4 s
+# on 4) and e40j8m (reference 1.0-5.6 s on 6, MIP 0.9-647 s on 4). Round 1 used c10j2m/e10j2m, c14j3m/e20j4m,
+# c16j4m/e25j5m with a 60 s MIP limit.
 SIZE_CONFIG = {
-    "small": {"c": (10, 2), "e": (10, 2)},
-    "medium": {"c": (14, 3), "e": (20, 4)},
-    "large": {"c": (16, 4), "e": (25, 5)},
+    "small": {"c": (16, 4), "e": (25, 5)},
+    "medium": {"c": (20, 4), "e": (30, 6)},
+    "large": {"c": (22, 4), "e": (40, 8)},
 }
 
 

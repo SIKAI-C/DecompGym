@@ -23,7 +23,7 @@ MONO_PARAMS = {"Threads": 1, "MIPGap": 0.0}
 
 
 def generate_suite(problem: str, *, gen: Callable, render_prompt: Callable, sizes, num_instances: int, out_root: str | Path,
-                   seed_offset: int = 0, mono_time_limit: float = 60.0, ref_time_limit: float = 60.0,
+                   seed_offset: int = 0, mono_time_limit: float = 1800.0, ref_time_limit: float = 60.0,
                    max_reference_gap: float = 0.01) -> list[dict[str, Any]]:
     out_root = Path(out_root)
     metas = []

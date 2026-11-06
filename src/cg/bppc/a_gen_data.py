@@ -14,8 +14,11 @@ graph ... edge densities from 10% to 90%"; "(d) and (da) were generated with ite
 The ua/ta sets of the literature reuse the Muritiba item files and only replace the graph; here the UA items are drawn
 directly from the Falkenauer-U distribution, since the published files have n >= 120.
 
-Adaptations (named): (1) size: n is shrunk to 30/35/40 (SIZE_CONFIG; n = 50 failed the 60 s proof on 4 of 6 pilot seeds) so that the monolithic MIP proves optimality within 60 s (aim; litgen_suite rejects any instance where it does not)
-(Threads = 1); (2) regime mix: even benchmark seeds draw DA, odd seeds UA (seeds 0-2 give DA, UA, DA); (3) density:
+Adaptations (named): (1) size: n is shrunk to 35/40/45 (SIZE_CONFIG) so that the monolithic MIP proves optimality
+(MIPGap = 0, Threads = 1) within the 1800 s generation limit (litgen_suite rejects any instance where it does not).
+Round-2 pilots (seeds 100-103, n = 45): MIP proved in 41.0/0.6/90.8/0.2 s, reference CG (full process) <= 1.5 s, gap 0;
+n = 50 (seed 100, DA) did not prove within 1800 s, so n = 45 is the largest tested size whose pilot MIPs all proved. The binding limit is
+the MIP proof, not the reference CG time; (2) regime mix: even benchmark seeds draw DA, odd seeds UA (seeds 0-2 give DA, UA, DA); (3) density:
 one value of the published grid {0.1, ..., 0.9} per regime (DENSITY), fixed for every size and seed;
 (4) randomness: Python's random.Random(f"bppc-litgen:{regime}:{size}:{seed}"), weights first, then the graph.
 The recipe (regime, density, edge count) is recorded in meta.json, not in data.json.
@@ -42,9 +45,9 @@ REGIMES = {
 DENSITY = {"UA": 0.5, "DA": 0.5}
 
 SIZE_CONFIG = {
-    "small": {"UA": 30, "DA": 30},
-    "medium": {"UA": 35, "DA": 35},
-    "large": {"UA": 40, "DA": 40},
+    "small": {"UA": 35, "DA": 35},
+    "medium": {"UA": 40, "DA": 40},
+    "large": {"UA": 45, "DA": 45},
 }
 
 

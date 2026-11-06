@@ -198,7 +198,7 @@ def generate_km_paper_instance(
 # -----------------------
 
 TSP_SIZES = ("small", "medium", "large")
-TSP_SIZE_CONFIG = {"small": {"n": 120}, "medium": {"n": 200}, "large": {"n": 300}}  # nodes; calibrated 2026-11-05 on pilot seeds >= 100
+TSP_SIZE_CONFIG = {"small": {"n": 250}, "medium": {"n": 400}, "large": {"n": 525}}  # nodes; calibrated 2026-11-06 (round 2) on pilot seeds >= 100
 TSP_PARENTS = ("rl1304", "fl1400", "u1432", "vm1748")  # Duran-Mateluna, Ales and Elloumi (2023), Table 3 ("medium")
 TSP_PARENT_SHA256 = {  # of the uncompressed TSPLIB95 files shipped in src/bd/km/tsplib/*.tsp.gz
     "rl1304": "5ff734892f9500f46491340b0cd58e844a322a373ec6a07e026687a253e568be",
@@ -266,7 +266,10 @@ def generate_km_instance(
       numpy default_rng(seed).choice, kept in file order) of n nodes of one parent EUC_2D file; parents are the
       four "medium" files of Duran-Mateluna et al. Table 3 (rl1304, fl1400, u1432, vm1748), disjoint from the
       scale-up evaluation files (d2103, pcb3038, fl3795, rl5934);
-    - n is shrunk to TSP_SIZE_CONFIG[size] so that the monolithic MIP proves optimality within 60 s on one thread;
+    - n is shrunk to TSP_SIZE_CONFIG[size] (below the parents' 1304-1748 nodes)
+      with the calibration target that the reference Benders (60 s budget, one thread, full process) takes at most
+      30 s (small, medium) and 45 s (large) on pilot seeds >= 100 (in-process pilot times plus full-process checks); the monolithic MIP only proves optimality (MIPGap 0,
+      one thread, limit 1800 s);
     - p takes the first three values of the literature's p grid, (5, 10, 20), verbatim (larger grid values exceed
       what is meaningful at our n); parent and p follow the declared schedule `tsp_schedule`;
     - distances: floor of the Euclidean distance (the p-median adaptation); TSPLIB's own EUC_2D rule rounds to the

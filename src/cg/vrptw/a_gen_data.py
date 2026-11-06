@@ -26,9 +26,12 @@ Our sampling protocol (a new protocol on Solomon's data, frozen here; it adapts 
   scale-up VRPTW's DIMACS convention); windows and service times are integers, so all tests are exact in tenths;
 - every sampled customer is individually serviceable (depot -> customer -> depot within all windows) in every
   Solomon file; generation asserts it.
-Size adaptation: Solomon's smallest standard subset has 25 customers; n_customers is shrunk and depends on the
-parent's horizon type (type 1: 12 / 17 / 22, type 2: 8 / 12 / 15 for small / medium / large), calibrated on pilot
-seeds so that the MIP and the branch-and-price reference both prove optimality within 60 s with one thread.
+Size adaptation: Solomon's smallest standard subset has 25 customers; n_customers depends on the parent's class
+(R1 and RC1: 16 / 21 / 26; C1: 10 / 13 / 15; C2: 11 / 14 / 16; R2 and RC2: 10 / 12 / 14 for small / medium / large),
+calibrated on pilot seeds 100+ (never the evaluation seeds 0-2) so that the branch-and-price reference proves
+optimality within its 60 s budget with one thread (the monolithic MIP only has to prove optimality, limit 1800 s).
+The classes differ because files with mostly wide windows and long routes (c103/c104 in C1; r204/r208, rc204/rc208 in
+R2/RC2) make exact elementary pricing hard: c104 times out at 16 customers, r208 and rc204 at 16.
 """
 from __future__ import annotations
 
@@ -44,13 +47,13 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 SIZES = ("small", "medium", "large")
-# Keyed by the parent's horizon type (calibrated on pilot seeds 100+): type-1 classes (R1, C1, RC1: tight windows)
-# make the MIP hard (R1 with 25 customers up to 46.5 s, 30 customers > 60 s); type-2 classes (R2, C2, RC2: long
-# routes) make exact elementary pricing hard (18 customers did not converge in 60 s).
+# Keyed by the parent's class (calibrated on pilot seeds 100+, the reference is the binding limit; full-process
+# seconds): R1/RC1 at 26 customers <= 19 s (16 pilots; MIP <= 245 s); C1 at 15 <= 29.3 s (c104; c104 times out at 16);
+# C2 at 16 <= 19.1 s; R2/RC2 at 14 <= 37.4 s (r208; r208 and rc204 time out at 16).
 SIZE_CONFIG = {
-    "small": {"n_customers": {"1": 12, "2": 8}},
-    "medium": {"n_customers": {"1": 17, "2": 12}},
-    "large": {"n_customers": {"1": 22, "2": 15}},
+    "small": {"n_customers": {"R1": 16, "RC1": 16, "C1": 10, "C2": 11, "R2": 10, "RC2": 10}},
+    "medium": {"n_customers": {"R1": 21, "RC1": 21, "C1": 13, "C2": 14, "R2": 12, "RC2": 12}},
+    "large": {"n_customers": {"R1": 26, "RC1": 26, "C1": 15, "C2": 16, "R2": 14, "RC2": 14}},
 }
 
 
@@ -87,9 +90,13 @@ class VRPTWInstance(JsonDataMixin):
 
 
 def n_customers(size_label: str, parent: str) -> int:
-    """The size rule: an int, or {horizon type "1"/"2": n} keyed by the parent class's type (r1xx -> "1")."""
+    """The size rule: an int, or a dict keyed by the parent's Solomon class ("R1", "C1", ...), falling back to its
+    horizon type ("1"/"2", r1xx -> "1") for a class without its own entry."""
     cfg = SIZE_CONFIG[size_label]["n_customers"]
-    return cfg if isinstance(cfg, int) else cfg[parent[-3]]  # r101 -> "1", rc208 -> "2"
+    if isinstance(cfg, int):
+        return cfg
+    cls = next(c for c in CLASSES if parent in CLASS_FILES[c])
+    return cfg[cls] if cls in cfg else cfg[parent[-3]]  # r101 -> "1", rc208 -> "2"
 
 
 def solomon_parent(seed: int, size_label: str) -> tuple[str, random.Random]:

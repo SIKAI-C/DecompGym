@@ -16,8 +16,13 @@ files (Yagiura's d*/e* files as redistributed by fontanf/generalizedassignmentso
 Draw order: per job i, per machine j (a_ij then the cost noise), with Python's random.Random.
 
 Adaptations (named): (1) size: Yagiura's D/E sets have n >= 100 and m in {5, ..., 80}; here the
-published ratio n/m = 5 (e.g. (m, n) = (20, 100)) is selected and m is shrunk (SIZE_SCALING) so that the monolithic MIP proves optimality within 60 s (aim; litgen_suite rejects any instance where it does not)
-(Threads = 1). (2) type mix: even benchmark seeds draw type D, odd seeds type E (seeds 0-2 give D, E, D).
+published ratio n/m = 5 (e.g. (m, n) = (20, 100)) is kept and m is shrunk (SIZE_SCALING): (m, n) = (8, 40) / (10, 50) /
+(12, 60) (round-2 recalibration, 2026-11-05; round 1 used (4, 20) / (6, 30) / (8, 40)). The size is bounded by the proof of
+the monolithic MIP (Threads = 1, TimeLimit 1800 s; litgen_suite rejects any instance where it does not prove optimality):
+type D at (14, 70) and (15, 75) did not prove optimality within 1800 s on a pilot seed, while (12, 60) proved on pilot
+seeds 100, 102, 103, 104 and 106 in at most about 210 s; the full-process reference CG took about 9-23 s at (12, 60)
+on pilot seeds 100-104 and 106.
+(2) type mix: even benchmark seeds draw type D, odd seeds type E (seeds 0-2 give D, E, D).
 (3) feasibility policy: the instance with redraw index k = 0 is drawn from random.Random(f"gap-litgen:{seed}:{k}");
 if it has no feasible assignment, k is increased and the instance is redrawn (the type and redraw index are recorded in meta.json).
 Feasibility is decided by a greedy sufficient check and, if that fails, an exact feasibility MIP.
@@ -34,8 +39,8 @@ from typing import Any, cast
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-# Litgen sizes: (machines m, jobs n) with the published ratio n / m = 5.
-SIZE_SCALING = {"small": {"m": 4, "n": 20}, "medium": {"m": 6, "n": 30}, "large": {"m": 8, "n": 40}}
+# Litgen sizes: (machines m, jobs n) with the published ratio n / m = 5 (round 2; see the module docstring).
+SIZE_SCALING = {"small": {"m": 8, "n": 40}, "medium": {"m": 10, "n": 50}, "large": {"m": 12, "n": 60}}
 
 GAP_TYPES = {
     "D": {"resource_range": (1, 100), "cost_base": 111, "cost_noise": 10, "capacity_share": 0.8},

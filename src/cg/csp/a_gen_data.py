@@ -18,9 +18,13 @@ The stream is the Park-Miller "minimal standard" generator (IA = 16807, IM = 2^3
 Classes: the 18 standard CUTGEN1 classes (Foerster and Waescher 2000, IJPR 38(7):1657-1676; tabulated e.g. by
 Araujo, Poldi and Smith 2014, Pesquisa Operacional 34(2), Table 4): L = 1000, (v1, v2) in {(0.01, 0.2), (0.01, 0.8),
 (0.2, 0.8)}, m in {10, 20, 40}, d in {10, 100}. This generator uses the cell (v1, v2) = (0.2, 0.8), d = 10 (classes
-13, 15, 17 differ only in m) with the three published m values, small/medium/large = m = 10/20/40 (classes 13, 15,
-17; no shrinking: the arc-flow MIP of src/cg/bp/arcflow.py proved
-optimality well within the 60 s protocol on every pilot seed; litgen_suite rejects any instance where it does not, Threads = 1). The CUTGEN1 seed of an
+13, 15, 17 differ only in m). Only m, the size descriptor that CUTGEN1 itself varies, is set per label:
+small/medium/large = m = 250/400/700 (round-2 recalibration, 2026-11-05; the published classes use m in {10, 20, 40},
+CUTGEN1 is parametric in m, so these values go beyond the published grid; the round-1 table was m = 10/20/40). Because
+lengths are integers in [200, 800], merging leaves at most 601 distinct types. The arc-flow MIP of src/cg/bp/arcflow.py
+proved optimality in a few seconds at every pilot (litgen_suite rejects any instance where it does not, Threads = 1); the
+sizes are set so that the full-process reference CG (time limit 60 s) takes a few seconds at small, about 8-18 s at
+medium and about 25-36 s at large on the pilot seeds. The CUTGEN1 seed of an
 instance is derived from the benchmark seed by cutgen1_seed (one Python random draw in [1, 2^31 - 2]); one problem is
 drawn per seed (CUTGEN1 draws problems from one continuing stream; here every instance restarts the stream).
 The paper-era generator (factor-scaled widths of 10-60 % of a random stock size) is preserved in the paper code base.
@@ -43,11 +47,11 @@ DEFAULT_CONFIG = {
     "item_name_prefix": "PaperProduct_",
 }
 
-# Number of CUTGEN1 item types m per size label: the published values of classes 13, 15, 17.
+# Number of CUTGEN1 item types m per size label (round 2; beyond the published m = 10/20/40, see the module docstring).
 SIZE_SCALING = {
-    "small": {"m": 10},
-    "medium": {"m": 20},
-    "large": {"m": 40},
+    "small": {"m": 250},
+    "medium": {"m": 400},
+    "large": {"m": 700},
 }
 
 _IA, _IM, _IQ, _IR = 16807, 2147483647, 127773, 2836

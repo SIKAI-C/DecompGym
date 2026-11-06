@@ -30,8 +30,9 @@ an r from quintile ((k - 1) mod 5) + 1 (1-based); here slot k draws r from quint
 (inverse CDF of a uniform draw inside that quintile, stream "x-r/<k>"), the population version of that rule.
 Positions and demands use the stream "x-cvrp/<size>/<seed>". No instance is selected or redrawn on solver outcomes.
 
-Adaptations, named: (1) n is shrunk from 100-1000 to the sizes below so that the monolithic MIP proves optimality in
-60 s; customers are the non-depot nodes (n customers, n + 1 nodes). (2) S ~ UD[3, min(8, c)] where c is the number of
+Adaptations, named: (1) n is shrunk from 100-1000 to the sizes below (15 / 17 / 19 customers for small / medium /
+large), calibrated on pilot seeds 100+ so that the subset-table reference (exact, at most 21 customers) finishes within
+the 60 s budget (largest pilot: 22 s at n = 19, 51 s at n = 20) and the monolithic MIP proves optimality; customers are the non-depot nodes (n customers, n + 1 nodes). (2) S ~ UD[3, min(8, c)] where c is the number of
 clustered customers (at small n an RC instance may have fewer than 8 clustered customers; the script aborts there).
 (3) the SL share's distribution U[0.70, 0.95] and the at-least-one-large rule fill a detail the paper leaves open (the
 script instead makes about 1.5 n / r customers large). (4) the paper's exp(-d/40) is used, not the script's 2^(-d/40),
@@ -53,11 +54,11 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 SIZES = ("small", "medium", "large")
 # Calibrated on pilot seeds 100+ (see the family report): the monolithic MIP proves every pilot in < 1.5 s at n = 20;
-# the binding limit is the subset-table CG reference (one n = 20 pilot took 51 s), hence 18 at most.
+# the binding limit is the subset-table CG reference (ten n = 19 pilots <= 22 s; one n = 20 pilot took 51 s).
 SIZE_CONFIG = {
-    "small": {"n_customers": 12},
-    "medium": {"n_customers": 15},
-    "large": {"n_customers": 18},
+    "small": {"n_customers": 15},
+    "medium": {"n_customers": 17},
+    "large": {"n_customers": 19},
 }
 
 GRID = 1000

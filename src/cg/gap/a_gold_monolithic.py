@@ -45,7 +45,7 @@ class GAPBaseline(BaseBaseline[GAPInstance, gp.Model]):
 
         model = gp.Model("gap_monolithic")
         model.Params.OutputFlag = 1 if self.verbose else 0
-        model.Params.Threads = 1  # the 60 s single-thread reference protocol; user params may override
+        model.Params.Threads = 1  # single-thread reference default; the caller sets TimeLimit/MIPGap; user params may override
         for k, v in self.params.items():
             model.setParam(k, v)
 
