@@ -26,12 +26,15 @@ Our sampling protocol (a new protocol on Solomon's data, frozen here; it adapts 
   scale-up VRPTW's DIMACS convention); windows and service times are integers, so all tests are exact in tenths;
 - every sampled customer is individually serviceable (depot -> customer -> depot within all windows) in every
   Solomon file; generation asserts it.
-Size adaptation: Solomon's smallest standard subset has 25 customers; n_customers depends on the parent's class
-(R1 and RC1: 16 / 21 / 26; C1: 10 / 13 / 15; C2: 11 / 14 / 16; R2 and RC2: 10 / 12 / 14 for small / medium / large),
-calibrated on pilot seeds 100+ (never the evaluation seeds 0-2) so that the branch-and-price reference proves
-optimality within its 60 s budget with one thread (the monolithic MIP only has to prove optimality, limit 1800 s).
-The classes differ because files with mostly wide windows and long routes (c103/c104 in C1; r204/r208, rc204/rc208 in
-R2/RC2) make exact elementary pricing hard: c104 times out at 16 customers, r208 and rc204 at 16.
+Size adaptation: Solomon's smallest standard subset has 25 customers; here n_customers = 10 / 12 / 14 for small /
+medium / large in every class (user decision 11-06: the size label is the customer count and grows monotonically).
+The common table is the one calibrated for the hardest classes on pilot seeds 100+ (never the evaluation seeds 0-2):
+files with mostly wide windows and long routes (c103/c104 in C1; r204/r208, rc204/rc208 in R2/RC2) make exact
+elementary pricing hard (c104, r208 and rc204 time out at 16 customers; r208 takes 37 s at 14), so the
+table was selected from that pilot calibration (no pilot at 10 customers; R1, RC1 and C2 were piloted only at larger
+sizes); each final instance is still certified at generation (proved MIP, matching reference within the 60 s budget,
+one thread; the monolithic MIP only has to prove optimality, limit 1800 s). The easier classes (R1, RC1: up to 26 customers
+within budget) are deliberately not enlarged. n_customers() still accepts per-class tables.
 """
 from __future__ import annotations
 
@@ -47,13 +50,14 @@ from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
 SIZES = ("small", "medium", "large")
-# Keyed by the parent's class (calibrated on pilot seeds 100+, the reference is the binding limit; full-process
-# seconds): R1/RC1 at 26 customers <= 19 s (16 pilots; MIP <= 245 s); C1 at 15 <= 29.3 s (c104; c104 times out at 16);
-# C2 at 16 <= 19.1 s; R2/RC2 at 14 <= 37.4 s (r208; r208 and rc204 time out at 16).
+# One customer count per label for every class (user decision 11-06). Pilot evidence (seeds 100+, reference
+# full-process seconds, approximate maxima): R1/RC1 at 26 customers about 19 s (14 pilots; RC1 MIP about 246 s) and at
+# 21 about 2.2 s; C1 at 14 about 7.7 s and at 15 about 29.4 s (c104; c104 times out at 16); C2 at 16 about 19.2 s;
+# R2/RC2 at 14 about 37.5 s (r208; r208 and rc204 time out at 16). No pilot ran at 10 customers.
 SIZE_CONFIG = {
-    "small": {"n_customers": {"R1": 16, "RC1": 16, "C1": 10, "C2": 11, "R2": 10, "RC2": 10}},
-    "medium": {"n_customers": {"R1": 21, "RC1": 21, "C1": 13, "C2": 14, "R2": 12, "RC2": 12}},
-    "large": {"n_customers": {"R1": 26, "RC1": 26, "C1": 15, "C2": 16, "R2": 14, "RC2": 14}},
+    "small": {"n_customers": 10},
+    "medium": {"n_customers": 12},
+    "large": {"n_customers": 14},
 }
 
 
