@@ -71,6 +71,26 @@ class AttemptResult:
         return asdict(self)
 
 
+def clone_or_copy(source: Path, target: Path) -> str:
+    """Create `target` (which must not exist) as an APFS copy-on-write clone of `source` (clonefile(2), as `cp -c`):
+    an independent file, never a link, that shares data blocks until one side changes. Where the filesystem or the
+    platform cannot clone, a plain copy. Returns "clone" or "copy"; the caller verifies the target's sha256."""
+    if target.exists() or target.is_symlink():
+        raise ProtocolError(f"Refusing to replace an existing file: {target}")
+    try:
+        import ctypes
+        import os
+        clonefile = ctypes.CDLL(None, use_errno=True).clonefile
+        if clonefile(os.fsencode(source), os.fsencode(target), 0) == 0:
+            return "clone"
+    except (AttributeError, OSError):
+        pass
+    if target.exists() or target.is_symlink():
+        raise ProtocolError(f"A failed clone left a file behind: {target}")
+    shutil.copyfile(source, target)
+    return "copy"
+
+
 def previous_attempt_files(attempts_root: Path, current_idx: int) -> list[Path]:
     """Read-only files of earlier attempts given to a reflection-policy generation (the paper's history sets)."""
     return PAPER_HISTORY.previous_attempts(attempts_root, current_idx)
@@ -127,8 +147,12 @@ class PairedRunner:
         if (self.runtime_spec.timeout, self.runtime_spec.threads) != (solver_timeout, solver_threads):
             raise ValueError("The runtime contract's budget differs from the solver budget")
         # How a candidate runs and is scored; the paper's native policy calls run_solver (also when a test replaces it).
+        # The executor's evidence schema (sandbox.EVIDENCE_SCHEMAS; None for the paper and for plain callables) decides
+        # how execution.json stores the output and whether the shared first attempt's output.json is cloned.
+        self.evidence_schema = getattr(solver_executor, "evidence_schema", None)
         self.policy = execution_policy or SmallScaleNativePolicy(executor=lambda *args: self.run_solver(*args), suite=suite, tol=tol, gap_threshold=gap_threshold,
-                                                                 cooldown_seconds=solver_cooldown_seconds)
+                                                                 cooldown_seconds=solver_cooldown_seconds,
+                                                                 **({"evidence_schema": self.evidence_schema, "output_limit": solver_executor.output_limit} if self.evidence_schema else {}))
         self.policy.check(delivery=self.delivery, runtime=self.runtime_spec)
         if any(not isinstance(name, str) or not NESTED_NAME.fullmatch(name) for name in (*self.delivery.nested, *self.policy.nested)):
             raise ValueError("Declared attempt subdirectories must be plain names")
@@ -513,7 +537,10 @@ class PairedRunner:
             source, target = first_dir / name, reflection_first / name
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
+                if self.evidence_schema is not None and name == "output.json":
+                    clone_or_copy(source, target)  # the one large file: an independent copy-on-write clone where possible
+                else:
+                    shutil.copyfile(source, target)
                 if digest(target) != sha:
                     raise ProtocolError("Shared first-attempt copy differs from its manifest")
             elif (name in self.SHARED_PROTECTED or "/" in name) and sha != digest(target):

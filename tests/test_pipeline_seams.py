@@ -561,7 +561,7 @@ def test_multi_file_delivery_composes_with_mounted_context(tmp_path, worker):
     prompt = call["payload"]["prompt"]
     assert prompt.startswith("# Part 1: Workspace and files\n\n## File to modify\nOnly edit the existing solver.py in the current working directory. " + multifile.CPP_NOTE)
     assert "Apart from /work/solver.py and those C++ sources in /work/cpp/, every path in this workspace is read-only context." in prompt
-    assert "Apart from the files listed above and /work/solver.py and /work/cpp/, nothing else is available" in prompt and "BEGIN CONTEXT" not in prompt
+    assert "No other task files are provided: apart from the files listed above and /work/solver.py and /work/cpp/, the workspace contains no data, references or results of this or any other instance;" in prompt and "BEGIN CONTEXT" not in prompt
     assert read(tmp_path / "call/agent_workspace.json")["version"] == MOUNTED_CPP_WORKSPACE_POLICY
     assert read(tmp_path / "call/agent_context.json")["writable"] == ["/work/solver.py", "/work/cpp/*.cpp", "/work/cpp/*.hpp"]
     assert read(tmp_path / "call/agent_context_copies_ignored.json") == {"ignored_mounted_copies": ["history/attempt_01/solver.py"]}

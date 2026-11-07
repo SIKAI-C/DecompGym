@@ -174,7 +174,7 @@ def test_part_one_states_the_one_writable_target_and_the_runtime_paths(tmp_path,
         log.mkdir()
         text = record_workspace_prompt(Path("/work"), target, composed, log, "s", old_absolute_note=backend == "agy-cli", note=note, version=MOUNTED_WORKSPACE_POLICY)
         headings = [line for line in text.splitlines() if line.startswith("#")]
-        assert headings == ["# Part 1: Workspace and files", "## File to modify", "## Input data", "## Output file", "## Files from previous attempts", "## Nothing else is available", "# Part 2: Task"]
+        assert headings == ["# Part 1: Workspace and files", "## File to modify", "## Input data", "## Output file", "## Files from previous attempts", "## No other task files", "# Part 2: Task"]
         assert f"The only file you may create or modify is /work/{target}; every other path in this workspace is read-only context." in text
         assert f"Only /work/{target} is collected after this call: anything written elsewhere is ignored." in text
         assert "solver.py must read its input from ../../data.json relative to that working directory" in text
@@ -185,6 +185,10 @@ def test_part_one_states_the_one_writable_target_and_the_runtime_paths(tmp_path,
         assert ("No files from previous attempts are provided." in text) == (len(context) == 1)
         assert ("(the attempt under review)" in text) == (target == "debug.md")
         assert ("Do not use memory, skills, subagents or prior conversations." in text) == (backend == "agy-cli")
+        # The boundary sentence names task files only: the container also holds the OS and the agent CLI's installation.
+        assert (f"No other task files are provided: apart from the files listed above and /work/{target}, the workspace contains no data, "
+                "references or results of this or any other instance; do not inspect other directories, use external tools or services, "
+                "or search for reference implementations.") in text and "nothing else is available" not in text
         assert "All task context is supplied below" not in text and "BEGIN CONTEXT" not in text
         record = read(log / "s_workspace.json")
         assert record["version"] == MOUNTED_WORKSPACE_POLICY and record["note"] == note
@@ -606,7 +610,10 @@ def test_campaign_routes_the_mounted_protocol_and_the_output_policy(tmp_path, mo
 
     monkeypatch.setattr(campaign, "PairedRunner", ObservedRunner)
     assert campaign.run(root) == 0
-    assert executors[0]["output_policy"] == OUTPUT_POLICY_32MIB
+    assert executors[0]["output_policy"] == OUTPUT_POLICY_32MIB and executors[0]["evidence_schema"] is None  # a manifest without the schema: embedded records
+    manifest["solver_evidence_schema"] = "native-output-by-reference-v1"
+    assert campaign.run(root) == 0
+    assert executors[1]["output_policy"] == OUTPUT_POLICY_32MIB and executors[1]["evidence_schema"] == "native-output-by-reference-v1"
     assert runners[0]["context_delivery"] == MOUNTED and runners[0]["data_context"] is None and runners[0]["decomposition_contract"] == DECOMPOSITION_POLICY_V3
     assert runners[0]["client"].context_delivery == MOUNTED and runners[0]["reflection_client"].context_delivery == MOUNTED
     assert runners[0]["judge_client"].context_delivery is None

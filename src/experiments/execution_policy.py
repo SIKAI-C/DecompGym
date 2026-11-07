@@ -29,6 +29,8 @@ per-target success; src.experiments.xl_scoring) implements the same four methods
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 import math
 from pathlib import Path
 import shutil
@@ -38,7 +40,8 @@ import uuid
 
 from src.agent.specs import DEFAULT_RUNTIME, SINGLE_FILE_DELIVERY
 from src.experiments.environment import require_runtime_environment
-from src.experiments.sandbox import SolverLaunchError
+from src.agent.safe_artifacts import MAX_ARTIFACT_BYTES, UnsafeArtifact, read_regular
+from src.experiments.sandbox import OUTPUT_BY_REFERENCE, SolverLaunchError
 from src.experiments.verification import OutputVerifier
 from src.utils.errors import InfrastructureError, ProtocolError
 from src.utils.records import digest, read, save
@@ -142,8 +145,45 @@ class SmallScaleNativePolicy(ExecutionPolicy):
     id = SMALL_SCALE_NATIVE_POLICY
     settings = PAIRED_EXECUTION
 
-    def __init__(self, *, executor, suite: str, tol: float = 1e-6, gap_threshold: float = 0.01, cooldown_seconds: float = 0):
+    def __init__(self, *, executor, suite: str, tol: float = 1e-6, gap_threshold: float = 0.01, cooldown_seconds: float = 0,
+                 evidence_schema: str | None = None, output_limit: int = MAX_ARTIFACT_BYTES):
         self.executor, self.suite, self.tol, self.gap_threshold, self.cooldown_seconds = executor, suite, tol, gap_threshold, cooldown_seconds
+        # The executor's sandbox.EVIDENCE_SCHEMAS value: under OUTPUT_BY_REFERENCE execution.json names output.json
+        # (stored_execution) instead of embedding the parsed output; None keeps the paper's record.
+        if evidence_schema not in (None, OUTPUT_BY_REFERENCE):
+            raise ValueError(f"Unknown solver evidence schema: {evidence_schema!r}")
+        self.evidence_schema, self.output_limit = evidence_schema, output_limit
+
+    def stored_execution(self, attempt_dir, execution):
+        """execution.json as committed: under OUTPUT_BY_REFERENCE a parsed output that equals the parse of output.json
+        (always, for the native sandbox) is replaced by a reference to that file; any other output stays embedded."""
+        if self.evidence_schema is None:
+            return execution
+        referenced = False
+        if execution["output"] is not None and execution["output_sha256"] is not None:
+            try:
+                referenced = self.parse_output(self.output_bytes(attempt_dir, execution["output_sha256"])) == execution["output"]
+            except ProtocolError:
+                referenced = False
+        return execution | {"output": None if referenced else execution["output"], "evidence_schema": self.evidence_schema, "output_in_output_json": referenced}
+
+    def output_bytes(self, attempt_dir, expected_sha256) -> bytes:
+        """The committed output.json bytes (bounded single-link read) after the sha256 check."""
+        try:
+            contents = read_regular(attempt_dir, "output.json", maximum=self.output_limit)
+        except (OSError, UnsafeArtifact) as error:
+            raise ProtocolError("Saved solver output changed") from error
+        if contents is None or hashlib.sha256(contents).hexdigest() != expected_sha256:
+            raise ProtocolError("Saved solver output changed")
+        return contents
+
+    @staticmethod
+    def parse_output(contents: bytes):
+        """The same strict UTF-8 decoding and json.loads as a fresh native run."""
+        try:
+            return json.loads(contents.decode("utf-8"))
+        except (UnicodeError, ValueError, RecursionError) as error:
+            raise ProtocolError("Saved solver output is not the committed parsed output") from error
 
     def check(self, *, delivery, runtime):
         if delivery != SINGLE_FILE_DELIVERY or runtime.contract != DEFAULT_RUNTIME.contract:
@@ -167,7 +207,21 @@ class SmallScaleNativePolicy(ExecutionPolicy):
         if execution:
             if execution["solver_sha256"] != code_hash:
                 raise ProtocolError("Executed solver changed")
-            if execution.get("output_sha256") and digest(attempt_dir / "output.json") != execution["output_sha256"]:
+            if execution.get("evidence_schema") != self.evidence_schema:
+                raise ProtocolError("A committed execution record has another evidence schema")
+            if self.evidence_schema is not None:
+                if not isinstance(execution.get("output_in_output_json"), bool) or (execution["output_in_output_json"] and (execution["output"] is not None or not execution.get("output_sha256"))):
+                    raise ProtocolError("A committed execution record has an unknown layout")
+                if execution.get("output_sha256"):
+                    contents = self.output_bytes(attempt_dir, execution["output_sha256"])  # the integrity check of every retained output
+                    if execution["output_in_output_json"]:  # parsed only when it is the committed result (a failed run's partial file may be any bytes)
+                        output = self.parse_output(contents)
+                        if not isinstance(output, dict) or execution.get("exec_ok") is not True:
+                            raise ProtocolError("A committed execution record has an unknown layout")
+                        execution = execution | {"output": output}
+                elif (attempt_dir / "output.json").exists():
+                    raise ProtocolError("Saved solver output changed")
+            elif execution.get("output_sha256") and digest(attempt_dir / "output.json") != execution["output_sha256"]:
                 raise ProtocolError("Saved solver output changed")
         else:
             stage("solver")
@@ -191,7 +245,7 @@ class SmallScaleNativePolicy(ExecutionPolicy):
                 exec_ok, output = False, None
                 stderr += "\n[framework] execution input changed; the candidate failed and the canonical input was restored"
             execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": scored_seconds, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
-            save(execution_path, execution)
+            save(execution_path, self.stored_execution(attempt_dir, execution))
             if not (attempt_dir / "solver_invocation.json").exists():
                 save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": runtime.timeout, "threads": runtime.threads, "solver_sha256": code_hash})
             if elapsed >= 5 and self.cooldown_seconds:

@@ -114,6 +114,10 @@ def initialize(root, data, plan_path, runtime_path):
     if "solver_output_policy" in plan:
         # Only a config that selects it records the output readback policy, so earlier manifests keep their layout.
         manifest["solver_output_policy"] = plan["solver_output_policy"]
+        # ... and the storage layout of the solver-output evidence it implies (sandbox.EVIDENCE_SCHEMAS).
+        from src.experiments.sandbox import EVIDENCE_SCHEMAS
+        if EVIDENCE_SCHEMAS[plan["solver_output_policy"]] is not None:
+            manifest["solver_evidence_schema"] = EVIDENCE_SCHEMAS[plan["solver_output_policy"]]
     manifest["protocol_id"] = identity(manifest)
     save(root / "campaign.json", manifest)
     save(root / "pause_request.json", {"recorded_at": now(), "resume_requires_explicit_user_request": True,
@@ -197,7 +201,8 @@ def run(root, models=None):
     engine.bind_environment(environment)
     if engine.image_id(environment["image_id"]) != environment["image_id"]:
         raise RuntimeEnvironmentError("The frozen Docker image is unavailable")
-    solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"], output_policy=manifest.get("solver_output_policy"))
+    solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"], output_policy=manifest.get("solver_output_policy"),
+                                            evidence_schema=manifest.get("solver_evidence_schema"))
     context_delivery = (manifest.get("prompt_protocol") or {}).get("context_delivery")
     auth_markers = []
     class CampaignClient(DockerCliClient):
@@ -513,6 +518,11 @@ def ensure_execution_allowed(root, manifest):
         from src.experiments.sandbox import OUTPUT_LIMITS
         if manifest["solver_output_policy"] is None or manifest["solver_output_policy"] not in OUTPUT_LIMITS or context_delivery_policy(manifest["prompt_protocol"]) is None:
             raise ProtocolError("This controller does not know the campaign's solver output policy")
+    if "solver_evidence_schema" in manifest:
+        # Only a manifest of the 32 MiB policy records it; an earlier 32 MiB manifest without it keeps embedded records.
+        from src.experiments.sandbox import EVIDENCE_SCHEMAS
+        if manifest.get("solver_output_policy") is None or manifest["solver_evidence_schema"] is None or manifest["solver_evidence_schema"] != EVIDENCE_SCHEMAS.get(manifest["solver_output_policy"]):
+            raise ProtocolError("This controller does not know the campaign's solver evidence schema")
     if pause_requested(root):
         raise ProtocolError("Campaign is paused; explicit user resumption is required")
 

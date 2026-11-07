@@ -27,6 +27,14 @@ NATIVE_SOLVER_POLICY = "private-native-sandbox-v1"
 # solver.py and data.json limits are unchanged.
 OUTPUT_POLICY_32MIB = "output-json-readback-32MiB-v1"
 OUTPUT_LIMITS = {None: MAX_ARTIFACT_BYTES, OUTPUT_POLICY_32MIB: 32 * 1024 * 1024}
+# How the committed records store the candidate's output (campaign manifest "solver_evidence_schema", recorded in the
+# execution request). None, the paper's and the default, embeds the output text and its parsed object in the evidence
+# and the receipt (and execution.json embeds the parsed object). OUTPUT_BY_REFERENCE, which only the 32 MiB policy can
+# select, stores the output once: output.json (UTF-8 bytes) is the only copy, and every record keeps its sha256 and
+# size; a resumed execution re-reads output.json, checks the sha256 and parses it with the same decoder
+# (stored_record, committed_output). A Gurobi diagnostic, or a candidate whose diagnostic failed, keeps embedded evidence.
+OUTPUT_BY_REFERENCE = "native-output-by-reference-v1"
+EVIDENCE_SCHEMAS = {None: None, OUTPUT_POLICY_32MIB: OUTPUT_BY_REFERENCE}
 PROCESS_POLICY = "(deny syscall-unix (syscall-number 82) (syscall-number 147) (syscall-number 244))"
 class SolverLaunchError(RuntimeError):
     """A launcher failure, distinct from diagnostics of the generated program."""
@@ -56,6 +64,34 @@ with gp.Env(empty=True) as env:
 
 def sha(contents):
     return hashlib.sha256(contents).hexdigest()
+
+
+def stored_record(record, schema):
+    """The committed form of an execution record under OUTPUT_BY_REFERENCE: no output text and no parsed output, but
+    the sha256 and size of the output.json bytes and whether the parsed object is the run's result (exec_ok)."""
+    stored = {key: value for key, value in record.items() if key not in ("output_text", "output")}
+    contents = record["output_text"].encode("utf-8") if record["output_text"] is not None else None
+    if (record["output"] is not None) != bool(record["exec_ok"]) or (record["output"] is not None and contents is None):
+        raise ValueError("An execution record's parsed output must be present exactly for a completed run")
+    return stored | {"evidence_schema": schema, "output_sha256": sha(contents) if contents is not None else None,
+                     "output_bytes": len(contents) if contents is not None else None, "output_parsed": record["output"] is not None}
+
+
+def committed_output(contents: bytes | None, result: dict, schema: str):
+    """The parsed output of a committed OUTPUT_BY_REFERENCE record from the output.json bytes, whose sha256 the caller
+    has checked against result["output_sha256"]: the same strict UTF-8 decoding and json.loads as a fresh run."""
+    if (result.get("evidence_schema") != schema or not isinstance(result.get("output_parsed"), bool) or not isinstance(result.get("exec_ok"), bool)
+            or result["output_parsed"] != result["exec_ok"] or "output" in result or "output_text" in result
+            or result.get("output_bytes") != (len(contents) if contents is not None else None)):
+        raise RuntimeEnvironmentError("A committed native execution record has an unknown layout")
+    if not result["output_parsed"]:
+        return None
+    if contents is None or result.get("output_sha256") is None:
+        raise RuntimeEnvironmentError("A committed native execution output changed")
+    output = json.loads(contents.decode("utf-8"))
+    if not isinstance(output, dict):
+        raise RuntimeEnvironmentError("A committed native execution output changed")
+    return output
 
 
 def save(path, value):
@@ -113,12 +149,17 @@ class NativeSandboxExecutor:
     stream_tail_bytes = 12000
     output_policy = None  # OUTPUT_LIMITS key; None is the paper's 4 MiB output.json readback
     output_limit = OUTPUT_LIMITS[None]
+    evidence_schema = None  # EVIDENCE_SCHEMAS value; None embeds the output in the records (the paper's layout)
 
-    def __init__(self, *, license_file: Path, expected_environment: dict | None = None, output_policy: str | None = None):
+    def __init__(self, *, license_file: Path, expected_environment: dict | None = None, output_policy: str | None = None, evidence_schema: str | None = None):
         if output_policy not in OUTPUT_LIMITS:
             raise ValueError(f"Unknown solver output policy: {output_policy!r}")
+        if evidence_schema is not None and evidence_schema != EVIDENCE_SCHEMAS[output_policy]:
+            raise ValueError(f"Evidence schema {evidence_schema!r} is not available under the solver output policy {output_policy!r}")
         if output_policy is not None:
             self.output_policy, self.output_limit = output_policy, OUTPUT_LIMITS[output_policy]
+        if evidence_schema is not None:
+            self.evidence_schema = evidence_schema
         self.license_file = license_file.resolve(strict=True)
         if not self.license_file.is_file():
             raise RuntimeEnvironmentError("The declared local Gurobi license is unavailable")
@@ -137,6 +178,8 @@ class NativeSandboxExecutor:
         fingerprint = {"solver_sha256": sha(solver), "input_sha256": sha(data), "timeout": timeout, "threads": threads, "environment": self.environment}
         if self.output_policy is not None:
             fingerprint["output_policy"] = self.output_policy
+        if self.evidence_schema is not None:
+            fingerprint["evidence_schema"] = self.evidence_schema
         saved = attempt_dir / "native_solver_receipt.json"
         if saved.exists():
             receipt = json.loads(saved.read_text())
@@ -146,6 +189,9 @@ class NativeSandboxExecutor:
             output = read_regular(attempt_dir, "output.json", missing_ok=True, maximum=self.output_limit)
             if (sha(output) if output is not None else None) != expected_output:
                 raise RuntimeEnvironmentError("A committed native execution output changed")
+            if self.evidence_schema is not None:
+                result = receipt["result"]
+                return result["exec_ok"], result["stdout"], result["stderr"], committed_output(output, result, self.evidence_schema)
             return tuple(receipt["result"][name] for name in ("exec_ok", "stdout", "stderr", "output"))
         identifier = uuid.uuid4().hex
         evidence = attempt_dir / f"native_execution_{identifier}.json"
@@ -163,12 +209,16 @@ class NativeSandboxExecutor:
         output_path.unlink(missing_ok=True)
         if record["output_text"] is not None:
             temporary = attempt_dir / "output.json.tmp"
-            temporary.write_text(record["output_text"])
+            if self.evidence_schema is not None:
+                temporary.write_bytes(record["output_text"].encode("utf-8"))  # the bytes whose sha256 the records keep
+            else:
+                temporary.write_text(record["output_text"])
             temporary.replace(output_path)
         record["output_sha256"] = sha(record["output_text"].encode()) if record["output_text"] is not None else None
-        save(evidence, record)
+        stored = record if self.evidence_schema is None else stored_record(record, self.evidence_schema)
+        save(evidence, stored)
         save(attempt_dir / "solver_invocation.json", {"backend": "native-macos-seatbelt", "policy": NATIVE_SOLVER_POLICY, "request": fingerprint, "evidence": evidence.name})
-        save(saved, {"request": fingerprint, "result": record})
+        save(saved, {"request": fingerprint, "result": stored})
         return tuple(record[name] for name in ("exec_ok", "stdout", "stderr", "output"))
 
     def read_output(self, work: Path) -> str | None:

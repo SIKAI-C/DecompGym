@@ -9,13 +9,13 @@ Without that setting (the paper and every older config) the context files are pa
   (generation, regeneration, reflection):
 
     # Part 1: Workspace and files      (client side, workspace_part)
-    ## File to modify | ## Input data | ## Output file | ## Files from previous attempts | ## Nothing else is available
+    ## File to modify | ## Input data | ## Output file | ## Files from previous attempts | ## No other task files
     # Part 2: Task                     (runner side, render_task_part)
     ## Problem | ## Data | ## Output | ## Method requirements | ## Rules
     # Part 3: Reflection               (reflection calls only, reflection_part)
 
 Part 1 is rendered from three independent specs (src.agent.specs): the MountLayout (which files, which roles), the
-DeliverySpec (the writable and collected target: "File to modify", "Nothing else is available") and the RuntimeSpec
+DeliverySpec (the writable and collected target: "File to modify", "No other task files") and the RuntimeSpec
 (the run-time input and output paths: "Input data", "Output file"). The defaults reproduce the earlier fixed text.
 
 Part 2 renders explicit sections (TASK_HEADINGS -> list of text blocks) and the RuntimeSpec's harness rules. A section
@@ -221,7 +221,7 @@ def workspace_part(target: str, files: list, backend: str, *, delivery=SINGLE_FI
             raise ProtocolError(f"History file outside an attempt directory: {items[0].path}")
         lines.append(f"- Attempt {int(match[1])}{' (the attempt under review)' if review else ''}, mounted read-only in {root}/{directory}/:")
         lines += [f"  - {item.path} ({item.size} bytes): {item.description}." for item in items]
-    nothing = ("## Nothing else is available\n"
-               f"Apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, nothing else is available: do not inspect other directories, use external tools or services, or search for reference implementations."
+    nothing = ("## No other task files\n"
+               f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations."
                + (" Do not use memory, skills, subagents or prior conversations." if agy else ""))
     return "\n\n".join([modify, input_data, output, "\n".join(lines), nothing]), note

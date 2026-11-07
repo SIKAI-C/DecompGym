@@ -222,7 +222,7 @@ class DeliverySpec:
                 "Only these files are collected after this call: anything written elsewhere is ignored.")
 
     def writable_text(self, target: str, workspace: str = WORKSPACE) -> str:
-        """The writable files as named in Part 1's "Nothing else is available" sentence."""
+        """The writable files as named in Part 1's "No other task files" sentence."""
         writable = f"{workspace}/{target}"
         return f"{writable} and {workspace}/cpp/" if self.sources(target) else writable
 
