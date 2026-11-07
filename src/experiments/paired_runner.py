@@ -23,12 +23,12 @@ from src.experiments.locks import runtime_lock
 from src.experiments.sandbox import SolverLaunchError
 from src.experiments.verification import OutputVerifier
 from src.utils.errors import InfrastructureError, ProtocolError
+from src.utils.families import problems
 from src.utils.records import digest, identity, read, save
 
 
-SUITE_PROBLEMS = {"bd": ["tsso", "fctp", "km", "lrp", "ufl"], "cg": ["bp", "csp", "gap", "shift"]}
-# Harder-family cohort (exploration): accepted when named explicitly, never part of the default list.
-HARDER_SUITE_PROBLEMS = {"bd": ["lbbd", "scfl", "lbbd_ps"],"cg": ["gcol", "bppc", "vrptw", "pdptw", "nrp", "cvrp", "clrp", "rcsp"]}
+# Without an explicit problem the runner keeps its historical default: the paper families of the suite, in this order.
+DEFAULT_PROBLEMS = {"bd": ["tsso", "fctp", "km", "lrp", "ufl"], "cg": ["bp", "csp", "gap", "shift"]}
 
 
 @dataclass
@@ -69,7 +69,7 @@ class PairedRunner:
     def __init__(self, *, client, judge_client, solver_executor, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None,
                  model=None, suite="bd", problem=None, max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1,
                  solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY):
-        if suite not in SUITE_PROBLEMS:
+        if suite not in DEFAULT_PROBLEMS:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
             raise ValueError("Attempt/time/tolerance budgets must be positive; gap threshold must be nonnegative.")
@@ -81,9 +81,9 @@ class PairedRunner:
         self.decomposition_contract = require_contract(decomposition_contract)
         self.runtime_environment = require_runtime_environment()
         self.model, self.suite = model, suite
-        self.problems = list(problem) if problem else list(SUITE_PROBLEMS[suite])
-        if any(p not in SUITE_PROBLEMS[suite] + HARDER_SUITE_PROBLEMS[suite] for p in self.problems):
-            raise ValueError(f"Problems must belong to {suite}: {SUITE_PROBLEMS[suite]}")
+        self.problems = list(problem) if problem else list(DEFAULT_PROBLEMS[suite])
+        if any(p not in problems(suite) for p in self.problems):
+            raise ValueError(f"Problems must be registered {suite} families: {problems(suite)}")
         self.max_attempts, self.solver_timeout, self.solver_threads = max_attempts, solver_timeout, solver_threads
         self.solver_cooldown_seconds = solver_cooldown_seconds
         self.abort_event = threading.Event()

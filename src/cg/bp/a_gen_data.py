@@ -16,7 +16,7 @@ integers. Only n, the size factor that data set 1 itself varies, is set per labe
 200/500/1000 items, i.e. N3, N4 and twice N4 (round-2 recalibration, 2026-11-05; n = 1000 goes beyond the published
 grid, which is parametric in n; the round-1 table was N1/N2/N3 = 50/100/200). The arc-flow graph of
 src/cg/bp/arcflow.py depends on c and the weight range, not on n; on pilot seed 100 the MIP proved optimality in about
-0.15 s (full process) at n = 500 and n = 2000, and litgen_suite rejects any instance where it does not (Threads = 1).
+0.15 s (full process) at n = 500 and n = 2000, and src.utils.instance_suite rejects any instance where it does not (Threads = 1).
 The reference CG aggregates equal weights into at most 81 item types; on the same pilot its full-process time was about
 0.6 s at both n = 500 and n = 2000 (a pilot observation: near-constant in n, so the CG time targets cannot be reached
 by n alone within class C2W2).

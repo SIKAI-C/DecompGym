@@ -1,9 +1,14 @@
-"""Generate and validate the 81 benchmark instances in data/ (problem families in src/bd and src/cg).
+"""Generate and validate benchmark instances of the registered problem families (src.utils.families).
 
-    python src/01_gen.py -s all -m validate -vl simple   # validate the shipped instances
-    python src/01_gen.py -s all -m both -vl strict       # generate missing instances, then validate with all references
+    python src/01_gen.py -s all -m validate -vl simple                  # validate the shipped instances in data/
+    python src/01_gen.py -ir outputs/litgen_data -m validate -vl simple  # validate the small-scale instances
+    python src/01_gen.py -ir /tmp/repro -p cvrp -m generate              # reproduce one family into a fresh root
 
-Existing instances are reused; pass --regenerate to rebuild them.
+Each family has one dataset root (its `dataset` in src.utils.families: data/, data_harder/, outputs/litgen_data/).
+These roots are pinned by their campaign configs and are never written here: generation inside them only reuses
+complete instances; a reproduction goes to a fresh --instances-root (--regenerate rebuilds instances there).
+Prompts are rendered with the contract of the family's dataset; --prompt-contract-config re-renders the prompts of
+an existing root under another config's contract.
 """
 
 from __future__ import annotations
@@ -222,6 +227,52 @@ def remove_instances(
     return removed
 
 
+def pinned_roots() -> set[Path]:
+    """The family dataset roots (src.utils.families): pinned by their campaign configs, never written by this script."""
+    from src.utils.families import dataset_roots
+
+    return set(dataset_roots())
+
+
+def selected_families(root: Path, suite: str, problem: str | None) -> list[str]:
+    """The registered families to generate under root (in a pinned root: the families it holds)."""
+    from src.utils.families import FAMILIES
+
+    names = [name for name, entry in FAMILIES.items() if suite == "all" or entry.suite == suite]
+    if root.resolve() in pinned_roots():
+        names = [name for name in names if (root / FAMILIES[name].suite / name).is_dir()]
+    if problem:
+        if problem not in names:
+            raise ValueError(f"Unknown problem '{problem}' for suite '{suite}' under {root}")
+        names = [problem]
+    return names
+
+
+def generate(root: Path, args) -> None:
+    from src.utils.dataset import instance_complete
+    from src.utils.families import FAMILIES
+
+    pinned = root.resolve() in pinned_roots()
+    if pinned and args.regenerate:
+        raise SystemExit(f"{root} is a pinned family dataset root; regenerate into a fresh --instances-root and compare")
+    attempted = False
+    try:
+        for name in selected_families(root, args.suite, args.problem):
+            entry = FAMILIES[name]
+            directory = root / entry.suite / name
+            missing = [f"{name}_{size}_seed{seed:03d}" for size in args.sizes for seed in range(args.seed_offset, args.seed_offset + args.num_instances)
+                       if not instance_complete(directory / f"{name}_{size}_seed{seed:03d}", entry.suite, name)]
+            if pinned and missing:
+                raise SystemExit(f"{directory}: {missing} incomplete; a pinned dataset root is never written, generate into a fresh --instances-root")
+            attempted |= bool(missing) or args.regenerate
+            ensure_suite(entry.suite, name, directory, args.sizes, args.num_instances, args.seed_offset, args.regenerate)
+    finally:
+        # After any generation attempt, also a rejected or skipped (not admitted) one, so the manifest never
+        # advertises an instance whose meta.json was removed.
+        if attempted:
+            write_manifest(root)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate and/or validate benchmark instances.")
     parser.add_argument(
@@ -323,9 +374,7 @@ def main() -> None:
         help="Print JSON instead of a human summary.",
     )
     parser.add_argument("--sizes", nargs="+", choices=["small", "medium", "large"], default=["small", "medium", "large"])
-    parser.add_argument("--family-set", choices=["paper", "harder"], default="paper",
-                        help="paper: the nine paper families (default); harder: the exploration cohort, written to a separate root.")
-    parser.add_argument("--regenerate", action="store_true", help="Explicitly regenerate existing instances.")
+    parser.add_argument("--regenerate", action="store_true", help="Explicitly regenerate existing instances (not inside a family dataset root).")
     parser.add_argument("--prompt-contract-config", type=Path, default=None,
                         help="Only re-render every prompt.txt under --instances-root with this campaign config's decomposition contract, then exit.")
     args = parser.parse_args()
@@ -339,39 +388,8 @@ def main() -> None:
 
     root = Path(args.instances_root)
 
-    if args.family_set == "harder":
-        import importlib
-        from src.utils.api import HARDER_PROBLEMS
-
-        if root.resolve() == (Path(__file__).resolve().parents[1] / "data").resolve():
-            raise SystemExit("The harder cohort must not be written into the paper's data/ root; pass --instances-root")
-        if args.mode != "generate":
-            raise SystemExit("The harder cohort supports --mode generate; its gold plans are verified during generation")
-        suites = ["bd", "cg"] if args.suite == "all" else [args.suite]
-        for suite in suites:
-            for prob in ([args.problem] if args.problem else list(HARDER_PROBLEMS[suite])):
-                importlib.import_module(f"src.{suite}.{prob}.c_gen").generate_suite(
-                    sizes=args.sizes, num_instances=args.num_instances, out_root=root / suite / prob, seed_offset=args.seed_offset)
-        return
-
     if args.mode in {"generate", "both"}:
-        sizes = args.sizes
-        suite_map = {
-            "bd": ["fctp", "km", "lrp", "tsso", "ufl"],
-            "cg": ["bp", "csp", "gap", "shift"],
-        }
-        suites = ["bd", "cg"] if args.suite == "all" else [args.suite]
-        for suite in suites:
-            problems = suite_map[suite]
-            if args.problem:
-                if args.problem not in problems:
-                    raise ValueError(f"Unknown problem '{args.problem}' for suite '{suite}'")
-                problems = [args.problem]
-            for prob in problems:
-                out_root = root / suite / prob
-                ensure_suite(suite, prob, out_root, sizes, args.num_instances, args.seed_offset, args.regenerate)
-        write_manifest(root)
-
+        generate(root, args)
     if args.mode == "generate":
         return
 

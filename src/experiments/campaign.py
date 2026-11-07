@@ -28,10 +28,12 @@ from src.experiments.paired_runner import PairedRunner
 from src.experiments.plan import load_plan, model_queue
 from src.experiments.resources import CleanupError, ResourceGuard, sample_host, supervise, thermal_warnings
 from src.utils.errors import InfrastructureError, ProtocolError
+from src.utils.families import PAPER_FAMILIES
 from src.utils.records import digest, identity, now, read, save
 
 
-FAMILIES = ["ufl", "fctp", "km", "lrp", "tsso", "bp", "csp", "gap", "shift"]
+# The paper's fixed 81 (a config without a cohort): its nine families, in the order that decides the inventory.
+FAMILIES = list(PAPER_FAMILIES)
 
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -44,7 +46,7 @@ def initialize(root, data, plan_path, runtime_path):
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
     environment = require_runtime_environment()
     execution_environment = load_execution_environment(runtime_path)
-    # A plan may name another cohort (the harder-family exploration); without it, the paper's fixed 81.
+    # A plan may name a cohort of registered families (src.utils.families); without it, the paper's fixed 81.
     families = plan.get("cohort", {}).get("families", FAMILIES)
     n_cases = 9 * len(families)
     paths = list(data.glob("*/*/*/data.json"))

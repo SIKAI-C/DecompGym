@@ -1,6 +1,6 @@
 """Two-stage stochastic CFL at scale: the pinned instance generator of the Stage 1 / holdout panels (protocol v4
 sections 14-15). Self-contained (NumPy + JSON only) so that later edits of the shared data module
-src/bd/scfl/a_data.py cannot silently change a frozen instance; tests/test_scaleup_bdlp_stage1.py checks that both
+src/bd/scfl/a_data.py cannot silently change a frozen instance; tests/large_scale/test_bdlp_stage1.py checks that both
 still produce byte-identical files, and every generated file's sha256 is frozen in the panel.
 
 Recipe (Bodur, Dash, Guenluek and Luedtke 2017, INFORMS JoC 29(1):77-91, Section 4.4, on the OR-Library CAP

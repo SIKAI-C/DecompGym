@@ -3,7 +3,7 @@
 Solutions (published by every method, stored by the runner) are designs: the sorted list of open facilities. The
 value of a design y is f.y + sum_s p_s Q_s(y) with the exact recourse Q_s (one transportation LP per scenario);
 a design violating (15d) is infeasible (None). Every method publishes designs only; evaluating one costs S LPs, so
-the runner evaluates publications after the clock stops (deferred evaluation, as for MCND), and the independent
+the runner evaluates publications after the clock stops (deferred evaluation), and the independent
 verifier (e_verifier) recomputes the value with its own min-cost-flow code.
 
 Recourse LP (`RecourseLP`, one persistent model reused for every scenario and design, warm-started by dual simplex

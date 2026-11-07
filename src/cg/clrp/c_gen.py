@@ -1,13 +1,12 @@
+"""Instance suite of the clrp family: data, prompt, verified references and meta.json (src.utils.instance_suite)."""
 from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
 
-from src.cg.clrp.a_gen_data import generate_clrp_instance
-from src.cg.clrp.b_problem import render_prompt
-from src.utils.harder_suite import generate_suite as _generate_suite
+from src.utils.instance_suite import generate_suite as _generate_suite
 
 
 def generate_suite(sizes: Iterable[str], num_instances: int, out_root: str | Path, *, seed_offset: int = 0) -> list[dict]:
-    return _generate_suite("cg", "clrp", gen=generate_clrp_instance, render_prompt=render_prompt, sizes=list(sizes),
-                           num_instances=num_instances, out_root=out_root, seed_offset=seed_offset, mono_time_limit=1800.0, strict=True)
+    """CLRP instances built like the Prodhon (Prins et al.) benchmark (a_gen_data.generate_clrp_instance) with a proved MIP optimum and a matching certified column-generation reference."""
+    return _generate_suite("clrp", sizes=list(sizes), num_instances=num_instances, out_root=out_root, seed_offset=seed_offset)

@@ -8,7 +8,7 @@ Compact model (the standard strong formulation; Glover et al. 2005, MIPLIB 2017 
 It is exact: for a fixed binary y the remaining LP is the transportation problem restricted to the open arcs, and a
 design is feasible in the MIP iff that LP is feasible (tested against the verifier on tiny instances). Gurobi's default
 root algorithm is kept (the root LP is a 150-row transportation LP plus 5000 linking rows at 50 x 100: it solves in well
-under a second, unlike MCND/RCSP where barrier was needed); `mip_focus` is available for a documented probe.
+under a second, unlike the large RCSP models where barrier was needed); `mip_focus` is available for a documented probe.
 With integer data the objective is an integer, so MIPGap 0 with MIPGapAbs 0.99 makes OPTIMAL a proof, and bounds are
 rounded up to integers.
 

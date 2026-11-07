@@ -1,6 +1,6 @@
 """BD-LP bound-side Stage 1 / holdout runner for UFL (Koerkel-Ghosh, N = 3000-4000) and two-stage stochastic CFL
 (OR-Library cap11x + Bodur scenarios, S = 5000), protocol v4 sections 3, 6, 14-16. Phoenix only (no optimization on
-the laptop except the tiny smoke tests of tests/test_scaleup_bdlp_stage1.py through the serial wrapper).
+the laptop except the tiny smoke tests of tests/large_scale/test_bdlp_stage1.py through the serial wrapper).
 
 It generalizes the k-median Stage 1 runner (scripts/phoenix/scaleup_km_stage1.py, frozen; its family-independent,
 already reviewed helpers are imported from it unchanged: atomic writes, attempt directories, exit classification,

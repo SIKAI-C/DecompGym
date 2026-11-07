@@ -93,8 +93,8 @@ Generating instances needs no download: the published files the generators sampl
 
 | Test | Files | Source | Default location (or environment variable) |
 |---|---|---|---|
-| `tests/test_harder_lbbd_ps.py` | Hooker planning and scheduling archive, unpacked | `planningandscheduling.zip` from https://johnhooker.tepper.cmu.edu/instances.htm (SHA-256 `13988f37f7d272629099ef27c6771f0a7af3cd606952d5e1631f206db13f8bf7`) | `outputs/reference_data/hooker/dat/` (`DECOMPGYM_HOOKER_DAT`) |
-| `tests/test_litgen_clrp.py` | Prodhon CLRP instances `coord*.dat` | http://prodhonc.free.fr/Instances/instances_us.htm | `outputs/reference_data/prodhon/` (`DECOMPGYM_PRODHON_DIR`) |
+| `tests/families/test_lbbd_ps.py` | Hooker planning and scheduling archive, unpacked | `planningandscheduling.zip` from https://johnhooker.tepper.cmu.edu/instances.htm (SHA-256 `13988f37f7d272629099ef27c6771f0a7af3cd606952d5e1631f206db13f8bf7`) | `outputs/reference_data/hooker/dat/` (`DECOMPGYM_HOOKER_DAT`) |
+| `tests/families/test_clrp.py` | Prodhon CLRP instances `coord*.dat` | http://prodhonc.free.fr/Instances/instances_us.htm | `outputs/reference_data/prodhon/` (`DECOMPGYM_PRODHON_DIR`) |
 
 Set `DECOMPGYM_ALLOW_MISSING_REFERENCE_DATA=1` to turn these two failures into explicit skips on a machine without the downloads.
 
@@ -887,15 +887,18 @@ src/
                       method contract, generation, reflection, judge)
   experiments/        campaign controller, paired runner, solver sandbox, verification, dashboard
   results/            audit snapshot, paper tables and figures, failure analysis, prompt examples
-  bd/, cg/            the nine families: generator, task prompt template, references, verifier
-  utils/              base classes, dataset helpers, Python API, shared records
-configs/paper.json    the paper's models and protocol
+  bd/, cg/            the problem families: generator, task prompt template, references, verifier
+  utils/              base classes, the family registry (families.py), instance generation and admission
+                      (instance_suite.py), dataset helpers, Python API, shared records
+configs/paper.json    the paper's models and protocol (the 81 instances in data/)
+configs/small_scale.json, configs/harder_small_all.json   the small-scale track and the reused cohort it draws on
 data/                 the 81 instances
+data_harder/          the reused small-scale instances (lbbd, gcol, nrp; with three earlier families)
 docker/agents/        agent image, worker, Antigravity sign-in and seccomp profile
 results/              published paper tables, figures and prompt examples
 outputs/examples/     one complete example trajectory
 assets/formulations/  charts used in the problem formulations
-tests/                unit tests and paper-equivalence tests
+tests/                unit tests and paper-equivalence tests; families/ and large_scale/ hold the per-family tests
 ```
 
 ## Citation

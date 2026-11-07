@@ -3,7 +3,7 @@ study).
 
 File layout: header lines "KEY : value" (NAME, COMMENT, TYPE = CVRP, DIMENSION, EDGE_WEIGHT_TYPE = EUC_2D, CAPACITY),
 then NODE_COORD_SECTION (node id, x, y), DEMAND_SECTION (node id, demand) and DEPOT_SECTION (depot node id, closed by
--1), and EOF. Conventions (CVRPLIB; reproduced exactly on the bundled best-known solutions by tests/test_scaleup_cvrp.py):
+-1), and EOF. Conventions (CVRPLIB; reproduced exactly on the bundled best-known solutions by tests/large_scale/test_cvrp.py):
 - one depot (node 1 in every X instance); the other nodes are the customers, numbered 1..n in file order, so customer i
   is node i + 1 of the file; the .sol files use this numbering ("Route #k: i j ...", then "Cost c");
 - distances are Euclidean distances rounded to the nearest integer (TSPLIB nint, floor(d + 0.5); with integer

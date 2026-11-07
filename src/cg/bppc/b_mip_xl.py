@@ -18,7 +18,7 @@ ordered by non-increasing weight (ties: lower index) at positions q+1..n, and th
 1..min(p, U) only (B_i). In a packing, the bins holding K0 items take labels 1..q, the others labels q+1, q+2, ... in
 the order of their first item, so the bin of the item at position p has a label <= p and the used labels are 1..k.
 The clique rows (Muritiba et al. 2010 use one row x_ib + x_jb <= y_b per edge and bin) are the same constraints
-aggregated over cliques; they imply every edge row, so the model is exact (tests/test_scaleup_bppc.py fixes random
+aggregated over cliques; they imply every edge row, so the model is exact (tests/large_scale/test_bppc.py fixes random
 packings into it and compares with the independent verifier).
 MIPGap 0 and MIPGapAbs 0.99 (integral objective), so OPTIMAL is a proof; bounds are Gurobi's best bounds rounded up.
 Every integer solution is decoded and re-checked with bin_count before it is published; the actual Gurobi status is

@@ -6,7 +6,7 @@ problem", European Journal of Operational Research 84(3):572-579. CUTGEN1 is lis
 original FORTRAN code, https://github.com/akavrt/cutgen at commit bb082a9a9c1d045bea7837caafab8e722a728a7a
 (ProblemGenerator.java, PseudoRandom.java), whose unit test
 reproduces the two sample problems printed in the EJOR paper (p. 576; seed 1994, m = 10, L = 1000, v1 = 0.375,
-v2 = 0.625, d = 50). tests/test_litgen_cg4.py checks this port against both of them.
+v2 = 0.625, d = 50). tests/families/test_csp.py checks this port against both of them.
 
 CUTGEN1 procedure (descriptors m, L, v1, v2, d; one pseudo-random stream R in (0, 1)):
   1. lengths: for i = 1..m, l_i = int((v1 + (v2 - v1) R) L + R) with one R per item; sort non-increasingly;
@@ -22,7 +22,7 @@ Araujo, Poldi and Smith 2014, Pesquisa Operacional 34(2), Table 4): L = 1000, (v
 small/medium/large = m = 250/400/700 (round-2 recalibration, 2026-11-05; the published classes use m in {10, 20, 40},
 CUTGEN1 is parametric in m, so these values go beyond the published grid; the round-1 table was m = 10/20/40). Because
 lengths are integers in [200, 800], merging leaves at most 601 distinct types. The arc-flow MIP of src/cg/bp/arcflow.py
-proved optimality in a few seconds at every pilot (litgen_suite rejects any instance where it does not, Threads = 1); the
+proved optimality in a few seconds at every pilot (src.utils.instance_suite rejects any instance where it does not, Threads = 1); the
 sizes are set so that the full-process reference CG (time limit 60 s) takes a few seconds at small, about 8-18 s at
 medium and about 25-36 s at large on the pilot seeds. The CUTGEN1 seed of an
 instance is derived from the benchmark seed by cutgen1_seed (one Python random draw in [1, 2^31 - 2]); one problem is

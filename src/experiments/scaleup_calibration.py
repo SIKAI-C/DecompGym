@@ -30,26 +30,25 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-SUITE = {"ufl": "bd", "gap": "cg", "clrp": "bd", "mcnd": "bd", "hub": "bd", "rcsp": "cg", "cvrp": "cg", "pdptw": "cg", "vrptw": "cg", "bppc": "cg", "lbbd": "bd"}
+from src.utils.families import FAMILIES
+
 COMMON_SOURCES = ["src/experiments/scaleup_calibration.py", "src/experiments/verification.py", "src/experiments/solution_checks.py",
                   "src/utils/output_contract.py", "src/utils/base_bd_class.py", "src/utils/base_cg_class.py", "src/utils/reference_runtime.py",
-                  "src/utils/base_data.py"]
+                  "src/utils/base_data.py", "src/utils/families.py"]
 SOURCES = {
     "ufl": ["src/bd/ufl/b_gold_bd.py", "src/bd/ufl/b_ref_bd_xl.py", "src/bd/ufl/a_gen_data.py", "src/bd/ufl/d_verifier.py"],
     "gap": ["src/cg/gap/a_gold_cg.py", "src/cg/gap/b_ref_cg_xl.py", "src/cg/gap/a_gen_data.py", "src/cg/gap/d_verifier.py"],
     "cvrp": ["src/cg/cvrp/a_data.py", "src/cg/cvrp/heuristic.py", "src/cg/cvrp/b_mip_xl.py", "src/cg/cvrp/c_naive_cg.py", "src/cg/cvrp/d_ref_cg_xl.py", "src/cg/cvrp/e_verifier.py",
-             "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/c_heuristic.py"],
+             "src/cg/clrp/d_ref_cg_xl.py", "src/cg/clrp/c_heuristic.py"],
     "lbbd": ["src/bd/lbbd/a_data.py", "src/bd/lbbd/a_scheduling.py", "src/bd/lbbd/b_mip_xl.py", "src/bd/lbbd/c_naive_bd.py", "src/bd/lbbd/d_ref_bd_xl.py", "src/bd/lbbd/e_verifier.py",
              "src/bd/lbbd/f_heuristic.py"],
     "bppc": ["src/cg/bppc/a_data.py", "src/cg/bppc/heuristic.py", "src/cg/bppc/pricing.py", "src/cg/bppc/b_mip_xl.py", "src/cg/bppc/c_naive_cg.py", "src/cg/bppc/d_ref_cg_xl.py", "src/cg/bppc/e_verifier.py",
              "src/cg/bppc/f_heuristic.py"],
     "vrptw": ["src/cg/vrptw/a_data.py", "src/cg/vrptw/pricing.py", "src/cg/vrptw/heuristic.py", "src/cg/vrptw/b_mip_xl.py", "src/cg/vrptw/c_naive_cg.py", "src/cg/vrptw/d_ref_cg_xl.py", "src/cg/vrptw/e_verifier.py",
-              "src/bd/clrp/d_ref_cg_xl.py"],
+              "src/cg/clrp/d_ref_cg_xl.py"],
     "pdptw": ["src/cg/pdptw/a_data.py", "src/cg/pdptw/pricing.py", "src/cg/pdptw/b_mip_xl.py", "src/cg/pdptw/c_naive_cg.py", "src/cg/pdptw/d_ref_cg_xl.py", "src/cg/pdptw/e_verifier.py"],
     "rcsp": ["src/cg/rcsp/a_data.py", "src/cg/rcsp/pricing.py", "src/cg/rcsp/b_mip_xl.py", "src/cg/rcsp/c_naive_cg.py", "src/cg/rcsp/d_ref_cg_xl.py", "src/cg/rcsp/e_verifier.py", "src/cg/rcsp/f_mcf_mip.py"],
-    "hub": ["src/bd/hub/a_data.py", "src/bd/hub/b_mip_xl.py", "src/bd/hub/c_naive_bd.py", "src/bd/hub/d_ref_bd_xl.py", "src/bd/hub/e_verifier.py"],
-    "mcnd": ["src/bd/mcnd/a_data.py", "src/bd/mcnd/b_mip_xl.py", "src/bd/mcnd/c_naive_bd.py", "src/bd/mcnd/d_ref_bd_xl.py", "src/bd/mcnd/e_verifier.py"],
-    "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_verifier.py", "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/e_naive_cg.py"],
+    "clrp": ["src/cg/clrp/a_data.py", "src/cg/clrp/b_mip_xl.py", "src/cg/clrp/c_heuristic.py", "src/cg/clrp/e_verifier.py", "src/cg/clrp/d_ref_cg_xl.py", "src/cg/clrp/e_naive_cg.py"],
 }
 SOFT_MEM_GB = 12.0  # Gurobi SoftMemLimit, below the 16 GB job allocation with headroom for Python
 HARD_MEM_GB = 14.0  # hard Gurobi MemLimit for model construction (below the 16 GB job allocation)
@@ -112,7 +111,7 @@ class CLRPAdapter:
     """Prodhon CLRP instance (a .dat file); solutions are route lists [{"depot", "customers"}]."""
 
     def __init__(self, data: str) -> None:
-        from src.bd.clrp.a_data import load_prodhon
+        from src.cg.clrp.a_data import load_prodhon
         self.inst = load_prodhon(data)
         self.cost = self.inst.travel("ceil")
 
@@ -121,68 +120,11 @@ class CLRPAdapter:
         return [{"depot": int(r["depot"]), "customers": [int(c) for c in r["customers"]]} for r in routes]
 
     def objective(self, routes: list) -> float | None:
-        from src.bd.clrp.b_mip_xl import route_cost
+        from src.cg.clrp.b_mip_xl import route_cost
         return route_cost(self.inst, self.cost, self.normalize(routes))
 
     def output(self, routes: list, status: str = "feasible") -> dict:
         return {"status": status, "method": "decomposition", "objective_value": self.objective(routes), "routes": self.normalize(routes)}
-
-
-class MCNDAdapter:
-    """MCND (.dow file); solutions are designs (open arc indices). Evaluating a design solves a multicommodity flow
-    LP, so evaluation is deferred: publications are timestamped and journaled on receipt and evaluated after the
-    run (the solver is not charged for the evaluation)."""
-
-    deferred = True
-
-    def __init__(self, data: str) -> None:
-        from src.bd.mcnd.a_data import load_dow
-        self.inst = load_dow(data)
-        self._cache: dict[tuple[int, ...], float | None] = {}
-
-    @staticmethod
-    def normalize(design: list) -> list:
-        return sorted({int(a) for a in design})
-
-    def objective(self, design: list) -> float | None:
-        from src.bd.mcnd.b_mip_xl import design_cost
-        key = tuple(self.normalize(design))
-        if key not in self._cache:
-            self._cache[key] = design_cost(self.inst, list(key))
-        return self._cache[key]
-
-    def output(self, design: list, status: str = "feasible") -> dict:
-        from src.bd.mcnd.b_mip_xl import design_output
-        return design_output(self.inst, self.normalize(design), method="benders_decomposition", status=status)
-
-
-class HubAdapter:
-    """Uncapacitated multiple-allocation hub location (data.json); solutions are hub sets. Evaluating a hub set
-    is a closed-form O(n^3) routing, deferred for the same reason as MCND (n = 200: ~1-2 s per evaluation)."""
-
-    deferred = True
-
-    def __init__(self, data: str) -> None:
-        from src.bd.hub.a_data import load_hub
-        self.inst = load_hub(data)
-        self._cache: dict[tuple[int, ...], float | None] = {}
-
-    @staticmethod
-    def normalize(hubs: list) -> list:
-        return sorted({int(h) for h in hubs})
-
-    def objective(self, hubs: list) -> float | None:
-        from src.bd.hub.b_mip_xl import hub_cost
-        key = tuple(self.normalize(hubs))
-        if not key:
-            return None
-        if key not in self._cache:
-            self._cache[key] = hub_cost(self.inst, list(key))
-        return self._cache[key]
-
-    def output(self, hubs: list, status: str = "feasible") -> dict:
-        from src.bd.hub.b_mip_xl import hub_output
-        return hub_output(self.inst, self.normalize(hubs), status=status)
 
 
 class RCSPAdapter:
@@ -317,7 +259,7 @@ class LBBDAdapter:
 
 
 UFLAdapter.normalize = GAPAdapter.normalize = staticmethod(lambda sol: [int(v) for v in sol])
-ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "mcnd": MCNDAdapter, "hub": HubAdapter, "rcsp": RCSPAdapter, "cvrp": CVRPAdapter, "pdptw": PDPTWAdapter, "vrptw": VRPTWAdapter, "bppc": BPPCAdapter, "lbbd": LBBDAdapter}
+ADAPTERS = {"ufl": UFLAdapter, "gap": GAPAdapter, "clrp": CLRPAdapter, "rcsp": RCSPAdapter, "cvrp": CVRPAdapter, "pdptw": PDPTWAdapter, "vrptw": VRPTWAdapter, "bppc": BPPCAdapter, "lbbd": LBBDAdapter}
 
 
 class Recorder:
@@ -456,36 +398,8 @@ def run_mip(family: str, data: str, limit: float, rec: Recorder, initializer: bo
             rec.solution(list(np.nonzero(y0 > 0.5)[0]), "mip_initializer")
             y.Start = y0
             x.Start = (np.arange(m)[:, None] == np.argmin(np.where(y0[:, None] > 0.5, a.D, np.inf), axis=0)[None, :]).astype(float)
-    elif family == "mcnd":
-        from src.bd.mcnd.b_mip_xl import build_mcnd_mip
-        model.dispose()
-        model, v = build_mcnd_mip(a.inst)
-        model.Params.OutputFlag = 0
-        model.Params.Threads = 1
-        model.Params.SoftMemLimit = SOFT_MEM_GB
-        yv = v["y"]
-        # Only the design is published; the runner recomputes optimal flows for it (the MIP's own flows need not be).
-        decode = lambda get: list(np.nonzero(np.asarray(get(yv)) > 0.5)[0])
-    elif family == "hub":
-        from src.bd.hub.b_mip_xl import build_hub_mip
-        model.dispose()
-        # The flow model is large (n = 200: ~16M variables); memory limits are set on the environment *before*
-        # construction, and a hard MemLimit makes an oversized build fail cleanly instead of being killed.
-        env = gp.Env(empty=True)
-        env.setParam("OutputFlag", 0)
-        env.setParam("Threads", 1)
-        env.setParam("SoftMemLimit", SOFT_MEM_GB)
-        env.setParam("MemLimit", HARD_MEM_GB)
-        env.start()
-        try:
-            model, v = build_hub_mip(a.inst, env=env)
-        except gp.GurobiError as exc:
-            return {"termination": "memory_limit_during_build" if exc.errno == GRB.Error.OUT_OF_MEMORY else "crash",
-                    "error": f"GurobiError: {exc}", "build_seconds": elapsed()}
-        zv = v["z"]
-        decode = lambda get: list(np.nonzero(np.asarray(get(zv)) > 0.5)[0])
     elif family == "clrp":
-        from src.bd.clrp.b_mip_xl import build_clrp_mip, decode_routes
+        from src.cg.clrp.b_mip_xl import build_clrp_mip, decode_routes
         model.dispose()
         model, v = build_clrp_mip(a.inst, a.cost)
         model.Params.OutputFlag = 0
@@ -588,14 +502,8 @@ def run_engineered_reference(family: str, data: str, limit: float, rec: Recorder
         from src.bd.ufl.b_ref_bd_xl import UFLBendersXL
         solver = UFLBendersXL(time_limit=remaining(limit), threads=1, **hooks)
     elif family == "clrp":
-        from src.bd.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
+        from src.cg.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
         solver = CLRPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
-    elif family == "mcnd":
-        from src.bd.mcnd.d_ref_bd_xl import MCNDBendersXL
-        solver = MCNDBendersXL(time_limit=remaining(limit), threads=1, **hooks)
-    elif family == "hub":
-        from src.bd.hub.d_ref_bd_xl import HubBendersXL
-        solver = HubBendersXL(time_limit=remaining(limit), threads=1, **hooks)
     elif family == "rcsp":
         from src.cg.rcsp.d_ref_cg_xl import RCSPColumnGenerationXL
         solver = RCSPColumnGenerationXL(time_limit=remaining(limit), threads=1, **hooks)
@@ -626,7 +534,7 @@ def run_heuristic_control(family: str, data: str, limit: float, rec: Recorder) -
     a = rec.adapter
     started = time.perf_counter()
     if family == "clrp":
-        from src.bd.clrp.c_heuristic import depot_search
+        from src.cg.clrp.c_heuristic import depot_search
         best, _ = depot_search(a.inst, a.cost, started + remaining(limit), 0, lambda plan: rec.solution(plan, "heuristic_control"))
         return {"termination": "deadline", "heuristic_best": best, "seed": 0}
     if family == "lbbd":
@@ -650,7 +558,7 @@ def run_root_cg_control(family: str, data: str, limit: float, rec: Recorder) -> 
     """Naive price-and-branch control: root column generation, then integer restricted masters (CLRP)."""
     if family != "clrp":
         raise ValueError("the root-CG control is defined for CLRP only")
-    from src.bd.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
+    from src.cg.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
     solver = CLRPColumnGenerationXL(time_limit=remaining(limit), threads=1, root_only=True, on_incumbent=lambda s: rec.solution(s, "root_cg"),
                                     on_bound=lambda b: rec.bound(b, "root_cg"), soft_mem_gb=SOFT_MEM_GB)
     res = solver.run(data)
@@ -659,22 +567,13 @@ def run_root_cg_control(family: str, data: str, limit: float, rec: Recorder) -> 
 
 
 def run_naive_bd_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
-    """Naive textbook Benders control (protocol v3.1): outer-loop integer master, one aggregate cut per iteration (MCND)."""
-    if family not in ("mcnd", "hub", "lbbd"):
-        raise ValueError("the naive BD control is defined for MCND, hub location and LBBD only")
-    if family == "lbbd":
-        from src.bd.lbbd.c_naive_bd import PSNaiveLBBD
-        res = PSNaiveLBBD(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_bd"),
-                          on_bound=lambda b: rec.bound(b, "naive_bd"), soft_mem_gb=SOFT_MEM_GB).run(data)
-        return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "solution")}
-    if family == "hub":
-        from src.bd.hub.c_naive_bd import HubNaiveBenders as NaiveBenders
-    else:
-        from src.bd.mcnd.c_naive_bd import MCNDNaiveBenders as NaiveBenders
-    res = NaiveBenders(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_bd"),
-                           on_bound=lambda b: rec.bound(b, "naive_bd"), soft_mem_gb=SOFT_MEM_GB).run(data)
-    reason = res.get("termination_reason", "")
-    return {"termination": "finished" if reason == "optimal" else "deadline"} | {k: v for k, v in res.items() if k not in ("trace", "open")}
+    """Naive textbook logic-based Benders control (protocol v3.1): outer-loop integer master, whole-set nogoods (LBBD)."""
+    if family != "lbbd":
+        raise ValueError("the naive BD control is defined for LBBD only")
+    from src.bd.lbbd.c_naive_bd import PSNaiveLBBD
+    res = PSNaiveLBBD(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_bd"),
+                      on_bound=lambda b: rec.bound(b, "naive_bd"), soft_mem_gb=SOFT_MEM_GB).run(data)
+    return coarse_termination(res.get("termination_reason", ""), limit) | {k: v for k, v in res.items() if k not in ("trace", "solution")}
 
 
 def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) -> dict:
@@ -693,7 +592,7 @@ def run_naive_cg_control(family: str, data: str, limit: float, rec: Recorder) ->
     elif family == "bppc":
         from src.cg.bppc.c_naive_cg import BPPCNaiveCG as NaiveCG
     else:
-        from src.bd.clrp.e_naive_cg import CLRPNaiveCG as NaiveCG
+        from src.cg.clrp.e_naive_cg import CLRPNaiveCG as NaiveCG
     res = NaiveCG(time_limit=remaining(limit), threads=1, on_incumbent=lambda s: rec.solution(s, "naive_cg"),
                       on_bound=lambda b: rec.bound(b, "naive_cg"), soft_mem_gb=SOFT_MEM_GB).run(data)
     return coarse_termination(res.get("termination_reason", "time_limit"), limit) | {k: v for k, v in res.items() if k not in ("routes", "bins")}
@@ -756,13 +655,7 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
         from src.experiments.verification import OutputVerifier
         solution_path.write_text(json.dumps(rec.adapter.output(rec.witnesses[-1]["solution"])))
         if args.family == "clrp":  # not a paper family: its own independent verifier on the Prodhon file
-            from src.bd.clrp.d_verifier import verify_solution
-            result["verification"] = verify_solution(args.data, solution_path, 1e-6)
-        elif args.family == "mcnd":
-            from src.bd.mcnd.e_verifier import verify_solution
-            result["verification"] = verify_solution(args.data, solution_path, 1e-6)
-        elif args.family == "hub":
-            from src.bd.hub.e_verifier import verify_solution
+            from src.cg.clrp.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path, 1e-6)
         elif args.family == "rcsp":
             from src.cg.rcsp.e_verifier import verify_solution
@@ -783,7 +676,7 @@ def write_result(args, fp: dict, out: Path, rec: Recorder, details: dict, previo
             from src.cg.pdptw.e_verifier import verify_solution
             result["verification"] = verify_solution(args.data, solution_path)
         else:
-            result["verification"] = OutputVerifier.verify_reference_output(SUITE[args.family], args.family, Path(args.data), solution_path, 1e-6)
+            result["verification"] = OutputVerifier.verify_reference_output(FAMILIES[args.family].suite, args.family, Path(args.data), solution_path, 1e-6)
         verified = bool(result["verification"].get("ok"))
         witnesses_path.write_text(json.dumps(rec.witnesses))
     result["scored_objective"] = rec.best if verified else None

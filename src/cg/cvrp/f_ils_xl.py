@@ -1,6 +1,6 @@
 """Decomposition-free CVRP control (protocol v4 Section 6, "no grandfathering": a strong standalone heuristic).
 
-Ruin-and-recreate simulated annealing (src.bd.clrp.f_sisr_xl, SISR-style; one uncapacitated depot, no vehicle or
+Ruin-and-recreate simulated annealing (src.cg.clrp.f_sisr_xl, SISR-style; one uncapacitated depot, no vehicle or
 opening costs) started from the shared basic initializer (Clarke-Wright savings + 2-opt, the same first plan as the
 naive and the engineered column generation), with the engineered reference's inter-route local search
 (heuristic.CVRPLocalSearch: granular relocate / swap, 2-opt*, intra-route 2-opt) polishing new best plans at most
@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from src.bd.clrp.f_sisr_xl import RoutingModel, RuinRecreate
+from src.cg.clrp.f_sisr_xl import RoutingModel, RuinRecreate
 from src.cg.cvrp.a_data import CVRPInstance, load_vrp
 from src.cg.cvrp.b_mip_xl import route_cost
 from src.cg.cvrp.heuristic import CVRPLocalSearch, basic_initializer

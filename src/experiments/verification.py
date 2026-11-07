@@ -12,6 +12,7 @@ from typing import Any
 
 from src.utils.json_utils import safe_load_json
 from src.experiments.solution_checks import check_bd_solution
+from src.utils.families import family
 from src.utils.output_contract import validate_output_contract
 
 
@@ -76,7 +77,7 @@ class OutputVerifier:
             result = verifier.verify_solution(str(data_path), str(output_path), tol=tol)
             if not result.get("ok"):
                 return result
-            if suite == "bd" and problem not in {"lbbd", "scfl", "lbbd_ps"}:  # LBBD schedules and SCFL designs are fully checked by their own verifiers
+            if suite == "bd" and not family(problem, suite).full_verifier:  # LBBD schedules and SCFL designs are fully checked by their own verifiers
                 result = check_bd_solution(problem, data, output, tol)
             objective = result.get("objective_value")
             claimed, issues, _ = OutputVerifier.extract_objective(output)

@@ -140,11 +140,11 @@ def test_above_threshold_context_holds_a_marked_preview_and_the_solver_reads_the
 
 
 def test_config_key_is_validated(tmp_path):
-    litgen = load_plan(REPO / "configs/litgen_small_all.json")
-    assert data_context_policy(litgen["prompt_protocol"]) == DATA_CONTEXT_PREVIEW
+    small_scale = load_plan(REPO / "configs/small_scale.json")
+    assert data_context_policy(small_scale["prompt_protocol"]) == DATA_CONTEXT_PREVIEW
     assert data_context_policy(load_plan(REPO / "configs/paper.json")["prompt_protocol"]) is None
     for value in ("full-v0", None, ""):
-        plan = dict(litgen, prompt_protocol={**PROMPT_PROTOCOL, "data_context": value})
+        plan = dict(small_scale, prompt_protocol={**PROMPT_PROTOCOL, "data_context": value})
         save(tmp_path / "bad.json", plan)
         with pytest.raises(ProtocolError):
             load_plan(tmp_path / "bad.json")
@@ -153,7 +153,7 @@ def test_config_key_is_validated(tmp_path):
         PairedRunner(client=None, judge_client=None, solver_executor=None, data_context="full-v0")
     root = tmp_path / "root"
     root.mkdir()
-    manifest = {"prompt_policies": litgen["prompt_policies"], "reflection_policy": litgen["reflection_policy"], "prompt_protocol": litgen["prompt_protocol"]}
+    manifest = {"prompt_policies": small_scale["prompt_policies"], "reflection_policy": small_scale["reflection_policy"], "prompt_protocol": small_scale["prompt_protocol"]}
     campaign.ensure_execution_allowed(root, manifest)
     with pytest.raises(ProtocolError):
         campaign.ensure_execution_allowed(root, dict(manifest, prompt_protocol={**PROMPT_PROTOCOL, "data_context": "full-v0"}))

@@ -1,0 +1,110 @@
+"""Bin packing (small scale): Scholl class generator, FFD bound and the verifier's item-level contract."""
+from __future__ import annotations
+
+import pytest
+
+from src.cg.bp.a_gen_data import SCHOLL_CLASS, first_fit_decreasing_bins, generate_bp_instance
+from src.cg.bp.d_verifier import verify_solution
+
+
+SIZES = ("small", "medium", "large")
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_bp_scholl_class(size):
+    d = generate_bp_instance(3, size)
+    lo, hi = SCHOLL_CLASS["weight_range"]
+    assert d["bin_capacity"] == SCHOLL_CLASS["capacity"] and all(lo <= it["size"] <= hi for it in d["items"])
+
+
+def test_ffd_bound():
+    assert first_fit_decreasing_bins([60, 50, 40], [1, 1, 2], 100) == 2
+    assert first_fit_decreasing_bins([70], [3], 100) == 3
+
+
+ITEM_DATA = {
+    "bin_capacity": 10,
+    "items": [
+        {"id": 0, "size": 6},
+        {"id": 1, "size": 4},
+        {"id": 2, "size": 4},
+    ],
+}
+
+
+@pytest.mark.parametrize(
+    "bins",
+    [
+        [[0, 0], [1]],
+        [
+            {"contents": [{"item_id": 0, "count": 2}]},
+            {"contents": [{"item_id": 1, "count": 1}]},
+        ],
+    ],
+    ids=["item-lists", "pattern-contents"],
+)
+def test_individual_items_cannot_be_reinterpreted_as_size_types(bins):
+    # As type indices, 0 and 1 mean sizes 4 and 6 and these bins appear valid.
+    # As the actual item IDs, item 0 is repeated and item 2 is missing.
+    result = verify_solution(ITEM_DATA, {"solution": {"bins": bins}})
+    assert not result["ok"]
+    assert result["objective_value"] is None
+
+
+def test_capacity_is_checked_using_actual_item_sizes():
+    data = {
+        "bin_capacity": 10,
+        "items": [
+            {"id": 0, "size": 8},
+            {"id": 1, "size": 2},
+            {"id": 2, "size": 6},
+            {"id": 3, "size": 4},
+        ],
+    }
+    # Sorting sizes would make both bins load 10, but actual items 0 and 3 load 12.
+    bins = [
+        {"usage": 1, "contents": [{"item_id": 0, "count": 1}, {"item_id": 3, "count": 1}]},
+        {"usage": 1, "contents": [{"item_id": 1, "count": 1}, {"item_id": 2, "count": 1}]},
+    ]
+    result = verify_solution(data, {"solution": {"bins": bins}})
+    assert not result["ok"]
+    assert "exceeds capacity" in result["issues"][0]
+
+
+def test_valid_individual_item_packing_passes():
+    bins = [{"contents": [{"item_id": 0}, {"item_id": 1}]}, {"contents": [{"item_id": 2}]}]
+    result = verify_solution(ITEM_DATA, {"solution": {"bins": bins}})
+    assert result["ok"], result["issues"]
+    assert result["objective_value"] == 2
+
+
+def test_individual_item_ids_need_not_be_contiguous():
+    data = {
+        "bin_capacity": 10,
+        "items": [{"id": 17, "size": 6}, {"id": 4, "size": 4}],
+    }
+    result = verify_solution(data, {"solution": {"bins": [{"contents": [{"item_id": 17}, {"item_id": 4}]}]}})
+    assert result["ok"], result["issues"]
+    assert result["objective_value"] == 1
+
+
+def test_explicit_item_types_still_support_aggregate_patterns():
+    data = {
+        "bin_capacity": 10,
+        "item_types": [
+            {"id": 0, "size": 4, "demand": 2},
+            {"id": 1, "size": 6, "demand": 1},
+        ],
+    }
+    bins = [
+        {"contents": [{"item_id": 0, "count": 2}]},
+        {"contents": [{"item_id": 1}]},
+    ]
+    result = verify_solution(data, {"solution": {"bins": bins}})
+    assert result["ok"], result["issues"]
+    assert result["objective_value"] == 2
+
+
+@pytest.mark.parametrize("bins", [[[0, 1], [2]], [{"items": [0, 1]}, {"items": [2]}], [{"item_ids": [0, 1]}, {"item_ids": [2]}]], ids=["bare-lists", "items", "item_ids"])
+def test_only_the_documented_contents_field_is_accepted(bins):
+    assert not verify_solution(ITEM_DATA, {"solution": {"bins": bins}})["ok"]

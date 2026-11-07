@@ -11,13 +11,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from src.bd.clrp.c_heuristic import savings, two_opt
+from src.cg.clrp.c_heuristic import savings, two_opt
 from src.cg.cvrp.a_data import CVRPInstance
 
 
 @dataclass
 class SingleDepotView:
-    """The attributes of a CLRPInstance that src.bd.clrp's NGPricer and LocalSearch read, for one uncapacitated depot
+    """The attributes of a CLRPInstance that src.cg.clrp's NGPricer and LocalSearch read, for one uncapacitated depot
     without opening or vehicle costs (customer k of the view is customer k + 1 of the CVRP instance)."""
     m: int
     n: int
@@ -74,7 +74,7 @@ class CVRPLocalSearch:
     and 2-opt inside every changed route (route capacity kept; emptied routes disappear)."""
 
     def __init__(self, inst: CVRPInstance, dist: np.ndarray, near: int = 15) -> None:
-        from src.bd.clrp.d_ref_cg_xl import LocalSearch
+        from src.cg.clrp.d_ref_cg_xl import LocalSearch
         self.ls = LocalSearch(single_depot_view(inst), dist.astype(float), near=near)
 
     def improve(self, routes: list[list[int]], deadline: float) -> list[list[int]]:

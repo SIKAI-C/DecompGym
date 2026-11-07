@@ -6,7 +6,7 @@ the labour rules of a_data's docstring: duty length (sum of the connection durat
 connection a with before(a) = (durations before a) + timeBeforeBreak(a) <= 5.5 h and after(a) = timeAfterBreak(a) +
 (durations after a) <= 5.5 h. The cost is the sum of the connection costs. `plan_cost(inst, duties)` adds coverage
 (every task in at least one duty) and returns the total, or None. On all 200 published best-known solutions it
-reproduces the benchmark's best-known costs exactly (tests/test_scaleup_rcsp.py).
+reproduces the benchmark's best-known costs exactly (tests/large_scale/test_rcsp.py).
 
 Compact MIP: a start-indexed layered duty-flow model ("duty flow"), our strongest compact model (the benchmark paper
 compares branch-and-price with a crew-indexed multi-commodity flow model in the style of Hoffmann and Buscher, which

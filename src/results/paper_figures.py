@@ -18,12 +18,12 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import PercentFormatter
 import numpy as np
 
-from src.results.combine import MODELS, STYLE, STYLE_PATH, model_style, points, write_csv
+from src.results.combine import MODELS, PROBLEMS, STYLE, STYLE_PATH, model_style, points, write_csv
 from src.results.policy import PAPER_MODELS
 
 MODES = ("plain", "reflection")
 TITLES = ("Without reflection", "With reflection")
-FAMILIES = ("bd/ufl", "bd/fctp", "bd/km", "bd/lrp", "bd/tsso", "cg/bp", "cg/csp", "cg/gap", "cg/shift")
+FAMILIES = tuple(f"{suite}/{problem}" for suite, problem in PROBLEMS)  # the paper's nine, in table order
 # ColorBrewer Dark2, three classes, colorblind rating 1. Model colors stay frozen.
 SIZE_COLORS = ("#1b9e77", "#d95f02", "#7570b3")
 # ColorBrewer Paired, four classes, colorblind rating 1.

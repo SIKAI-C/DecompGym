@@ -1,4 +1,4 @@
-"""Engineered branch-and-price-and-cut reference for the CVRP (scale-up study; adapted from src/bd/clrp/d_ref_cg_xl.py
+"""Engineered branch-and-price-and-cut reference for the CVRP (scale-up study; adapted from src/cg/clrp/d_ref_cg_xl.py
 to one uncapacitated depot without opening or vehicle costs).
 
 Master (set covering over routes r; c_r = rounded route distance; a_ir = visits of customer i by r):
@@ -12,7 +12,7 @@ Master (set covering over routes r; c_r = rounded route distance; a_ir = visits 
 Covering relaxes partitioning, so every bound below is valid for the CVRP; integer covering plans are repaired into
 partitions (heuristic.repair_cover) and every plan is re-checked with route_cost before it is published.
 
-Pricing: src.bd.clrp's NGPricer on one depot (ng-route labelling with the capacity resource, exact dominance,
+Pricing: src.cg.clrp's NGPricer on one depot (ng-route labelling with the capacity resource, exact dominance,
 completion bounds from q-routes with ng-consistent 2-cycle elimination). Heuristic rounds first (near-neighbour arcs,
 label beam, up to max_cols columns per round), exact rounds when a heuristic round finds nothing new or every 15
 rounds. Columns are identified by their visiting sequence up to reversal (cut coefficients depend on the order).
@@ -51,8 +51,8 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from src.bd.clrp.c_heuristic import two_opt
-from src.bd.clrp.d_ref_cg_xl import NGPricer, separate_rcc
+from src.cg.clrp.c_heuristic import two_opt
+from src.cg.clrp.d_ref_cg_xl import NGPricer, separate_rcc
 from src.cg.cvrp.a_data import CVRPInstance, load_vrp
 from src.cg.cvrp.b_mip_xl import route_cost
 from src.cg.cvrp.heuristic import CVRPLocalSearch, basic_initializer, repair_cover, single_depot_view

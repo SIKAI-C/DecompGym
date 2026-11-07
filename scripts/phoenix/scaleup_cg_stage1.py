@@ -73,11 +73,11 @@ RUNNER_FILES = ["scripts/phoenix/scaleup_cg_stage1.py", "scripts/phoenix/scaleup
 FAMILY_FILES = {
     "cvrp": ["src/cg/cvrp/a_data.py", "src/cg/cvrp/heuristic.py", "src/cg/cvrp/b_mip_xl.py", "src/cg/cvrp/c_naive_cg.py",
              "src/cg/cvrp/d_ref_cg_xl.py", "src/cg/cvrp/e_verifier.py", "src/cg/cvrp/f_ils_xl.py",
-             "src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py",
-             "src/bd/clrp/d_ref_cg_xl.py", "src/bd/clrp/f_sisr_xl.py"],
-    "clrp": ["src/bd/clrp/a_data.py", "src/bd/clrp/b_mip_xl.py", "src/bd/clrp/c_heuristic.py", "src/bd/clrp/d_ref_cg_xl.py",
-             "src/bd/clrp/d_verifier.py", "src/bd/clrp/e_naive_cg.py", "src/bd/clrp/f_sisr_xl.py",
-             "src/bd/clrp/g_lrp_ils_xl.py", "src/cg/cvrp/f_ils_xl.py", "src/cg/cvrp/a_data.py", "src/cg/cvrp/b_mip_xl.py",
+             "src/cg/clrp/a_data.py", "src/cg/clrp/b_mip_xl.py", "src/cg/clrp/c_heuristic.py",
+             "src/cg/clrp/d_ref_cg_xl.py", "src/cg/clrp/f_sisr_xl.py"],
+    "clrp": ["src/cg/clrp/a_data.py", "src/cg/clrp/b_mip_xl.py", "src/cg/clrp/c_heuristic.py", "src/cg/clrp/d_ref_cg_xl.py",
+             "src/cg/clrp/e_verifier.py", "src/cg/clrp/e_naive_cg.py", "src/cg/clrp/f_sisr_xl.py",
+             "src/cg/clrp/g_lrp_ils_xl.py", "src/cg/cvrp/f_ils_xl.py", "src/cg/cvrp/a_data.py", "src/cg/cvrp/b_mip_xl.py",
              "src/cg/cvrp/heuristic.py"],
     "bppc": ["src/cg/bppc/a_data.py", "src/cg/bppc/heuristic.py", "src/cg/bppc/pricing.py", "src/cg/bppc/b_mip_xl.py",
              "src/cg/bppc/c_naive_cg.py", "src/cg/bppc/d_ref_cg_xl.py", "src/cg/bppc/e_verifier.py",
@@ -101,10 +101,10 @@ def arms(family: str) -> dict:
         table = {"eng": (CVRPColumnGenerationXL, common), "naive": (CVRPNaiveCG, common),
                  "ls": (CVRPRuinRecreate, {"seed": 0}), "mip": (CVRPCompactMIP, common)}
     elif family == "clrp":
-        from src.bd.clrp.b_mip_xl import CLRPCompactMIP
-        from src.bd.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
-        from src.bd.clrp.e_naive_cg import CLRPNaiveCG
-        from src.bd.clrp.g_lrp_ils_xl import CLRPLocationRoutingILS
+        from src.cg.clrp.b_mip_xl import CLRPCompactMIP
+        from src.cg.clrp.d_ref_cg_xl import CLRPColumnGenerationXL
+        from src.cg.clrp.e_naive_cg import CLRPNaiveCG
+        from src.cg.clrp.g_lrp_ils_xl import CLRPLocationRoutingILS
         table = {"eng": (CLRPColumnGenerationXL, common), "naive": (CLRPNaiveCG, common),
                  "ls": (CLRPLocationRoutingILS, {"seed": 0}), "mip": (CLRPCompactMIP, common)}
     elif family == "bppc":
@@ -178,7 +178,7 @@ class Family:
             self.inst = load_vrp(instance)
             self.dist = self.inst.distances()
         elif family == "clrp":
-            from src.bd.clrp.a_data import load_prodhon
+            from src.cg.clrp.a_data import load_prodhon
             self.inst = load_prodhon(instance)
             self.cost = self.inst.travel("ceil")
         elif family == "bppc":
@@ -203,7 +203,7 @@ class Family:
                     return None
                 v = route_cost(self.inst, solution, self.dist)
             elif self.family == "clrp":
-                from src.bd.clrp.b_mip_xl import route_cost
+                from src.cg.clrp.b_mip_xl import route_cost
                 if not isinstance(solution, list) or not all(
                         isinstance(r, dict) and isinstance(r.get("depot"), int) and not isinstance(r.get("depot"), bool)
                         and 0 <= r["depot"] < self.inst.m and isinstance(r.get("customers"), list) and r["customers"]
@@ -240,8 +240,8 @@ class Family:
             from src.cg.cvrp.e_verifier import verify_solution
             out = out_fn(self.inst, solution, method=method)
         elif self.family == "clrp":
-            from src.bd.clrp.b_mip_xl import route_cost
-            from src.bd.clrp.d_verifier import verify_solution
+            from src.cg.clrp.b_mip_xl import route_cost
+            from src.cg.clrp.e_verifier import verify_solution
             out = {"status": "feasible", "method": method, "objective_value": route_cost(self.inst, self.cost, solution),
                    "routes": solution}
         else:

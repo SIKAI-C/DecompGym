@@ -9,6 +9,7 @@ from src.agent.docker_client import CLI_VERSIONS
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.experiments.data_context import accepted_prompt_protocol
 from src.utils.errors import ProtocolError
+from src.utils.families import FAMILIES, PAPER_FAMILIES
 from src.utils.records import identity
 
 
@@ -41,6 +42,10 @@ def load_plan(path: Path) -> dict:
         raise ProtocolError("Execution settings differ from the paired protocol")
     if not plan.get("dataset_inventory_sha256"):
         raise ProtocolError("The config must pin the fixed dataset inventory")
+    if "cohort" in plan:
+        families = plan["cohort"].get("families")
+        if not isinstance(families, list) or not families or len(set(families)) != len(families) or any(name not in FAMILIES for name in families):
+            raise ProtocolError(f"The cohort must list distinct registered problem families (src.utils.families): {families}")
     return plan
 
 
@@ -53,7 +58,7 @@ def main(argv=None):
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args(argv)
     plan = load_plan(args.config)
-    print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": 9 * len(plan.get("cohort", {}).get("families", range(9))) * len(plan["model_queue"]), "launch_performed": False}, indent=2))
+    print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": 9 * len(plan.get("cohort", {}).get("families", PAPER_FAMILIES)) * len(plan["model_queue"]), "launch_performed": False}, indent=2))
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ depot (node 1), positive demands and one uniform SERVICE_TIME for the customers 
 SERVICE_TIME_SECTION, if present, would give per-node service times instead.
 
 Conventions (the folder's README: DIMACS rounding; reproduced exactly on the bundled best-known solutions, see
-tests/test_scaleup_vrptw.py):
+tests/large_scale/test_vrptw.py):
 - customers are numbered 1..n in file order of the non-depot nodes (customer i is node i + 1 of the file), as in the
   .sol files ("Route #k: i j ...", then "Cost c");
 - every distance and every travel duration is the Euclidean distance truncated to one decimal, floor(10 d) / 10;

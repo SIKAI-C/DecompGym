@@ -1,4 +1,4 @@
-"""Naive VRPTW column generation control (protocol v3.1, Section 20.6 "Naive CG"; mirrors src/bd/clrp/e_naive_cg.py).
+"""Naive VRPTW column generation control (protocol v3.1, Section 20.6 "Naive CG"; mirrors src/cg/clrp/e_naive_cg.py).
 
 Root column generation plus an integer restricted master, as a textbook implementation would do it:
 - master LP (integer tenths): min sum_r c_r lam_r  s.t.  sum_r a_ir lam_r >= 1 for every customer i (set covering, a

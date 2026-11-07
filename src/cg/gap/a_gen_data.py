@@ -18,7 +18,7 @@ Draw order: per job i, per machine j (a_ij then the cost noise), with Python's r
 Adaptations (named): (1) size: Yagiura's D/E sets have n >= 100 and m in {5, ..., 80}; here the
 published ratio n/m = 5 (e.g. (m, n) = (20, 100)) is kept and m is shrunk (SIZE_SCALING): (m, n) = (8, 40) / (10, 50) /
 (12, 60) (round-2 recalibration, 2026-11-05; round 1 used (4, 20) / (6, 30) / (8, 40)). The size is bounded by the proof of
-the monolithic MIP (Threads = 1, TimeLimit 1800 s; litgen_suite rejects any instance where it does not prove optimality):
+the monolithic MIP (Threads = 1, TimeLimit 1800 s; src.utils.instance_suite rejects any instance where it does not prove optimality):
 type D at (14, 70) and (15, 75) did not prove optimality within 1800 s on a pilot seed, while (12, 60) proved on pilot
 seeds 100, 102, 103, 104 and 106 in at most about 210 s; the full-process reference CG took about 9-23 s at (12, 60)
 on pilot seeds 100-104 and 106.
@@ -39,7 +39,7 @@ from typing import Any, cast
 from src.utils.base_data import BaseInstanceGenerator, JsonDataMixin
 
 
-# Litgen sizes: (machines m, jobs n) with the published ratio n / m = 5 (round 2; see the module docstring).
+# Small-scale sizes: (machines m, jobs n) with the published ratio n / m = 5 (round 2; see the module docstring).
 SIZE_SCALING = {"small": {"m": 8, "n": 40}, "medium": {"m": 10, "n": 50}, "large": {"m": 12, "n": 60}}
 
 GAP_TYPES = {
@@ -224,7 +224,7 @@ def generate_gap_instance(
     return generate_gap_instance_with_recipe(seed, size, output_dir)[0]
 
 
-# Extra-large scale-up tier (exploration; the paper sizes above are unchanged).
+# Extra-large scale-up tier (exploration).
 # Chu-Beasley type D: resource and cost are inversely correlated and capacities are tight,
 # which keeps the instances hard for monolithic MIP.
 XL_CONFIG = {"n_machines_range": (10, 20), "jobs_per_machine": (10, 20), "resource_range": (1, 100), "cost_noise": 10, "capacity_share": 0.8}

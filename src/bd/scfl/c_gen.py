@@ -1,14 +1,12 @@
+"""Instance suite of the scfl family: data, prompt, verified references and meta.json (src.utils.instance_suite)."""
 from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
 
-from src.bd.scfl.a_gen_data import generate_scfl_instance
-from src.bd.scfl.b_problem import render_prompt
-from src.utils.harder_suite import generate_suite as _generate_suite
+from src.utils.instance_suite import generate_suite as _generate_suite
 
 
 def generate_suite(sizes: Iterable[str], num_instances: int, out_root: str | Path, *, seed_offset: int = 0) -> list[dict]:
-    return _generate_suite("bd", "scfl", gen=generate_scfl_instance, render_prompt=render_prompt, sizes=list(sizes),
-                           num_instances=num_instances, out_root=out_root, seed_offset=seed_offset, mono_time_limit=1800.0, strict=True,
-                           tol=1e-9)  # the SCFL certificate tolerance (a_gold_monolithic.CERT_TOL)
+    """Bodur et al. (2017) two-stage stochastic CFL instances (a_gen_data.generate_scfl_instance) with a proved MIP optimum and a matching certified Benders reference."""
+    return _generate_suite("scfl", sizes=list(sizes), num_instances=num_instances, out_root=out_root, seed_offset=seed_offset)

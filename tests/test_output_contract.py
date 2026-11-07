@@ -97,3 +97,27 @@ def test_scalar_contract_fields_reject_wrong_json_types(field, bad):
     data, output = fixture("bp")
     output[field] = bad
     assert validate_output_contract("cg", "bp", data, output)
+
+
+@pytest.mark.parametrize("suite,problem,solution", [
+    ("bd", "lbbd", {"assignments": [{"task_id": 0, "machine_id": 0, "start": 0}]}),
+    ("cg", "gcol", {"color_classes": [[0]]}),
+    ("cg", "bppc", {"bins": [[0]]}),
+    ("cg", "vrptw", {"routes": [[1]]}),
+    ("cg", "pdptw", {"routes": [[1, 2]]}),
+    ("cg", "nrp", {"rosters": [[-1, 0]]}),
+])
+def test_output_contract_knows_the_list_and_schedule_families(suite, problem, solution):
+    method = "benders_decomposition" if suite == "bd" else "column_generation"
+    good = {"status": "feasible", "method": method, "objective_value": 1.0, "solution": solution}
+    assert validate_output_contract(suite, problem, {}, good) == []
+    assert validate_output_contract(suite, problem, {}, {**good, "method": "benders"}) != []
+    assert validate_output_contract(suite, problem, {}, {**good, "status": "great"}) != []
+
+
+def test_routing_output_contracts():
+    good = {"status": "feasible", "method": "column_generation", "objective_value": 1.0}
+    assert validate_output_contract("cg", "cvrp", {}, {**good, "solution": {"routes": [[1, 2]]}}) == []
+    assert validate_output_contract("cg", "clrp", {}, {**good, "solution": {"routes": [{"depot": 0, "customers": [0, 1]}]}}) == []
+    assert validate_output_contract("cg", "clrp", {}, {**good, "solution": {"routes": [[0, 1]]}}) != []
+    assert validate_output_contract("cg", "clrp", {}, {**good, "solution": {"routes": [{"depot": 0, "customers": [0.5]}]}}) != []

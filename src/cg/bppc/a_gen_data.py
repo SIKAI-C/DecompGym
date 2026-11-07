@@ -15,14 +15,14 @@ The ua/ta sets of the literature reuse the Muritiba item files and only replace 
 directly from the Falkenauer-U distribution, since the published files have n >= 120.
 
 Adaptations (named): (1) size: n is shrunk to 35/40/45 (SIZE_CONFIG) so that the monolithic MIP proves optimality
-(MIPGap = 0, Threads = 1) within the 1800 s generation limit (litgen_suite rejects any instance where it does not).
+(MIPGap = 0, Threads = 1) within the 1800 s generation limit (src.utils.instance_suite rejects any instance where it does not).
 Round-2 pilots (seeds 100-103, n = 45): MIP proved in 41.0/0.6/90.8/0.2 s, reference CG (full process) <= 1.5 s, gap 0;
 n = 50 (seed 100, DA) did not prove within 1800 s, so n = 45 is the largest tested size whose pilot MIPs all proved. The binding limit is
 the MIP proof, not the reference CG time; (2) regime mix: even benchmark seeds draw DA, odd seeds UA (seeds 0-2 give DA, UA, DA); (3) density:
 one value of the published grid {0.1, ..., 0.9} per regime (DENSITY), fixed for every size and seed;
 (4) randomness: Python's random.Random(f"bppc-litgen:{regime}:{size}:{seed}"), weights first, then the graph.
 The recipe (regime, density, edge count) is recorded in meta.json, not in data.json.
-The previous harder-cohort generator (G(n, p) with p ~ U[0.1, 0.4]) is kept in the harder-family branch history.
+The previous generator of data_harder/ (G(n, p) with p ~ U[0.1, 0.4]) is kept in the Git history.
 """
 from __future__ import annotations
 

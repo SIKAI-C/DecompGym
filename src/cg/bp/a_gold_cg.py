@@ -70,7 +70,7 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
         ffd_warm_start: bool = False,
     ) -> None:
         super().__init__(max_iters=max_iters, verbose=verbose, time_limit=time_limit)
-        self.ffd_warm_start = ffd_warm_start  # litgen references only; the paper-era default stays off
+        self.ffd_warm_start = ffd_warm_start  # small-scale references only; the paper-era default stays off
         self.master_params = master_params or {}
         self.pricing_params = pricing_params or {}
         self.rc_tolerance = rc_tol
@@ -88,7 +88,7 @@ class BinPackingColumnGeneration(BaseColumnGeneration[BinPackingInstance, list[i
                 pat = [0] * m
                 pat[i] = max_cnt
                 patterns.append(pat)
-        # Optional warm start (litgen references): the bins of first-fit decreasing, so the integer master always contains a heuristic packing.
+        # Optional warm start (small-scale references): the bins of first-fit decreasing, so the integer master always contains a heuristic packing.
         for pat in (_ffd_patterns(sizes, demands, inst.bin_capacity) if self.ffd_warm_start else []):
             if pat not in patterns:
                 patterns.append(pat)

@@ -19,6 +19,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from src.experiments.plan import model_queue
+from src.utils.families import FAMILIES as REGISTRY
 from src.results.policy import default_models, reported
 from src.experiments.completion import is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
 
@@ -28,10 +29,7 @@ ASSETS = Path(__file__).resolve().parent / "dashboard"
 MODEL_NAMES = {"gpt-6-astra": "GPT-6 Astra", "gpt-6-sol": "GPT-6 Sol", "gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6-luna": "GPT-6 Luna", "gpt-5.6-luna": "GPT-5.6 Luna",
                "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5", "claude-haiku-5-5": "Claude Haiku 5.5", "claude-opus-5": "Claude Opus 5",
                "claude-sonnet-5": "Claude Sonnet 5", "claude-fable-5": "Claude Fable 5", "gemini-3.8-flash-medium": "Gemini 3.8 Flash"}
-FAMILIES = {"ufl": "Facility location", "fctp": "Fixed-charge transportation", "km": "K-median", "lrp": "Location routing", "tsso": "Two-stage stochastic optimization", "bp": "Bin packing", "csp": "Cutting stock", "gap": "Generalized assignment", "shift": "Shift scheduling",
-            "lbbd": "Assignment and scheduling (logic-based Benders)", "gcol": "Graph coloring", "bppc": "Bin packing with conflicts",
-            "vrptw": "Vehicle routing with time windows", "pdptw": "Pickup and delivery with time windows", "nrp": "Nurse rostering",
-            "cvrp": "Capacitated vehicle routing", "clrp": "Capacitated location-routing", "scfl": "Stochastic capacitated facility location", "lbbd_ps": "Planning and cumulative scheduling (logic-based Benders)", "rcsp": "Railway crew scheduling"}
+FAMILIES = {name: entry.label for name, entry in REGISTRY.items()}
 
 
 def read_text(path: Path, limit: int = 4 * 1024 * 1024) -> str:

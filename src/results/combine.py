@@ -11,6 +11,7 @@ from pathlib import Path
 from matplotlib.colors import to_rgb
 
 from src.results.policy import PAPER_MODELS, run_identity
+from src.utils.families import FAMILIES as REGISTRY, PAPER_FAMILIES
 
 
 STYLE_PATH = Path(__file__).with_name("styles.json")
@@ -18,7 +19,8 @@ STYLE = json.loads(STYLE_PATH.read_text())
 MODELS = STYLE["models"]
 METRICS = {"execution": ("E", "Execution"), "verification": ("V", "Verified decomposition"), "quality": ("Q", "Verified solution quality")}
 MODES = {"plain": "Without reflection", "reflection": "With reflection"}
-PROBLEMS = [("bd", p) for p in ("ufl", "fctp", "km", "lrp", "tsso")] + [("cg", p) for p in ("bp", "csp", "gap", "shift")]
+# The paper's nine families (configs/paper.json), Benders first: (suite, problem) in the paper's table order.
+PROBLEMS = [(REGISTRY[name].suite, name) for name in PAPER_FAMILIES]
 SCIENTIFIC_FIELDS = ("prompt_protocol", "prompt_policies", "algorithm_judge_prompt_sha256", "execution_environment", "workers", "max_attempts", "solver_timeout", "solver_threads", "agent_timeout", "solver_cooldown_seconds", "judge_model", "judge_effort", "gap_threshold", "shared_first_attempt", "stop_after_success", "reflection_policy", "resource_guard", "agent_execution", "solver_execution", "wrong_target_reflection_failure")
 CASE_FIELDS = ("suite", "problem", "instance", "size", "seed")
 

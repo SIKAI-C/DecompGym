@@ -24,7 +24,7 @@ Recipe: Hooker's published generator for the minimum-cost classes c and e.
 Integer conventions: an archive-compatible reconstruction of the published recipes. Every value of every c and e
 archive file (195 c, 50 e) lies in these ranges, windows and capacities match exactly, and every range endpoint is
 attained somewhere in the archive except one (e, m = 3, row 0: p tops at 23 of 24 in the five e15j3m files); checked
-in tests/test_harder_lbbd_ps.py when the archive is present: a uniform draw on
+in tests/families/test_lbbd_ps.py when the archive is present: a uniform draw on
 [lo, hi] is an integer in the half-open range [lo, hi) (no c file has p = 10k or c = 10, no e file has c = 10), with
   c: p_rj in [k, 10k), f_rj in [10(r + 1), 20(r + 1)), c_j in [1, 10);
   e: p_rj in [2, round(P2_r)), f_rj in [L_r, 2 L_r) with L_r = round(400 / P2_r) for m <= 8 and

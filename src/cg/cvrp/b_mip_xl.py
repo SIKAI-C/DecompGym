@@ -3,10 +3,10 @@
 Evaluator. `route_cost(inst, routes)` takes routes as lists of customer numbers 1..n (a_data's numbering, the order of
 visits, the depot implicit at both ends), checks that every customer is visited exactly once, that every route is
 nonempty and within the vehicle capacity, and returns the total rounded distance (TSPLIB nint), or None. It reproduces
-the CVRPLIB best-known costs of the bundled .sol files exactly (tests/test_scaleup_cvrp.py).
+the CVRPLIB best-known costs of the bundled .sol files exactly (tests/large_scale/test_cvrp.py).
 
 Compact MIP (default formulation "flow"): the directed two-index vehicle-flow model with a single-commodity load
-flow (Gavish and Graves; the formulation of src/bd/clrp/b_mip_xl.py on one depot), strengthened by rounded capacity
+flow (Gavish and Graves; the formulation of src/cg/clrp/b_mip_xl.py on one depot), strengthened by rounded capacity
 inequalities (RCC) separated as Gurobi user cuts at the root:
     min sum_a c_a x_a
     x(delta+(i)) = x(delta-(i)) = 1 and f(delta-(i)) - f(delta+(i)) = q_i for every customer i;  x(delta+(0)) >= K;
@@ -22,7 +22,7 @@ cuts at every node (Laporte and Nobert; Lysgaard, Letchford and Eglese 2004). It
 almost no incumbents under lazy RCCs (local 40 s probe, X-n101-k25: two-index +226% (only the trivial solution) and
 bound -6.5%; flow +6.6% and bound -4.4% versus the best-known 27 591), so the flow model is the default.
 Fractional RCC separation (both models): support-graph components, then greedy set growth from every customer
-(src.bd.clrp's separate_rcc) on the symmetric edge values. Every integer solution is decoded into routes and
+(src.cg.clrp's separate_rcc) on the symmetric edge values. Every integer solution is decoded into routes and
 re-checked with route_cost before it is published.
 Size ("flow"): about 2 n (n + 1) variables (x and f) and as many linking rows (45 000 variables at X-n153-k22).
 """
@@ -209,8 +209,8 @@ def integer_check(inst: CVRPInstance, info: dict[str, Any], xv: np.ndarray) -> t
 def separate_fractional(inst: CVRPInstance, Y: np.ndarray, max_cuts: int = 50, max_size: int = 30,
                         min_viol: float = 0.05) -> list[np.ndarray]:
     """RCCs violated by fractional edge values Y: support-graph components, then greedy growth from every customer
-    (src.bd.clrp's separate_rcc). Returns customer-set masks over 0..n, most violated first."""
-    from src.bd.clrp.d_ref_cg_xl import separate_rcc
+    (src.cg.clrp's separate_rcc). Returns customer-set masks over 0..n, most violated first."""
+    from src.cg.clrp.d_ref_cg_xl import separate_rcc
     n, Q, q = inst.n, inst.capacity, inst.demand
     found: dict[bytes, tuple[float, np.ndarray]] = {}
     deg = Y[1:].sum(axis=1)

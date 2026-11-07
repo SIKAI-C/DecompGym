@@ -1,4 +1,4 @@
-"""Small Python API for the same problem families used by the command-line tools."""
+"""Small Python API for the registered problem families (src.utils.families) used by the command-line tools."""
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
@@ -11,49 +11,25 @@ import time
 from typing import Any
 
 from src.utils.dataset import ensure_suite, write_manifest
+from src.utils.families import FAMILIES, SIZES, dataset_roots, family
 from src.utils.reference_output import reference_output
 
 
-PROBLEMS = {
-    "bd": {
-        "ufl": ("b_gold_monolithic.UFLBaseline", "b_gold_bd.UFLBenders"),
-        "fctp": ("a_gold_monolithic.FCTPBaseline", "a_gold_bd.FCTPBenders"),
-        "km": ("a_gold_monolithic.KMedianBaseline", "a_gold_bd.KMedianBenders"),
-        "lrp": ("a_gold_monolithic.LRPBaseline", "a_gold_bd.LRPBenders"),
-        "tsso": ("a_gold_monolithic.TSSOBaseline", "a_gold_bd.TSSOBenders"),
-    },
-    "cg": {
-        "bp": ("a_gold_monolithic.BinPackingBaseline", "a_gold_cg.BinPackingColumnGeneration"),
-        "csp": ("a_gold_monolithic.CuttingStockBaseline", "a_gold_cg.CuttingStockColumnGeneration"),
-        "gap": ("a_gold_monolithic.GAPBaseline", "a_gold_cg.GAPColumnGeneration"),
-        "shift": ("a_gold_monolithic.ShiftBaseline", "a_gold_cg.ShiftColumnGeneration"),
-    },
-}
+def reference_class_name(suite: str, problem: str, method: str) -> str:
+    """"module.Class" of the family's monolithic MIP or decomposition reference (src.utils.families)."""
+    return family(problem, suite).reference_class(method)
 
 
-# Harder-family cohort (exploration): kept apart so `generate_dataset` and the paper's 81 instances are unchanged.
-HARDER_PROBLEMS = {
-    "bd": {"lbbd": ("a_gold_monolithic.LBBDBaseline", "a_gold_bd.LBBDBenders"),
-           "scfl": ("a_gold_monolithic.SCFLBaseline", "a_gold_bd.SCFLBenders"),
-           "lbbd_ps": ("a_gold_monolithic.PSBaseline", "a_gold_bd.PSBenders")},
-    "cg": {
-        "gcol": ("a_gold_monolithic.GraphColoringBaseline", "a_gold_cg.GraphColoringBranchAndPrice"),
-        "bppc": ("a_gold_monolithic.BPPCBaseline", "a_gold_cg.BPPCBranchAndPrice"),
-        "vrptw": ("a_gold_monolithic.VRPTWBaseline", "a_gold_cg.BranchAndPrice"),
-        "pdptw": ("a_gold_monolithic.PDPTWBaseline", "a_gold_cg.PDPTWBranchAndPrice"),
-        "nrp": ("a_gold_monolithic.NRPBaseline", "a_gold_cg.NRPBranchAndPrice"),
-        "cvrp": ("a_gold_monolithic.CVRPBaseline", "a_gold_cg.CVRPColumnGeneration"),
-        "clrp": ("a_gold_monolithic.CLRPBaseline", "a_gold_cg.CLRPColumnGeneration"),
-        "rcsp": ("a_gold_monolithic.RCSPBaseline", "a_gold_cg.RCSPColumnGeneration"),
-    },
-}
+def generate_dataset(root: str | Path, *, problems: tuple[str, ...] | None = None, num_instances: int = 3, sizes: tuple[str, ...] = SIZES) -> list[dict[str, Any]]:
+    """Generate the missing instances of the registered families (all by default) under root/<suite>/<problem>.
 
-
-def generate_dataset(root: str | Path = "data", *, suites: tuple[str, ...] = ("bd", "cg"), num_instances: int = 3, sizes: tuple[str, ...] = ("small", "medium", "large")) -> list[dict[str, Any]]:
+    root must be a fresh root: the family dataset roots are pinned by their campaign configs (src.utils.families)."""
+    if Path(root).resolve() in dataset_roots():
+        raise ValueError(f"{root} is a pinned family dataset root; generate into a fresh root and compare")
     records = []
-    for suite in suites:
-        for problem in PROBLEMS[suite]:
-            records.extend(ensure_suite(suite, problem, Path(root) / suite / problem, list(sizes), num_instances))
+    for problem in problems or tuple(FAMILIES):
+        entry = family(problem)
+        records.extend(ensure_suite(entry.suite, problem, Path(root) / entry.suite / problem, list(sizes), num_instances))
     write_manifest(Path(root))
     return records
 
@@ -63,7 +39,7 @@ def solve(suite: str, problem: str, data_path: str | Path, *, method: str = "dec
     started = time.perf_counter()
     if method not in {"monolithic", "decomposition"}:
         raise ValueError("method must be monolithic or decomposition")
-    name = {**PROBLEMS[suite], **HARDER_PROBLEMS[suite]}[problem][0 if method == "monolithic" else 1]
+    name = reference_class_name(suite, problem, method)
     module_name, class_name = name.rsplit(".", 1)
     module = importlib.import_module(f"src.{suite}.{problem}.{module_name}")
     solver = getattr(module, class_name)(**solver_options)

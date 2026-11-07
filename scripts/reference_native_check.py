@@ -1,7 +1,7 @@
 """Run each saved reference decomposition through the agents' native sandbox (60 s, 1 thread) and score it like a campaign.
 
 Restored from the paper's scripts/reference_calibration.py (DecompBench c6619a5, formal-v2 variant) and adapted to the
-cleaned layout and the literature-recipe small-scale dataset; see `--help`.
+cleaned layout and the small-scale dataset (src.utils.families); see `--help`.
 """
 from __future__ import annotations
 
@@ -20,32 +20,21 @@ import time
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-DATASET = REPO / "outputs/litgen_data"
 from src.experiments.sandbox import NativeSandboxExecutor
 from src.experiments.verification import OutputVerifier
 from src.experiments.docker_setup import license_file
+from src.utils.families import FAMILIES, SMALL_SCALE_CONFIG, SMALL_SCALE_DATA
+
+DATASET = REPO / SMALL_SCALE_DATA
 
 
 GAP_THRESHOLD = 0.01  # the campaign's 1 % rule (paired_runner gap_threshold)
 
-# Formal decomposition reference per family, as src.utils.api dispatches method="decomposition", with the generators'
-# reference options (src/<suite>/<fam>/c_gen.py; time_limit=60 is passed separately, as the generators do).
-REFERENCES = {
-    "ufl": ("bd", "b_gold_bd", "UFLBenders", {}),
-    "km": ("bd", "a_gold_bd", "KMedianBenders", {}),
-    "fctp": ("bd", "a_gold_bd", "FCTPBenders", {}),
-    "scfl": ("bd", "a_gold_bd", "SCFLBenders", {}),
-    "lbbd_ps": ("bd", "a_gold_bd", "PSBenders", {}),
-    "bp": ("cg", "a_gold_cg", "BinPackingColumnGeneration", {"ffd_warm_start": True}),
-    "csp": ("cg", "a_gold_cg", "CuttingStockColumnGeneration", {}),
-    "gap": ("cg", "a_gold_cg", "GAPColumnGeneration", {}),
-    "bppc": ("cg", "a_gold_cg", "BPPCBranchAndPrice", {}),
-    "clrp": ("cg", "a_gold_cg", "CLRPColumnGeneration", {}),
-    "cvrp": ("cg", "a_gold_cg", "CVRPColumnGeneration", {}),
-    "vrptw": ("cg", "a_gold_cg", "BranchAndPrice", {}),
-    "pdptw": ("cg", "a_gold_cg", "PDPTWBranchAndPrice", {}),
-    "rcsp": ("cg", "a_gold_cg", "RCSPColumnGeneration", {}),
-}
+# Formal decomposition reference per family of the small-scale cohort (configs/small_scale.json, in its order), as
+# src.utils.api dispatches method="decomposition": (suite, module, class, the registry's reference options;
+# time_limit=60 is passed separately, as src.utils.instance_suite does).
+COHORT = json.loads((REPO / SMALL_SCALE_CONFIG).read_text())["cohort"]["families"]
+REFERENCES = {name: (FAMILIES[name].suite, *FAMILIES[name].reference.split("."), dict(FAMILIES[name].reference_options)) for name in COHORT}
 
 
 def digest(path):

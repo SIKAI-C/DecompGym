@@ -6,7 +6,7 @@ within the capacity and on time (the vehicle leaves the depot at its earliest ti
 every service by the window's end and is back by the depot's latest time; travel time = distance = Euclidean distance
 truncated to one decimal), and that at most `inst.vehicles` routes are used; it returns the total distance in
 distance units (an exact multiple of 0.1, computed in integer tenths), or None. It reproduces every bundled
-best-known cost exactly (tests/test_scaleup_vrptw.py).
+best-known cost exactly (tests/large_scale/test_vrptw.py).
 
 Compact MIP: the directed two-index vehicle-flow model with service-start times (MTZ-style time propagation, the
 standard compact VRPTW formulation; e.g. Toth and Vigo 2014, ch. 5) and load variables, all in integer tenths:
@@ -20,7 +20,7 @@ standard compact VRPTW formulation; e.g. Toth and Vigo 2014, ch. 5) and load var
 Strengthening from the windows: E_i / L_i are the earliest / latest feasible service starts over all paths
 (pricing.time_bounds), big-M values use them, and every arc that no route can use (E_i + s_i + d_ij > L_j, or
 q_i + q_j > Q) is left out. Rounded capacity inequalities x(delta+(S)) >= ceil(q(S)/Q) are separated as Gurobi user
-cuts at the root (greedy set growth of src.bd.clrp on the symmetric arc values). The model is exact when every arc
+cuts at the root (greedy set growth of src.cg.clrp on the symmetric arc values). The model is exact when every arc
 takes positive time (s_i + d_ij >= 0.1 on every kept arc; true in every bundled file, checked at build time), because
 the time propagation then excludes subtours. Every integer solution is decoded into routes and re-checked with
 route_cost before it is published.
@@ -37,7 +37,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from src.bd.clrp.d_ref_cg_xl import separate_rcc
+from src.cg.clrp.d_ref_cg_xl import separate_rcc
 from src.cg.vrptw.a_data import VRPTWInstance, load_vrptw, plan_issues
 from src.cg.vrptw.pricing import time_bounds
 

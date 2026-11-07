@@ -1,11 +1,11 @@
-"""Naive CVRP column generation control (protocol v3.1, Section 20.6 "Naive CG"; mirrors src/bd/clrp/e_naive_cg.py).
+"""Naive CVRP column generation control (protocol v3.1, Section 20.6 "Naive CG"; mirrors src/cg/clrp/e_naive_cg.py).
 
 Root column generation plus an integer restricted master, as a textbook implementation would do it:
 - master LP: min sum_r c_r lam_r s.t. sum_r a_ir lam_r >= 1 for every customer i, lam >= 0 (set covering, a relaxation
   of set partitioning); no cuts, no stabilization, no vehicle-count row;
 - deterministic seed columns: one single-customer route per customer and the routes of the shared basic initializer
   (heuristic.basic_initializer: Clarke-Wright savings + 2-opt, unpolished; also the first incumbent);
-- pricing: the fixed exact oracle (src.bd.clrp's NGPricer on one depot: ng-route labelling with the capacity resource),
+- pricing: the fixed exact oracle (src.cg.clrp's NGPricer on one depot: ng-route labelling with the capacity resource),
   returning the single best negative column per iteration; duplicates are not added. Strict: a pricing round that is
   not completed exactly (deadline or the pricer's label guards) is discarded and stops column generation;
 - a lower bound is published only when a complete exact round finds no negative column: every plan has at most n
@@ -25,7 +25,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from src.bd.clrp.d_ref_cg_xl import NGPricer
+from src.cg.clrp.d_ref_cg_xl import NGPricer
 from src.cg.cvrp.a_data import load_vrp
 from src.cg.cvrp.b_mip_xl import route_cost
 from src.cg.cvrp.heuristic import basic_initializer, repair_cover, route_length, single_depot_view

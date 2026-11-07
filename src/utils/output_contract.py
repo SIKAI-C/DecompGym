@@ -54,7 +54,7 @@ def validate_output_contract(suite, problem, data, output):
             array(entry, shape[1:], f"{label}[{idx}]")
 
     if suite == "bd" and problem == "lbbd":
-        # Schedule schema (harder-family cohort): one assignment object per task.
+        # Schedule schema: one assignment object per task.
         if require(output, "solution", lambda v: isinstance(v, dict), "an object"):
             if require(output["solution"], "assignments", lambda v: isinstance(v, list), "an array", "solution."):
                 for idx, entry in enumerate(output["solution"]["assignments"]):
@@ -68,7 +68,7 @@ def validate_output_contract(suite, problem, data, output):
         return issues
 
     if suite == "bd" and problem == "lbbd_ps":
-        # Cumulative scheduling schema (harder-family cohort): one {"job", "facility", "start"} object per job.
+        # Cumulative scheduling schema: one {"job", "facility", "start"} object per job.
         if require(output, "solution", lambda v: isinstance(v, dict), "an object"):
             if require(output["solution"], "schedule", lambda v: isinstance(v, list), "an array", "solution."):
                 for idx, entry in enumerate(output["solution"]["schedule"]):
@@ -90,7 +90,7 @@ def validate_output_contract(suite, problem, data, output):
             m, n, s = data.get("n_products", 0), data.get("n_periods", 0), data.get("n_scenarios", 0)
             shapes = {"y": (m, n), **{name: (m, n, s) for name in ("x_reg", "x_ot", "inv", "back")}}
         elif problem == "scfl":
-            # Harder-family cohort: the design alone; its recourse is recomputed exactly by the verifier.
+            # The design alone; its recourse is recomputed exactly by the verifier.
             shapes = {"y": (data.get("n_facilities", 0),)}
         else:
             raise ValueError(f"Unknown BD problem: {problem}")
@@ -128,7 +128,7 @@ def validate_output_contract(suite, problem, data, output):
                 require(entry, "tasks", lambda v: isinstance(v, list) and all(integer_value(t) for t in v), "an array of finite integer JSON numbers", label + ".")
         return issues
     if problem in LIST_SCHEMAS:
-        # Harder-family cohort: the solution is a list of integer lists (classes, bins, routes or rosters).
+        # The solution is a list of integer lists (classes, bins, routes or rosters).
         collection = LIST_SCHEMAS[problem]
         if require(output["solution"], collection, lambda v: isinstance(v, list), "an array", "solution."):
             for idx, entry in enumerate(output["solution"][collection]):

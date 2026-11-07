@@ -115,8 +115,7 @@ def test_snapshot_prompt_renders_the_selected_contract(tmp_path):
         assert ((destination / "prompt.txt").read_bytes() == (PAPER_BD_CASE / "prompt.txt").read_bytes()) == (contract == DECOMPOSITION_POLICY)
 
 
-@pytest.mark.parametrize("config,contract", [("paper.json", DECOMPOSITION_POLICY), ("harder_small.json", DECOMPOSITION_POLICY), ("harder_small_all.json", DECOMPOSITION_POLICY),
-                                             ("routing_small_all.json", DECOMPOSITION_POLICY), ("batch2_small_all.json", DECOMPOSITION_POLICY), ("litgen_small_all.json", DECOMPOSITION_POLICY_V3)])
+@pytest.mark.parametrize("config,contract", [("paper.json", DECOMPOSITION_POLICY), ("harder_small_all.json", DECOMPOSITION_POLICY), ("small_scale.json", DECOMPOSITION_POLICY_V3)])
 def test_config_selects_the_contract(config, contract):
     assert decomposition_contract_policy(load_plan(ROOT / "configs" / config)["prompt_protocol"]) == contract
 
@@ -137,7 +136,7 @@ def test_unknown_contract_is_rejected(tmp_path):
             pass
     with pytest.raises(ProtocolError):
         PairedRunner(client=None, judge_client=None, solver_executor=None, decomposition_contract=unknown)
-    plan = load_plan(ROOT / "configs/litgen_small_all.json")
+    plan = load_plan(ROOT / "configs/small_scale.json")
     plan["prompt_protocol"] = dict(plan["prompt_protocol"], decomposition_contract=unknown)
     assert not accepted_prompt_protocol(plan["prompt_protocol"])
     path = tmp_path / "config.json"
