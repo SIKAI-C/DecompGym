@@ -6,6 +6,10 @@ replaced in the context by its structural preview (src.experiments.xl_inputs.pre
 first items of every list and the true list length), written next to the case's data.json as PREVIEW_NAME and clearly
 marked as a preview. The solver still reads the real, full data.json at run time; sandbox, verifier, scoring and judge
 are unchanged.
+
+The prompt protocol may instead carry `context_delivery` = CONTEXT_DELIVERY_MOUNTED (src.agent.prompts.mounted): the
+context files are mounted read-only in the agent workspace rather than pasted, so there is no preview rule; the two
+settings are exclusive.
 """
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ from pathlib import Path
 import tempfile
 
 from src.agent.prompts.method import CONTRACTS
+from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED
 from src.agent.prompts.snapshot import PROMPT_PROTOCOL
 from src.experiments.xl_inputs import preview_json
 from src.utils.errors import ProtocolError
@@ -27,13 +32,13 @@ DATA_CONTEXT_POLICIES = (None, DATA_CONTEXT_PREVIEW)
 
 
 def accepted_prompt_protocol(protocol) -> bool:
-    """The reviewed prompt protocol, optionally with the recorded data-context setting and a registered
-    decomposition contract other than the paper's (src.agent.prompts.method.CONTRACTS)."""
+    """The reviewed prompt protocol, optionally with either the recorded data-context setting or the mounted-files
+    context delivery, and a registered decomposition contract other than the paper's (src.agent.prompts.method.CONTRACTS)."""
     contract = protocol.get("decomposition_contract") if isinstance(protocol, dict) else None
     if not isinstance(contract, str) or contract not in CONTRACTS:
         return False
     reviewed = {**PROMPT_PROTOCOL, "decomposition_contract": protocol["decomposition_contract"]}
-    return protocol == reviewed or protocol == {**reviewed, "data_context": DATA_CONTEXT_PREVIEW}
+    return protocol in (reviewed, {**reviewed, "data_context": DATA_CONTEXT_PREVIEW}, {**reviewed, "context_delivery": CONTEXT_DELIVERY_MOUNTED})
 
 
 def decomposition_contract_policy(protocol) -> str:
@@ -47,6 +52,13 @@ def data_context_policy(protocol) -> str | None:
     if not accepted_prompt_protocol(protocol):
         raise ProtocolError("Prompt protocol differs from the reviewed contracts")
     return protocol.get("data_context")
+
+
+def context_delivery_policy(protocol) -> str | None:
+    """None: the paper's pasted context; CONTEXT_DELIVERY_MOUNTED: read-only files in the agent workspace."""
+    if not accepted_prompt_protocol(protocol):
+        raise ProtocolError("Prompt protocol differs from the reviewed contracts")
+    return protocol.get("context_delivery")
 
 
 def preview_text(data: Path) -> str:

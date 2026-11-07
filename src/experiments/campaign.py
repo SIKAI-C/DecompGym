@@ -20,7 +20,7 @@ import traceback
 from src.agent.prompts.method import DECOMPOSITION_POLICY
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.agent.prompts.snapshot import judge_prompt_hashes, snapshot_prompt
-from src.experiments.data_context import accepted_prompt_protocol, data_context_policy, decomposition_contract_policy
+from src.experiments.data_context import accepted_prompt_protocol, context_delivery_policy, data_context_policy, decomposition_contract_policy
 from src.experiments.docker_setup import load_execution_environment, validate_execution_environment, require_backend_readiness
 from src.experiments.environment import RuntimeEnvironmentError, require_runtime_environment
 from src.experiments.locks import runtime_lock, state_root
@@ -103,6 +103,9 @@ def initialize(root, data, plan_path, runtime_path):
                     reflection_policy=plan["reflection_policy"],
                     prompt_protocol=plan["prompt_protocol"], algorithm_judge_prompt_sha256=judge_prompt_hashes(contract),
                     maximum_unique_generated_candidates=n_cases * len(queue) * 19, fresh_execution_pairs=n_cases * len(queue))
+    if "solver_output_policy" in plan:
+        # Only a config that selects it records the output readback policy, so earlier manifests keep their layout.
+        manifest["solver_output_policy"] = plan["solver_output_policy"]
     manifest["protocol_id"] = identity(manifest)
     save(root / "campaign.json", manifest)
     save(root / "pause_request.json", {"recorded_at": now(), "resume_requires_explicit_user_request": True,
@@ -188,7 +191,8 @@ def run(root, models=None):
         raise RuntimeEnvironmentError("The frozen Docker image is unavailable")
     if any(item["backend"] == "agy-cli" for item in queue) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
         raise AuthenticationRequired("Supply the benchmark AGY keyring passphrase privately in the local launch environment")
-    solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"])
+    solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"], output_policy=manifest.get("solver_output_policy"))
+    context_delivery = (manifest.get("prompt_protocol") or {}).get("context_delivery")
     class CampaignCodexClient(DockerCliClient):
         def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
             result = super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
@@ -205,7 +209,9 @@ def run(root, models=None):
         specification = {"backend": "codex-cli", "effort": manifest["judge_effort"]} if role == "algorithm_judge" else specifications[model]
         backend = specification["backend"]
         cls = CampaignCodexClient if backend == "codex-cli" else DockerCliClient
-        return cls(model, backend=backend, image_id=environment["image_id"], runtime=engine, evidence_root=root / "diagnostics/runtime", role=role, effort=specification["effort"], timeout=manifest["agent_timeout"])
+        # The judge keeps the pasted context (the solver.py under review); generation and reflection follow the protocol.
+        delivery = {"context_delivery": context_delivery} if context_delivery is not None and role != "algorithm_judge" else {}
+        return cls(model, backend=backend, image_id=environment["image_id"], runtime=engine, evidence_root=root / "diagnostics/runtime", role=role, effort=specification["effort"], timeout=manifest["agent_timeout"], **delivery)
     def checkpoint():
         with mutex:
             state["updated_at"] = now()
@@ -224,7 +230,7 @@ def run(root, models=None):
             client = make_client(model, "generation")
             reflection_client = make_client(model, "reflection")
             judge = make_client(manifest["judge_model"], "algorithm_judge")
-            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor, data_context=(manifest.get("prompt_protocol") or {}).get("data_context"), decomposition_contract=(manifest.get("prompt_protocol") or {}).get("decomposition_contract", DECOMPOSITION_POLICY))
+            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor, data_context=(manifest.get("prompt_protocol") or {}).get("data_context"), decomposition_contract=(manifest.get("prompt_protocol") or {}).get("decomposition_contract", DECOMPOSITION_POLICY), context_delivery=context_delivery)
             source = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
             return runner.run_pair(source, root / "runs" / model)
         finally:
@@ -385,6 +391,10 @@ def ensure_execution_allowed(root, manifest):
         raise ProtocolError("This controller requires the new reflection delivery policy; preserve the legacy controller")
     if not accepted_prompt_protocol(manifest.get("prompt_protocol")):
         raise ProtocolError("This controller requires the reviewed prompt and output contracts")
+    if "solver_output_policy" in manifest:
+        from src.experiments.sandbox import OUTPUT_LIMITS
+        if manifest["solver_output_policy"] is None or manifest["solver_output_policy"] not in OUTPUT_LIMITS or context_delivery_policy(manifest["prompt_protocol"]) is None:
+            raise ProtocolError("This controller does not know the campaign's solver output policy")
     if pause_requested(root):
         raise ProtocolError("Campaign is paused; explicit user resumption is required")
 

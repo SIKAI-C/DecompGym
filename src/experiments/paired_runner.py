@@ -14,7 +14,9 @@ import uuid
 
 from src.agent.prompts.builder import PromptBuilder
 from src.agent.prompts.judge import algorithm_review_prompt, parse_verdict
+from src.agent.mounted_context import manifest as mounted_manifest, mounted_files
 from src.agent.prompts.method import DECOMPOSITION_POLICY, require_contract
+from src.agent.prompts.mounted import CONTEXT_DELIVERIES
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.experiments.data_context import DATA_CONTEXT_POLICIES, data_context_file
 from src.experiments.environment import require_runtime_environment
@@ -68,7 +70,7 @@ class PairedRunner:
 
     def __init__(self, *, client, judge_client, solver_executor, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None,
                  model=None, suite="bd", problem=None, max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1,
-                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY):
+                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY, context_delivery=None):
         if suite not in DEFAULT_PROBLEMS:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
@@ -79,6 +81,14 @@ class PairedRunner:
         self.data_context = data_context
         # The method judge applies the campaign's contract, the same one rendered into the instance prompt.txt.
         self.decomposition_contract = require_contract(decomposition_contract)
+        # None keeps the paper's pasted context; CONTEXT_DELIVERY_MOUNTED mounts the generation and reflection context
+        # read-only in the agent workspace and uses the structured prompt (src.agent.prompts.mounted). The judge's
+        # context (the solver.py under review) stays pasted in both.
+        if context_delivery not in CONTEXT_DELIVERIES:
+            raise ValueError(f"Unknown context delivery: {context_delivery}")
+        if context_delivery is not None and data_context is not None:
+            raise ValueError("The mounted-files protocol delivers the complete data.json; it has no data-context preview")
+        self.context_delivery = context_delivery
         self.runtime_environment = require_runtime_environment()
         self.model, self.suite = model, suite
         self.problems = list(problem) if problem else list(DEFAULT_PROBLEMS[suite])
@@ -119,6 +129,12 @@ class PairedRunner:
         if data_context is not None:
             # Recorded only under an explicit data-context setting, so legacy request fingerprints are unchanged.
             request["data_context"] = data_context
+        delivery = self.context_delivery if step in ("agent", "reflection") else None
+        if getattr(client, "context_delivery", None) != delivery:
+            raise ProtocolError(f"The {step} client's context delivery differs from the campaign's")
+        if delivery is not None:
+            # The mounted layout (path and sha256 of every mounted file) is part of the request fingerprint.
+            request["context_delivery"] = {"policy": delivery, "files": [{key: entry[key] for key in ("path", "sha256")} for entry in mounted_manifest(mounted_files(context))]}
         fingerprint = identity(request)
         receipt_path = directory / f"{step}_receipt.json"
         cached = read(receipt_path)
@@ -210,7 +226,16 @@ class PairedRunner:
                 shutil.copyfile(source, directory / source.name)
 
     def generation_prompt(self, instance):
+        if getattr(self, "context_delivery", None) is not None:  # tests also call this with a bare namespace as self
+            return PromptBuilder.build_structured_generation_prompt((instance / "prompt.txt").read_text(), suite=self.suite, problem=self.problems[0], contract=self.decomposition_contract,
+                                                                    solver_timeout=self.solver_timeout, solver_threads=self.solver_threads)
         return PromptBuilder.build_generation_prompt((instance / "prompt.txt").read_text(), solver_timeout=self.solver_timeout, solver_threads=self.solver_threads)
+
+    def reflection_prompt(self, instance, objective_quality_failed):
+        if self.context_delivery is not None:
+            return PromptBuilder.build_structured_reflection_prompt((instance / "prompt.txt").read_text(), suite=self.suite, problem=self.problems[0], contract=self.decomposition_contract,
+                                                                    solver_timeout=self.solver_timeout, solver_threads=self.solver_threads, objective_quality_failed=objective_quality_failed)
+        return PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=objective_quality_failed)
 
     def run_attempt(self, idx, attempt_dir, problem, gold):
         attempt_dir.mkdir(parents=True, exist_ok=True)
@@ -367,7 +392,7 @@ class PairedRunner:
     def ensure_reflection(self, attempt_dir, result):
         self.ensure_generation_failure_log(attempt_dir, result)
         instance = attempt_dir.parent.parent
-        prompt = PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=self.objective_quality_failed(result))
+        prompt = self.reflection_prompt(instance, self.objective_quality_failed(result))
         data_file, data_record = self.data_context_file(instance)
         context = [data_file] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
         reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection", data_context=data_record)
@@ -389,6 +414,8 @@ class PairedRunner:
             expected["data_context"] = self.data_context
         if self.decomposition_contract != DECOMPOSITION_POLICY:
             expected["decomposition_contract"] = self.decomposition_contract
+        if self.context_delivery is not None:
+            expected["context_delivery"] = self.context_delivery
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")
@@ -420,7 +447,8 @@ class PairedRunner:
             try:
                 summaries = {mode: load_policy_summary(directory, campaign_root=campaign_root, approvals=approvals) for mode, directory in saved.items()}
                 # A closed pair is reused only under the contract it was judged with (an absent field is the paper's v2).
-                if any((read(directory / "identity.json") or {}).get("decomposition_contract", DECOMPOSITION_POLICY) != self.decomposition_contract for directory in saved.values()):
+                if any((read(directory / "identity.json") or {}).get("decomposition_contract", DECOMPOSITION_POLICY) != self.decomposition_contract
+                       or (read(directory / "identity.json") or {}).get("context_delivery") != self.context_delivery for directory in saved.values()):
                     raise ProtocolError("Case protocol changed")
                 if all(policy_is_complete(summary, self.max_attempts, self.protocol_id) for summary in summaries.values()):
                     return summaries

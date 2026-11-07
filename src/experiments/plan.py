@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.agent.docker_client import CLI_VERSIONS
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
-from src.experiments.data_context import accepted_prompt_protocol
+from src.experiments.data_context import accepted_prompt_protocol, context_delivery_policy
 from src.utils.errors import ProtocolError
 from src.utils.families import FAMILIES, PAPER_FAMILIES
 from src.utils.records import identity
@@ -30,6 +30,14 @@ def load_plan(path: Path) -> dict:
     # The reviewed contracts, optionally with the recorded data-context setting (src.experiments.data_context).
     if not accepted_prompt_protocol(plan.get("prompt_protocol")):
         raise ProtocolError("Config must freeze the reviewed problem, judge, and output contracts")
+    if "solver_output_policy" in plan:
+        # Optional, recorded with the config (and so in the campaign protocol id); absent keeps the paper's 4 MiB readback.
+        # The larger limit needs the mounted-files protocol: a pasted reflection context cannot carry such an output.json.
+        from src.experiments.sandbox import OUTPUT_LIMITS
+        if plan["solver_output_policy"] is None or plan["solver_output_policy"] not in OUTPUT_LIMITS:
+            raise ProtocolError(f"Unknown solver output policy: {plan['solver_output_policy']!r}")
+        if context_delivery_policy(plan["prompt_protocol"]) is None:
+            raise ProtocolError("A larger solver output readback requires the mounted-files context delivery")
     if plan.get("reflection_policy") != REFLECTION_POLICY:
         raise ProtocolError("Completed reflection omissions must consume their opportunity and advance")
     queue = plan.get("model_queue", [])

@@ -2,16 +2,20 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import hashlib
+import io
 import json
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import selectors
 import subprocess
+import tarfile
 import threading
 import time
 import uuid
 
+from src.agent.prompts.mounted import CONTEXT_DIRECTORIES
 from src.experiments.resources import CleanupError
 from src.utils.errors import InfrastructureError
 from src.experiments.environment import RuntimeEnvironmentError
@@ -97,6 +101,48 @@ def bounded_process(command: list[str], *, stdin: str = "", timeout: float, max_
     return ContainerResult(process.returncode, output["stdout"].decode(errors="replace"), output["stderr"].decode(errors="replace"), time.monotonic() - started, timed_out, limited)
 
 
+def context_archive(files: dict[str, bytes]) -> bytes:
+    """A deterministic tar of read-only task files (mode 0444) and their directories (0555) for `docker cp -`."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for directory in sorted({str(parent) for name in files for parent in PurePosixPath(name).parents if str(parent) != "."}):
+            info = tarfile.TarInfo(directory)
+            info.type, info.mode, info.mtime = tarfile.DIRTYPE, 0o555, 0
+            archive.addfile(info)
+        for name in sorted(files):
+            info = tarfile.TarInfo(name)
+            info.size, info.mode, info.mtime = len(files[name]), 0o444, 0
+            archive.addfile(info, io.BytesIO(files[name]))
+    return buffer.getvalue()
+
+
+def archive_manifest(data: bytes, root: str) -> dict[str, str]:
+    """{relative path: sha256} of the regular files of a `docker cp <container>:<root> -` tar; any other entry type is refused."""
+    found = {}
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+        for member in archive.getmembers():
+            parts = PurePosixPath(member.name).parts
+            if parts and parts[0] == PurePosixPath(root).name:
+                parts = parts[1:]
+            if member.isdir():
+                continue
+            if not member.isfile() or not parts or any(part in ("..", "/") for part in parts):
+                raise RuntimeEnvironmentError("Mounted task context holds an unexpected entry")
+            found[str(PurePosixPath(*parts))] = hashlib.sha256(archive.extractfile(member).read()).hexdigest()
+    return found
+
+
+def check_context(context) -> None:
+    """Context mounts: {directory in CONTEXT_DIRECTORIES: {normalized relative path: bytes}}, every directory non-empty."""
+    if not isinstance(context, dict) or not set(context) <= set(CONTEXT_DIRECTORIES) or not all(isinstance(files, dict) and files for files in context.values()):
+        raise ValueError("Context mounts must map declared read-only directories to files")
+    for files in context.values():
+        for name, contents in files.items():
+            path = PurePosixPath(name)
+            if not isinstance(contents, bytes) or path.is_absolute() or str(path) != name or any(part in (".", "..") for part in path.parts):
+                raise ValueError("Context files need normalized relative paths and bytes")
+
+
 def save_state(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -106,6 +152,7 @@ def save_state(path, value):
 
 class DockerRuntime:
     LABEL = "io.decompbench.runtime"
+    CONTEXT_LOADER = "v2-context-loader"  # label value of the never-started container that fills read-only context volumes
     # The image's trusted worker and the collector's output ceiling. The paper path uses these defaults; only the
     # multi-file runtime (src/agent/multifile.py, PDPTW C++ track) overrides them in a subclass.
     WORKER = "/opt/decompbench/worker.py"
@@ -176,6 +223,13 @@ class DockerRuntime:
             raise ContainerError(f"Required cached image is unavailable: {image}")
         return result.stdout.strip()
 
+    def transfer(self, *args, data=None, timeout=120):
+        """A Docker CLI call with binary standard input and output (`docker cp` archives)."""
+        try:
+            return subprocess.run(self.cli(*args), input=b"" if data is None else data, capture_output=True, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ContainerError("Docker context transfer could not complete") from error
+
     def ensure_volume(self, name, purpose, *, label=None, create=True):
         label = label or self.LABEL
         result = self.command("volume", "inspect", name, "--format", "{{json .Labels}}")
@@ -235,27 +289,38 @@ class DockerRuntime:
 
     def _dispose(self, state):
         self.remove_container(state["name"])
-        for volume in (state["work_volume"], state["record_volume"]):
+        if "context_volumes" in state:
+            self.remove_container(state["name"] + "-context")
+        for volume in (state["work_volume"], state["record_volume"], *state.get("context_volumes", {}).values()):
             result = self.command("volume", "rm", volume)
             if result.returncode and "no such volume" not in result.stderr.lower():
                 raise CleanupError(f"Could not remove owned temporary volume: {volume}")
 
-    def run(self, image, command, *, payload=None, state_path: Path, timeout=900, network="none", cpus=1, memory="1024m", volumes=None, artifacts=None, public_metadata=None):
+    def run(self, image, command, *, payload=None, state_path: Path, timeout=900, network="none", cpus=1, memory="1024m", volumes=None, artifacts=None, public_metadata=None, context=None):
+        """`context` (mounted-files protocol only): {directory: {relative path: bytes}}, mounted read-only at each
+        directory of src.agent.prompts.mounted.CONTEXT_DIRECTORIES through a fresh volume; None keeps the paper run."""
         self.validate_engine()
         if network not in {"none", "bridge"} or timeout <= 0 or cpus <= 0:
             raise ValueError("Invalid Docker execution settings")
         if any(Path(name).name != name or name in ("", ".", "..") for name in artifacts or []):
             raise ValueError("Artifact names must be basenames")
+        if context is not None:
+            check_context(context)
         if state_path.exists():
             return self.recover(state_path)
         identifier = uuid.uuid4().hex
         state = {"schema_version": 1, "name": f"decompbench-v2-{identifier}", "work_volume": f"decompbench-v2-work-{identifier}", "record_volume": f"decompbench-v2-record-{identifier}",
                  "image_id": self.image_id(image), "command": command, "artifacts": artifacts or [], "created_at": time.time(), "timeout": timeout, "network": network, "cpus": cpus, "memory": memory,
                  "phase": "preparing", "public_metadata": public_metadata or {}, "credential_values_recorded": False}
+        if context:
+            state["context_volumes"] = {destination: f"decompbench-v2-context-{PurePosixPath(destination).name}-{identifier}" for destination in sorted(context)}
+            state["context_manifest"] = {destination: {name: hashlib.sha256(data).hexdigest() for name, data in sorted(context[destination].items())} for destination in sorted(context)}
         save_state(state_path, state)
         try:
             for volume in (state["work_volume"], state["record_volume"]):
                 self.ensure_volume(volume, "v2-ephemeral-worker")
+            if context:
+                self._load_context(state, context)
             args = ["create", "--name", state["name"], "--label", f"{self.LABEL}=v2-worker", "--pull", "never", "--platform", "linux/arm64", "--init", "--user", "1000:1000", "--cap-drop", "ALL",
                     "--security-opt", "no-new-privileges", "--security-opt", f"seccomp={self.seccomp_profile}", "--read-only", "--log-driver", "none", "--pids-limit", "128", "--memory", memory, "--memory-swap", memory,
                     "--cpus", str(cpus), "--network", network, "--tmpfs", "/tmp:rw,nosuid,nodev,size=128m", "--tmpfs", "/home/node:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0700",
@@ -264,6 +329,8 @@ class DockerRuntime:
                 if "/" in volume or not (destination == "/auth" or destination.startswith("/auth/")):
                     raise ValueError("Credentials must use a named volume under /auth")
                 args.extend(["--mount", f"type=volume,src={volume},dst={destination}"])
+            for destination, volume in state.get("context_volumes", {}).items():
+                args.extend(["--mount", f"type=volume,src={volume},dst={destination},readonly"])
             created = self.command(*args, state["image_id"], "-I", "-B", self.WORKER, *command)
             if created.returncode:
                 raise ContainerError("Docker worker creation failed")
@@ -272,6 +339,9 @@ class DockerRuntime:
             mounts = [{key: mount.get(key) for key in ("Type", "Name", "Destination", "RW")} for mount in inspected["Mounts"]]
             if configuration.get("Privileged") or not configuration.get("ReadonlyRootfs") or configuration.get("Binds") or any(mount["Type"] == "bind" for mount in mounts):
                 raise RuntimeEnvironmentError("Docker worker isolation differs from the declared configuration")
+            for destination, volume in state.get("context_volumes", {}).items():
+                if {"Type": "volume", "Name": volume, "Destination": destination, "RW": False} not in mounts:
+                    raise RuntimeEnvironmentError("Mounted task context is not read-only as declared")
             state.update(phase="starting", container_id=created.stdout.strip(), mounts=mounts, security_options=configuration["SecurityOpt"], deadline=time.time() + timeout)
             save_state(state_path, state)
             attached = bounded_process(self.cli("start", "--attach", "--interactive", state["name"]), stdin=json.dumps(payload or {}) + "\n", timeout=timeout, heartbeat=True)
@@ -286,6 +356,27 @@ class DockerRuntime:
                 state["phase"] = "stopped"
                 save_state(state_path, state)
             raise
+
+    def _load_context(self, state, context):
+        """Fill each context volume through a never-started container (`docker cp -`) and read it back against the manifest."""
+        loader = state["name"] + "-context"
+        for volume in state["context_volumes"].values():
+            self.ensure_volume(volume, "v2-ephemeral-context")
+        args = ["create", "--name", loader, "--label", f"{self.LABEL}={self.CONTEXT_LOADER}", "--pull", "never", "--platform", "linux/arm64", "--network", "none", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges", "--log-driver", "none"]
+        for destination, volume in state["context_volumes"].items():
+            args.extend(["--mount", f"type=volume,src={volume},dst={destination}"])
+        if self.command(*args, "--entrypoint", "python3", state["image_id"], "-I", "-B", "-c", "").returncode:
+            raise ContainerError("Docker context loader creation failed")
+        try:
+            for destination in sorted(context):
+                if self.transfer("cp", "-", f"{loader}:{destination}", data=context_archive(context[destination])).returncode:
+                    raise ContainerError("Copying the task context into its volume failed")
+                copied = self.transfer("cp", f"{loader}:{destination}", "-")
+                if copied.returncode or archive_manifest(copied.stdout, destination) != state["context_manifest"][destination]:
+                    raise RuntimeEnvironmentError("Mounted task context differs from its manifest")
+        finally:
+            self.remove_container(loader)
 
     def recover(self, state_path):
         self.validate_engine()

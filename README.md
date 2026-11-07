@@ -42,6 +42,8 @@ The paper evaluates 12 configurations, all at medium effort: five GPT models thr
 - the container runs as an unprivileged user with all capabilities dropped, a seccomp profile, a read-only file system, one CPU and 1 GiB of memory; it keeps network access for the model API, and only the target file is copied back;
 - the only state that persists between calls is the CLI login, stored in a private Docker volume per CLI.
 
+The small-scale track (`configs/small_scale.json`, protocol setting `context_delivery: mounted-files-v1`) delivers the generation and reflection context as files instead: the instance `data.json` is mounted read-only at `/work/instance/data.json` and the files of earlier attempts at `/work/history/attempt_NN/`, the prompt names every path with its size and content, states that `/work/solver.py` (or `/work/debug.md`) is the only writable and the only collected file and that the solver reads `../../data.json` and writes `output.json` in its working directory at run time, and arranges the task text under fixed headings (Part 1: workspace and files; Part 2: Problem, Data, Output, Method requirements, Rules; Part 3 for reflection) without rewording it. Each call records the sha256 of every mounted file (`<step>_context.json`). That track also reads solver outputs of up to 32 MiB (`solver_output_policy: output-json-readback-32MiB-v1`; the paper's limit is 4 MiB). `python scripts/context_delivery_check.py` checks the mounts and makes one real call per CLI.
+
 **Solvers run natively, in a sandbox.** The generated `solver.py` runs on the host (macOS on Apple silicon, Python 3.12.11, Gurobi 11.0.3 with the host's license) inside a macOS Seatbelt sandbox with no network access, which can read only the instance data and the solver and write only to a private working directory. Each run is stopped after 60 seconds. The one-thread budget is configured for Gurobi and the numerical libraries but not enforced, so a solver could request more threads; none of the paper's solvers did.
 
 **Protocol.** Each agent call may take up to 900 seconds. The method judge is GPT-6 Astra at high effort, called through Codex in the same container setup, and sees only the solver's source. Two instances run at a time, with at most two simultaneous Codex calls and one Claude Code or Antigravity call. A resource monitor pauses the run under sustained CPU, memory or thermal pressure; pauses are not counted in any reported time.
@@ -891,7 +893,9 @@ src/
   utils/              base classes, the family registry (families.py), instance generation and admission
                       (instance_suite.py), dataset helpers, Python API, shared records
 configs/paper.json    the paper's models and protocol (the 81 instances in data/)
-configs/small_scale.json, configs/harder_small_all.json   the small-scale track and the reused cohort it draws on
+configs/small_scale.json   the small-scale track: all twenty families, 180 instances in outputs/small_scale_data
+                      (built and checked by scripts/build_small_scale_data.py)
+configs/harder_small_all.json   the earlier reused cohort (pasted context, paper contract)
 data/                 the 81 instances
 data_harder/          the reused small-scale instances (lbbd, gcol, nrp; with three earlier families)
 docker/agents/        agent image, worker, Antigravity sign-in and seccomp profile

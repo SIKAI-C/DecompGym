@@ -129,3 +129,65 @@ def test_real_collector_failure_preserves_artifacts_for_recovery(tmp_path, monke
     assert result.artifacts["solver.py"] == "print(1)\n"
     assert result.artifacts["invocations.txt"] == "started\n"
     assert_disposed(engine, state)
+
+
+MOUNT_CLI = """import json,sys
+from pathlib import Path
+checks={}
+checks['data']=Path('/work/instance/data.json').read_text()
+checks['history']=Path('/work/history/attempt_01/debug.md').read_text()
+def denied(action):
+    try:
+        action();return False
+    except OSError:
+        return True
+checks['instance_write_denied']=denied(lambda:Path('/work/instance/data.json').write_text('changed'))
+checks['instance_create_denied']=denied(lambda:Path('/work/instance/meta.json').write_text('{}'))
+checks['history_write_denied']=denied(lambda:Path('/work/history/attempt_01/debug.md').write_text('changed'))
+checks['history_create_denied']=denied(lambda:Path('/work/history/attempt_01/solver.py').write_text('print(3)'))
+Path('/work/elsewhere').mkdir()
+Path('/work/elsewhere/solver.py').write_text('print(2)')
+checks['entries']=sorted(p.name for p in Path('/work').iterdir())
+Path('/work/solver.py').write_text(json.dumps(checks) if sys.argv[1]=='deliver' else '')
+print(json.dumps({'type':'turn.completed','usage':{'input_tokens':0,'output_tokens':0}}),flush=True)
+"""
+MOUNT_FIXTURE = FIXTURE.replace(repr(FAKE_CLI), repr(MOUNT_CLI))
+
+
+class MountRuntime(DockerRuntime):
+    """The real lifecycle, context loader and worker with a fake CLI; the loader container has no worker path to replace."""
+
+    def command(self, *args, **kwargs):
+        args = list(args)
+        if args[0] == "create" and "/opt/decompbench/worker.py" in args:
+            position = args.index("/opt/decompbench/worker.py")
+            args[position:position + 1] = ["-c", MOUNT_FIXTURE]
+        return super().command(*args, **kwargs)
+
+
+@pytest.mark.parametrize("mode", ["deliver", "omit"])
+def test_real_context_mounts_are_read_only_and_only_the_target_is_collected(tmp_path, mode):
+    engine = MountRuntime(seccomp_profile=ROOT / "docker/agents/seccomp-userns.json")
+    context = {"/work/instance": {"data.json": b'{"m": 2}\n'}, "/work/history": {"attempt_01/debug.md": b"notes\n", "attempt_01/solver.py": b"print(1)\n"}}
+    path = tmp_path / "container.json"
+    result = engine.run(os.environ["DECOMPBENCH_DOCKER_IMAGE"], ["agent", "codex-cli"],
+                        payload={"target": "solver.py", "model": "fixture", "role": "diagnostic", "effort": "medium", "prompt": "local fixture only", "timeout": 30, "fixture_mode": mode},
+                        state_path=path, timeout=40, network="none", artifacts=["solver.py", "worker.json", "delivery.json"], context=context)
+    state = json.loads(path.read_text())
+    assert all({"Type": "volume", "Name": state["context_volumes"][d], "Destination": d, "RW": False} in state["mounts"] for d in context)
+    assert set(result.artifacts) <= {"solver.py", "worker.json", "delivery.json"}
+    delivery = json.loads(result.artifacts["delivery.json"])
+    if mode == "deliver":
+        checks = json.loads(result.artifacts["solver.py"])
+        assert checks["data"] == '{"m": 2}\n' and checks["history"] == "notes\n"
+        assert all(checks[name] for name in ("instance_write_denied", "instance_create_denied", "history_write_denied", "history_create_denied"))
+        assert checks["entries"] == ["elsewhere", "history", "instance", "solver.py"]
+        assert delivery["misplaced"] == {}
+    else:
+        # An empty target is not rescued: the worker only reports other solver.py files (the mounted copy and the misplaced one).
+        assert result.artifacts["solver.py"] == ""
+        assert sorted(delivery["misplaced"]) == ["elsewhere/solver.py", "history/attempt_01/solver.py"]
+    assert_disposed(engine, state)
+    for name in state["context_volumes"].values():
+        observed = engine.command("volume", "inspect", name)
+        assert observed.returncode and "no such volume" in observed.stderr.lower()

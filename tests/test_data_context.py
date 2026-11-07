@@ -140,9 +140,14 @@ def test_above_threshold_context_holds_a_marked_preview_and_the_solver_reads_the
 
 
 def test_config_key_is_validated(tmp_path):
-    small_scale = load_plan(REPO / "configs/small_scale.json")
-    assert data_context_policy(small_scale["prompt_protocol"]) == DATA_CONTEXT_PREVIEW
-    assert data_context_policy(load_plan(REPO / "configs/paper.json")["prompt_protocol"]) is None
+    # No shipped config uses the preview rule any more (the small-scale campaign mounts its context files); it stays a
+    # reviewed setting, checked here on a paper-based plan.
+    paper = load_plan(REPO / "configs/paper.json")
+    small_scale = dict(paper, prompt_protocol={**PROMPT_PROTOCOL, "data_context": DATA_CONTEXT_PREVIEW})
+    save(tmp_path / "preview.json", small_scale)
+    assert data_context_policy(load_plan(tmp_path / "preview.json")["prompt_protocol"]) == DATA_CONTEXT_PREVIEW
+    assert data_context_policy(paper["prompt_protocol"]) is None
+    assert data_context_policy(load_plan(REPO / "configs/small_scale.json")["prompt_protocol"]) is None
     for value in ("full-v0", None, ""):
         plan = dict(small_scale, prompt_protocol={**PROMPT_PROTOCOL, "data_context": value})
         save(tmp_path / "bad.json", plan)

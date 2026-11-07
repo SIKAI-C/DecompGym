@@ -9,6 +9,29 @@ LOCATION_NOTE = (
     "The data below are provided as read-only context for this editing call.\n"
     "The generated solver.py will be executed later in a separate runtime directory, where it must read ../../data.json and write output.json in that runtime directory."
 )
+STANDALONE_RULE = "Implement a standalone solver.py using gurobipy, NumPy, and the Python standard library. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
+REFLECTION_OPENING = "You are making an attempt to solve the following problem."
+REFLECTION_CLOSING = "Keep the reflection concise and actionable."
+
+
+def budget_rule(solver_timeout: int, solver_threads: int) -> str:
+    return f"The harness limits the entire solver.py execution to {solver_timeout} seconds and numerical solvers to {solver_threads} thread(s). Design your algorithm and termination handling within this budget."
+
+
+def reflection_instructions(objective_quality_failed: bool) -> list[str]:
+    """The reflection task's lines (the same in the pasted and the mounted-files protocol)."""
+    if type(objective_quality_failed) is not bool:
+        raise TypeError("Objective feedback accepts only a boolean, never a numeric gap")
+    return [
+        "You have generated the solver.py file based on the problem description and the data.json file.",
+        "And the exec.log file shows the output of the solver.py file.",
+        "You also have alg_verifier.md with an LLM-based algorithm check; use it to improve the reflection.",
+        *([OBJECTIVE_RETRY] if objective_quality_failed else []),
+        "Your tasks:",
+        "1) Read solver.py, exec.log, and the verifier feedback to diagnose execution, feasibility, algorithm, or objective-quality failures.",
+        "2) Write a concise reflection to debug.md: what likely went wrong and what the next attempt should change",
+        "3) List the concrete changes the next attempt should make in debug.md.",
+    ]
 
 
 class PromptBuilder:
@@ -17,8 +40,8 @@ class PromptBuilder:
     def build_generation_prompt(problem_prompt: str, *, solver_timeout: int, solver_threads: int) -> str:
         """The instance prompt plus the runtime location and the solver budget."""
         prompt = PromptBuilder.ensure_location_prompt(problem_prompt)
-        prompt += "\n\nImplement a standalone solver.py using gurobipy, NumPy, and the Python standard library. Write output.json using the documented contract. Do not import repository implementations or load reference solutions."
-        prompt += f"\nThe harness limits the entire solver.py execution to {solver_timeout} seconds and numerical solvers to {solver_threads} thread(s). Design your algorithm and termination handling within this budget."
+        prompt += "\n\n" + STANDALONE_RULE
+        prompt += "\n" + budget_rule(solver_timeout, solver_threads)
         return prompt
 
     @staticmethod
@@ -28,22 +51,26 @@ class PromptBuilder:
         The agent should read solver.py and exec.log (read-only), diagnose the failure,
         and write guidance for the next attempt into debug.md. Do not edit solver.py in this step.
         """
-        if type(objective_quality_failed) is not bool:
-            raise TypeError("Objective feedback accepts only a boolean, never a numeric gap")
-        debug_context = [
-            "You are making an attempt to solve the following problem.",
-            base_prompt,
-            "",
-            "You have generated the solver.py file based on the problem description and the data.json file.",
-            "And the exec.log file shows the output of the solver.py file.",
-            "You also have alg_verifier.md with an LLM-based algorithm check; use it to improve the reflection.",
-            *([OBJECTIVE_RETRY] if objective_quality_failed else []),
-            "Your tasks:",
-            "1) Read solver.py, exec.log, and the verifier feedback to diagnose execution, feasibility, algorithm, or objective-quality failures.",
-            "2) Write a concise reflection to debug.md: what likely went wrong and what the next attempt should change",
-            "3) List the concrete changes the next attempt should make in debug.md.",
-        ]
-        return "\n".join(debug_context) + "\nKeep the reflection concise and actionable."
+        instructions = reflection_instructions(objective_quality_failed)
+        return "\n".join([REFLECTION_OPENING, base_prompt, "", *instructions]) + "\n" + REFLECTION_CLOSING
+
+    @staticmethod
+    def build_structured_generation_prompt(problem_prompt: str, *, suite: str, problem: str, contract: str, solver_timeout: int, solver_threads: int) -> str:
+        """Part 2 (the task) of a mounted-files generation prompt; the client adds Part 1 (src.agent.prompts.mounted)."""
+        from src.agent.prompts.mounted import task_part
+
+        return task_part(problem_prompt, suite=suite, problem=problem, contract=contract, harness_rules=STANDALONE_RULE + "\n" + budget_rule(solver_timeout, solver_threads))
+
+    @staticmethod
+    def build_structured_reflection_prompt(problem_prompt: str, *, suite: str, problem: str, contract: str, solver_timeout: int, solver_threads: int,
+                                           objective_quality_failed: bool = False) -> str:
+        """Part 2 (the task, opened as in the pasted reflection) and Part 3 (the reflection task) of a mounted-files reflection."""
+        from src.agent.prompts.mounted import reflection_part, task_part
+
+        instructions = reflection_instructions(objective_quality_failed)
+        task = task_part(problem_prompt, suite=suite, problem=problem, contract=contract, harness_rules=STANDALONE_RULE + "\n" + budget_rule(solver_timeout, solver_threads),
+                         opening=REFLECTION_OPENING)
+        return task + "\n\n" + reflection_part(instructions, REFLECTION_CLOSING)
 
     @staticmethod
     def ensure_location_prompt(base_prompt: str) -> str:

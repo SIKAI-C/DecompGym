@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import gurobipy as gp
@@ -17,6 +18,7 @@ class PDPTWBaseline:
         self.params = {"Threads": 1, "MIPGap": 0.0, "MIPGapAbs": 0.5, "IntFeasTol": 1e-9, **(params or {})}
 
     def run(self, path: str) -> dict[str, Any]:
+        started = time.perf_counter()
         inst = PDPTWInstance.from_json_file(path)
         n, N, Q = inst.n_requests, 2 * inst.n_requests, inst.capacity
         V, C = range(N + 1), range(1, N + 1)
@@ -62,7 +64,9 @@ class PDPTWBaseline:
             m.addConstr(r[k] == r[n + k])
             m.addConstr(t[n + k] >= t[k] + inst.service[k] + sp[k, n + k])
         m.setObjective(gp.quicksum(d[a] * x[a] for a in arcs), GRB.MINIMIZE)
+        solve_started = time.perf_counter()
         m.optimize()
+        solve_seconds = time.perf_counter() - solve_started
         if m.Status != GRB.OPTIMAL:
             raise RuntimeError(f"Baseline model not optimal (status={m.Status})")
         used = [a for a in arcs if x[a].X > 0.5]
@@ -74,4 +78,8 @@ class PDPTWBaseline:
                 route.append(node)
                 node = succ[node]
             routes.append(route)
-        return {"best_objective": float(m.ObjVal), "global_lb": float(m.ObjBound), "global_ub": float(m.ObjVal), "routes": routes}
+        # Timing (recorded since 2026-11-07; earlier golds have none): total_time is the wall time of optimize(), the
+        # MIP time src.utils.instance_suite checks against the limit (MIP_SECONDS_DEFINITION); runtime is Gurobi's own.
+        return {"best_objective": float(m.ObjVal), "global_lb": float(m.ObjBound), "global_ub": float(m.ObjVal), "routes": routes,
+                "status": "optimal", "params": dict(self.params), "total_time": solve_seconds, "runtime": float(m.Runtime),
+                "end_to_end_seconds": time.perf_counter() - started}

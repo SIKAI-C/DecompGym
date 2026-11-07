@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-def instance_objectives(directory: Path, suite: str, problem: str | None = None) -> tuple[Any, Any] | None:
+def instance_objectives(directory: Path, suite: str, problem: str | None = None, admission: str | None = None) -> tuple[Any, Any] | None:
     """(ground truth, decomposition objective or None) of a complete instance, or None if it is not complete.
 
     Complete: data.json, prompt.txt, meta.json and both golds are present and readable, and
@@ -18,7 +18,8 @@ def instance_objectives(directory: Path, suite: str, problem: str | None = None)
       - with one (src.utils.instance_suite): meta.json's ground_truth_objective is finite and is the ground truth; a
         "decomposition_certificate" source needs a finite decomposition objective, a "monolithic_mip" source a finite
         monolithic objective and, except under the reused families' historical rule ("mip_or_certificate"), a finite
-        decomposition objective too."""
+        decomposition objective too.
+    `admission` overrides the family's registered rule (instance_admission gives the rule of the root holding it)."""
     payloads = {}
     for name in ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json", f"gold_{suite}.json"):
         path = directory / name
@@ -37,7 +38,7 @@ def instance_objectives(directory: Path, suite: str, problem: str | None = None)
     if source is None:
         return (mono, decomposed) if _finite(mono) and _finite(decomposed) else None
     truth = meta.get("ground_truth_objective")
-    historical = _admission(problem or directory.name.rsplit("_", 2)[0]) == "mip_or_certificate"
+    historical = (admission or _admission(problem or directory.name.rsplit("_", 2)[0])) == "mip_or_certificate"
     needs = {"decomposition_certificate": (False, True), "monolithic_mip": (True, not historical)}.get(source)
     if needs is None or not _finite(truth) or (needs[0] and not _finite(mono)) or (needs[1] and not _finite(decomposed)):
         return None
@@ -61,6 +62,33 @@ def _admission(problem: str) -> str | None:
 
     entry = FAMILIES.get(problem)
     return entry.admission if entry is not None else None
+
+
+# The ground-truth sources each admission rule writes to meta.json (src.utils.instance_suite); "family" (the paper's
+# own pipelines) records none.
+ADMITTED_SOURCES = {"strict": frozenset({"monolithic_mip"}),
+                    "mip_or_certificate": frozenset({"monolithic_mip", "decomposition_certificate"}),
+                    "family": frozenset({None})}
+
+
+def instance_admission(directory: Path, problem: str | None = None) -> str | None:
+    """The admission rule of the instance folder <root>/<suite>/<problem>/<instance>: inside a pinned family dataset
+    root (src.utils.families.dataset_roots) the rule of the families registered with that root (the instances a root
+    holds were admitted under its rule, also those of a family whose final dataset is elsewhere, e.g. data/ufl or
+    data_harder/bppc); elsewhere (a fresh reproduction root) the family's registered rule. None for an unregistered
+    family or a folder under the wrong suite."""
+    from src.utils.families import FAMILIES, dataset_roots
+
+    problem = problem or directory.name.rsplit("_", 2)[0]
+    parents = Path(directory).resolve().parents
+    if problem not in FAMILIES or (len(parents) > 1 and parents[1].name in {"bd", "cg"} and parents[1].name != FAMILIES[problem].suite):
+        return None  # unregistered, or registered under the other suite
+    dataset = dataset_roots().get(parents[2]) if len(parents) > 2 else None
+    if dataset is not None:
+        rules = {entry.admission for entry in FAMILIES.values() if entry.dataset == dataset}
+        if len(rules) == 1:
+            return rules.pop()
+    return _admission(problem)
 
 
 def _gap(truth: Any, decomposed: Any) -> float | None:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -43,14 +44,56 @@ def _infer_suite(inst_dir: Path) -> str | None:
     return None
 
 
+def _finite(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (ValueError, TypeError):
+        return False
+
+
+def _admitted_source(admission: str, source: Any) -> bool:
+    from src.utils.dataset import ADMITTED_SOURCES
+
+    return (source is None or isinstance(source, str)) and source in ADMITTED_SOURCES[admission]
+
+
+def _verified_gold(path: Path) -> bool:
+    try:
+        gold = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(gold, dict) and not gold.get("error") and isinstance(gold.get("verification"), dict) and gold["verification"].get("ok") is True
+
+
 def validate_instance(inst_dir: Path, validation_level: str = "strict") -> dict[str, Any]:
+    """Validate one instance folder <root>/<suite>/<problem>/<instance> under the admission rule it was admitted with
+    (src.utils.dataset.instance_admission: the rule of the pinned dataset root holding it, else the family's registered
+    rule; src.utils.instance_suite defines the rules).
+
+    simple: data.json, prompt.txt, gold_monolithic.json and meta.json exist and parse, and meta.json records a ground
+      truth source the rule admits (none for the paper's own pipelines, "monolithic_mip" for "strict", either source
+      for the reused families' "mip_or_certificate").
+    strict: in addition, the instance is complete under that rule (src.utils.dataset.instance_objectives) and its
+      objectives agree with it: an admitted MIP optimum matches gold_monolithic.json, a certificate matches the
+      decomposition gold, a decomposition objective is not below the ground truth (beyond the family's tolerance), the
+      stored golds pass the rule's own predicates (instance_suite.admission_issue under "strict": verified golds, MIP
+      time and closed bounds, reference time, the 1 % gap rule and the family's certificate requirement; a closed
+      certificate for a certificate-based ground truth under "mip_or_certificate"). A MIP-only or certificate-only
+      admission of the reused families passes.
+    """
+    from src.utils.dataset import instance_admission, instance_objectives
+
     suite = _infer_suite(inst_dir)
     is_bd = suite == "bd"
     is_cg = suite == "cg"
+    problem = Path(inst_dir).resolve().parent.name
+    admission = instance_admission(inst_dir, problem) if suite in {"bd", "cg"} else None
     result: dict[str, Any] = {
         "name": inst_dir.name,
         "path": str(inst_dir),
         "suite": suite or "unknown",
+        "problem": problem,
+        "admission": admission,
         "has_data": (inst_dir / "data.json").exists(),
         "has_prompt": (inst_dir / "prompt.txt").exists(),
         "has_mono": (inst_dir / "gold_monolithic.json").exists(),
@@ -60,6 +103,8 @@ def validate_instance(inst_dir: Path, validation_level: str = "strict") -> dict[
         "mono_obj": None,
         "bd_obj": None,
         "cg_obj": None,
+        "ground_truth_source": None,
+        "reference_objective": None,
         "status": "unknown",
         "issues": [],
     }
@@ -87,6 +132,25 @@ def validate_instance(inst_dir: Path, validation_level: str = "strict") -> dict[
         except ValueError as exc:
             result["issues"].append(str(exc))
 
+    meta = None
+    if result["has_meta"]:
+        try:
+            meta = json.loads((inst_dir / "meta.json").read_text())
+            if not isinstance(meta, dict):
+                raise ValueError("not a JSON object")
+            result["ground_truth_source"] = meta.get("ground_truth_source")
+        except (OSError, ValueError) as exc:
+            meta = None
+            result["issues"].append(f"failed to parse meta.json: {exc}")
+
+    def fail(status: str, issue: str) -> dict[str, Any]:
+        result["status"] = status
+        result["issues"].append(issue)
+        return result
+
+    if admission is None:
+        return fail("unregistered_family", f"{problem!r} under suite {suite!r} is not a registered family (src.utils.families)")
+
     if validation_level == "simple":
         missing = []
         if not result["has_data"]:
@@ -98,31 +162,92 @@ def validate_instance(inst_dir: Path, validation_level: str = "strict") -> dict[
         if not result["has_meta"]:
             missing.append("meta.json")
         if missing:
-            result["status"] = "missing_required"
-            result["issues"].append("missing: " + ", ".join(missing))
-            return result
+            return fail("missing_required", "missing: " + ", ".join(missing))
         # A reference that exists but cannot be read is not a pass.
-        result["status"] = "invalid_reference" if result["issues"] else "pass_simple_test"
+        if result["issues"]:
+            result["status"] = "invalid_reference"
+            return result
+        if not _admitted_source(admission, result["ground_truth_source"]):
+            return fail("not_admitted", f"meta.json ground_truth_source {result['ground_truth_source']!r} is not admitted by the {admission!r} rule")
+        result["status"] = "pass_simple_test"
         return result
 
-    if not result["has_mono"] or result["mono_obj"] is None:
-        result["status"] = "missing_gold_mono"
-        result["issues"].append("missing gold_monolithic.json or objective")
-    elif is_bd and (not result["has_bd"] or result["bd_obj"] is None):
-        result["status"] = "missing_gold_bd"
-        result["issues"].append("missing gold_bd.json or objective")
-    elif is_cg and (not result["has_cg"] or result["cg_obj"] is None):
-        result["status"] = "missing_gold_cg"
-        result["issues"].append("missing gold_cg.json or objective")
-    elif abs(result["mono_obj"] - (result["cg_obj"] if is_cg else result["bd_obj"])) < 1e-4:
-        result["status"] = "pass_simple_test"
-    elif (result["cg_obj"] if is_cg else result["bd_obj"]) > result["mono_obj"]:
-        result["status"] = "reference_gap"
-        result["decomposition_gap"] = ((result["cg_obj"] if is_cg else result["bd_obj"]) - result["mono_obj"]) / max(1.0, abs(result["mono_obj"]))
-    else:
-        result["status"] = "objective_mismatch"
-        result["issues"].append(f"Objective mismatch: mono={result['mono_obj']}, decomposition={result['cg_obj'] if is_cg else result['bd_obj']}")
+    decomposition_obj = result["cg_obj"] if is_cg else result["bd_obj"]
+    has_decomposition = result["has_cg"] if is_cg else result["has_bd"]
+    if meta is not None and not _admitted_source(admission, result["ground_truth_source"]):
+        return fail("not_admitted", f"meta.json ground_truth_source {result['ground_truth_source']!r} is not admitted by the {admission!r} rule")
+    objectives = instance_objectives(inst_dir, suite, problem, admission)
+    if objectives is None:
+        source = result["ground_truth_source"]
+        if not result["has_mono"] or (source in (None, "monolithic_mip") and not _finite(result["mono_obj"])):
+            return fail("missing_gold_mono", "missing gold_monolithic.json or objective")
+        if not has_decomposition or (not _finite(decomposition_obj) and (source == "decomposition_certificate" or admission != "mip_or_certificate")):
+            return fail(f"missing_gold_{suite}", f"missing gold_{suite}.json or objective")
+        return fail("not_admitted", f"incomplete under the {admission!r} rule (data.json, prompt.txt, meta.json and both golds must be readable, with an admitted ground truth)")
 
+    from src.utils.families import family
+    from src.utils.instance_suite import GAP_RULE, admission_issue, certified
+
+    truth, decomposed = objectives
+    source = result["ground_truth_source"]
+    if admission != "family":
+        # The registered rules admit only verified golds (instance_suite: a gold with an error or a failed
+        # verification is not eligible); the paper's own pipelines record no verification.
+        mono_ok, decomposition_ok = (_verified_gold(inst_dir / name) for name in ("gold_monolithic.json", f"gold_{suite}.json"))
+        if source == "monolithic_mip" and not mono_ok:
+            return fail("not_admitted", "the admitted MIP optimum comes from an unverified or failed gold_monolithic.json")
+        if source == "decomposition_certificate" and not decomposition_ok:
+            return fail("not_admitted", f"the admitted certificate comes from an unverified or failed gold_{suite}.json")
+        if not decomposition_ok:
+            if admission == "strict":
+                return fail("not_admitted", f"gold_{suite}.json failed or is not verified")
+            decomposed = None  # the reused families' rule discards an unverified reference (MIP-only admission)
+    result["reference_objective"] = truth
+    truth, tol = float(truth), family(problem).tol
+    scale = max(1.0, abs(truth))
+    if source == "monolithic_mip" and not abs(float(result["mono_obj"]) - truth) <= tol * scale:
+        return fail("objective_mismatch", f"meta.json ground truth {truth} differs from the monolithic objective {result['mono_obj']}")
+    if source == "decomposition_certificate" and not abs(float(decomposed) - truth) <= tol * scale:
+        return fail("objective_mismatch", f"meta.json ground truth {truth} differs from the certified decomposition objective {decomposed}")
+    if admission != "family":
+        # The registered predicates themselves (src.utils.instance_suite), applied to the stored golds.
+        try:
+            mono_gold, ref_gold = (json.loads((inst_dir / name).read_text()) for name in ("gold_monolithic.json", f"gold_{suite}.json"))
+        except (OSError, ValueError) as exc:
+            return fail("invalid_reference", f"failed to read the golds: {type(exc).__name__}: {exc}")
+        if admission == "strict":
+            try:
+                reason, _ = admission_issue(family(problem), mono_gold, ref_gold)
+            except (TypeError, ValueError) as exc:  # e.g. a non-numeric total_time: a bad record, not a batch abort
+                return fail("invalid_reference", f"gold timing or bound fields are not numeric: {type(exc).__name__}: {exc}")
+            if reason is not None:
+                status = "not_admitted"
+                if reason.startswith("decomposition gap"):
+                    status = "objective_mismatch" if float(decomposed) < truth else "inadmissible_gap"
+                return fail(status, f"the strict admission rule rejects it: {reason}")
+        else:
+            if source == "decomposition_certificate" and not certified(ref_gold, tol):
+                return fail("not_admitted", f"ground truth from a decomposition certificate, but gold_{suite}.json is not certified")
+            if decomposed is not None and certified(ref_gold, tol):
+                # As _admit_mip_or_certificate: a certified reference must match the ground truth and any verified MIP optimum.
+                if not abs(float(decomposed) - truth) <= tol * scale:
+                    return fail("objective_mismatch", f"certified reference {decomposed} differs from the ground truth {truth}")
+                if mono_ok and _finite(result["mono_obj"]) and not abs(float(result["mono_obj"]) - float(decomposed)) <= tol * max(1.0, abs(float(result["mono_obj"]))):
+                    return fail("objective_mismatch", f"certified reference {decomposed} differs from the verified MIP optimum {result['mono_obj']}")
+    if decomposed is None:  # the reused families' MIP-only admission
+        result["status"] = "pass_simple_test"
+        return result
+    difference = float(decomposed) - truth
+    # The paper rule keeps its historical absolute tolerance; the registered rules use the family's tolerance.
+    if (abs(difference) < 1e-4) if admission == "family" else (abs(difference) <= tol * scale):
+        result["status"] = "pass_simple_test"
+    elif difference > 0:
+        result["decomposition_gap"] = difference / scale
+        if admission == "strict" and result["decomposition_gap"] > GAP_RULE:
+            return fail("inadmissible_gap", f"decomposition gap {result['decomposition_gap']} above the {GAP_RULE} admission rule")
+        result["status"] = "reference_gap"
+    else:
+        return fail("objective_mismatch", f"Objective mismatch: ground truth={truth}, decomposition={decomposed}")
     return result
 
 
@@ -140,8 +265,15 @@ def _find_instance_dirs(root: Path) -> list[Path]:
     return sorted(dirs)
 
 
+def _validate_one(path: Path, validation_level: str) -> dict[str, Any]:
+    try:
+        return validate_instance(path, validation_level=validation_level)
+    except (OSError, ValueError, TypeError) as exc:  # one unreadable instance never hides the others' results
+        return {"name": path.name, "path": str(path), "status": "invalid_reference", "issues": [f"validation failed: {type(exc).__name__}: {exc}"]}
+
+
 def validate_all(instances_root: Path, validation_level: str = "strict") -> list[dict[str, Any]]:
-    return [validate_instance(p, validation_level=validation_level) for p in _find_instance_dirs(instances_root)]
+    return [_validate_one(p, validation_level) for p in _find_instance_dirs(instances_root)]
 
 
 def print_summary(results: list[dict[str, Any]], root: Path) -> None:
@@ -153,6 +285,7 @@ def print_summary(results: list[dict[str, Any]], root: Path) -> None:
     missing_cg = [r for r in results if r["status"] == "missing_gold_cg"]
     mismatch = [r for r in results if r["status"] == "objective_mismatch"]
     reference_gaps = [r for r in results if r["status"] == "reference_gap"]
+    not_admitted = [r for r in results if r["status"] in {"not_admitted", "inadmissible_gap", "unregistered_family", "invalid_reference"}]
 
     print(f"\n{'=' * 60}")
     print(f"VALIDATION SUMMARY for {root}")
@@ -166,6 +299,8 @@ def print_summary(results: list[dict[str, Any]], root: Path) -> None:
     print(f"  Missing gold cg:      {len(missing_cg)}")
     print(f"  Objective mismatch:   {len(mismatch)}")
     print(f"  Decomposition gaps:   {len(reference_gaps)} (retained as educational examples)")
+    if not_admitted:
+        print(f"  Not admitted:         {len(not_admitted)} (outside the registered admission rule)")
     print()
 
     for bucket, label in (
@@ -174,6 +309,7 @@ def print_summary(results: list[dict[str, Any]], root: Path) -> None:
         (missing_bd, "Missing gold bd"),
         (missing_cg, "Missing gold cg"),
         (mismatch, "Objective mismatch"),
+        (not_admitted, "Not admitted"),
     ):
         if bucket:
             print(f"{label}:")
@@ -311,7 +447,7 @@ def main() -> None:
         type=str,
         default="strict",
         choices=["strict", "simple"],
-        help="strict checks mono+bd/cg; simple checks data+prompt+mono+meta only.",
+        help="strict checks completeness and objectives under the registered admission rule; simple checks data+prompt+mono+meta and the admitted ground-truth source only.",
     )
     parser.add_argument(
         "--num-instances",

@@ -81,13 +81,13 @@ def test_missing_instance_generated_once(tmp_path, monkeypatch):
 
 
 def test_strict_cg_validation_compares_cg_objective(tmp_path):
-    directory = tmp_path / "cg" / "bp" / "bp_small_seed000"
+    directory = tmp_path / "cg" / "shift" / "shift_small_seed000"
     complete_instance(directory)
     assert importlib.import_module("src.01_gen").validate_instance(directory)["status"] == "pass_simple_test"
 
 
 def test_positive_decomposition_gap_survives_bad_instance_cleanup(tmp_path):
-    directory = tmp_path / "cg" / "bp" / "bp_small_seed000"
+    directory = tmp_path / "cg" / "shift" / "shift_small_seed000"
     complete_instance(directory)
     (directory / "gold_cg.json").write_text('{"best_objective":2}')
     generator = importlib.import_module("src.01_gen")
@@ -98,14 +98,14 @@ def test_positive_decomposition_gap_survives_bad_instance_cleanup(tmp_path):
 
 
 def test_objective_better_than_reference_is_flagged(tmp_path):
-    directory = tmp_path / "cg" / "bp" / "bp_small_seed000"
+    directory = tmp_path / "cg" / "shift" / "shift_small_seed000"
     complete_instance(directory)
     (directory / "gold_cg.json").write_text('{"best_objective":0}')
     assert importlib.import_module("src.01_gen").validate_instance(directory)["status"] == "objective_mismatch"
 
 
 def test_unreadable_reference_is_not_a_simple_pass(tmp_path):
-    directory = tmp_path / "cg" / "bp" / "bp_small_seed000"
+    directory = tmp_path / "cg" / "shift" / "shift_small_seed000"
     complete_instance(directory)
     (directory / "gold_monolithic.json").write_text("{not json")
     assert importlib.import_module("src.01_gen").validate_instance(directory, "simple")["status"] == "invalid_reference"

@@ -40,6 +40,22 @@ def test_pdptw_reference_finds_the_deadline_route(tmp_path):
     assert result["best_objective"] == 8714
 
 
+def test_pdptw_monolithic_records_its_solve_time(tmp_path):
+    """Codex final review, finding 7: the monolithic gold records its MIP time (total_time, checked by the admission
+    rule), Gurobi's runtime and its parameters; the objective and routes are unchanged."""
+    import math
+
+    from src.cg.pdptw.a_gold_monolithic import PDPTWBaseline
+    from src.utils.reference_output import reference_output
+
+    path = _write(tmp_path, "data.json", PDPTW_EDGE)
+    result = PDPTWBaseline().run(str(path))
+    assert (result["best_objective"], result["routes"]) == (8714.0, [[1, 2, 3, 4]])
+    assert all(math.isfinite(result[key]) and result[key] >= 0 for key in ("total_time", "runtime", "end_to_end_seconds"))
+    assert result["total_time"] <= result["end_to_end_seconds"] and result["params"]["Threads"] == 1
+    assert reference_output("cg", "pdptw", PDPTW_EDGE, result)["status"] == "optimal"
+
+
 def test_pdptw_shortcut_keeps_its_seed_plan(monkeypatch, tmp_path):
     # Codex review 5, finding 3: the final master finding nothing must not lose the verified seed plan.
     from src.cg.pdptw.a_gold_cg import PDPTWRootColumnGeneration

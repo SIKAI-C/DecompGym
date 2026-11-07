@@ -16,11 +16,17 @@ import time
 import uuid
 
 from src.experiments.resources import CleanupError, stop_owned_tree
-from src.agent.safe_artifacts import UnsafeArtifact, read_regular, read_regular_text
+from src.agent.safe_artifacts import MAX_ARTIFACT_BYTES, UnsafeArtifact, read_regular, read_regular_text
 from src.experiments.environment import RuntimeEnvironmentError, require_runtime_environment
 
 
 NATIVE_SOLVER_POLICY = "private-native-sandbox-v1"
+# The candidate's output.json readback limit, on fresh collection and on cached reads. The paper protocol (no policy)
+# reads at most MAX_ARTIFACT_BYTES (4 MiB); a campaign config may select OUTPUT_POLICY_32MIB with its top-level
+# "solver_output_policy" (src.experiments.plan), which is then recorded in every execution request and record. The
+# solver.py and data.json limits are unchanged.
+OUTPUT_POLICY_32MIB = "output-json-readback-32MiB-v1"
+OUTPUT_LIMITS = {None: MAX_ARTIFACT_BYTES, OUTPUT_POLICY_32MIB: 32 * 1024 * 1024}
 PROCESS_POLICY = "(deny syscall-unix (syscall-number 82) (syscall-number 147) (syscall-number 244))"
 class SolverLaunchError(RuntimeError):
     """A launcher failure, distinct from diagnostics of the generated program."""
@@ -105,8 +111,14 @@ NATIVE_SOLVER_LOCK = threading.Lock()
 class NativeSandboxExecutor:
     # Bytes kept from the end of each of stdout and stderr (the paper's 12 000; the scale-up protocol uses 20 000).
     stream_tail_bytes = 12000
+    output_policy = None  # OUTPUT_LIMITS key; None is the paper's 4 MiB output.json readback
+    output_limit = OUTPUT_LIMITS[None]
 
-    def __init__(self, *, license_file: Path, expected_environment: dict | None = None):
+    def __init__(self, *, license_file: Path, expected_environment: dict | None = None, output_policy: str | None = None):
+        if output_policy not in OUTPUT_LIMITS:
+            raise ValueError(f"Unknown solver output policy: {output_policy!r}")
+        if output_policy is not None:
+            self.output_policy, self.output_limit = output_policy, OUTPUT_LIMITS[output_policy]
         self.license_file = license_file.resolve(strict=True)
         if not self.license_file.is_file():
             raise RuntimeEnvironmentError("The declared local Gurobi license is unavailable")
@@ -123,13 +135,15 @@ class NativeSandboxExecutor:
         solver = read_regular(attempt_dir, "solver.py")
         data = read_regular(attempt_dir.parent.parent, "data.json")
         fingerprint = {"solver_sha256": sha(solver), "input_sha256": sha(data), "timeout": timeout, "threads": threads, "environment": self.environment}
+        if self.output_policy is not None:
+            fingerprint["output_policy"] = self.output_policy
         saved = attempt_dir / "native_solver_receipt.json"
         if saved.exists():
             receipt = json.loads(saved.read_text())
             if receipt["request"] != fingerprint:
                 raise RuntimeEnvironmentError("A committed native execution request changed")
             expected_output = receipt["result"]["output_sha256"]
-            output = read_regular(attempt_dir, "output.json", missing_ok=True)
+            output = read_regular(attempt_dir, "output.json", missing_ok=True, maximum=self.output_limit)
             if (sha(output) if output is not None else None) != expected_output:
                 raise RuntimeEnvironmentError("A committed native execution output changed")
             return tuple(receipt["result"][name] for name in ("exec_ok", "stdout", "stderr", "output"))
@@ -157,12 +171,18 @@ class NativeSandboxExecutor:
         save(saved, {"request": fingerprint, "result": record})
         return tuple(record[name] for name in ("exec_ok", "stdout", "stderr", "output"))
 
+    def read_output(self, work: Path) -> str | None:
+        """The candidate's output.json in its working directory (None if absent), within this protocol's readback limit."""
+        return read_regular_text(work, "output.json", missing_ok=True, maximum=self.output_limit)
+
     def execute_bytes(self, solver, data, timeout, threads, *, evidence: Path):
         """No archive path is granted to the candidate; cleanup precedes every readback."""
         started = time.monotonic()
         token = "DECOMPBENCH_READY_" + uuid.uuid4().hex
         record = {"policy": NATIVE_SOLVER_POLICY, "solver_sha256": sha(solver), "input_sha256": sha(data), "timeout": timeout, "threads": threads,
                   "exec_ok": False, "output": None, "output_text": None, "stdout": "", "stderr": "", "integrity_violations": [], "cleanup_verified": False, "bootstrap_ready": False}
+        if self.output_policy is not None:
+            record.update(output_policy=self.output_policy, output_limit_bytes=self.output_limit)
         evidence.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="decompbench-native-", dir="/private/tmp") as temporary:
             root = Path(temporary)
@@ -228,7 +248,7 @@ class NativeSandboxExecutor:
                 except (OSError, UnsafeArtifact):
                     record["integrity_violations"].append(str(path.relative_to(case)))
             try:
-                record["output_text"] = read_regular_text(work, "output.json", missing_ok=True)
+                record["output_text"] = self.read_output(work)
                 output = json.loads(record["output_text"]) if record["output_text"] is not None else None
                 if not isinstance(output, dict):
                     raise ValueError("output.json missing, invalid, or not an object")

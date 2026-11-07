@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "name": "decompgym-small-scale-20261106",
-  "description": "Small-scale track: the fourteen literature-recipe families (126 instances: UFL, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling), paper protocol except that a data.json above 512 KiB (only k-median) reaches the agent context as a structural preview and the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2), the twelve paper models from older to newer generations; candidate solvers are also serialized host-side by the native solver lock (two workers, one solver at a time), added after paper-arxiv-v1.",
-  "dataset_inventory_sha256": "576feb5779f43bd3555d281d69ee65789d4577870fbd9e91b61fdb0846546c8b",
+  "name": "decompgym-small-scale-20261107",
+  "description": "Small-scale track: all twenty registered families as one cohort (180 instances from outputs/small_scale_data: bd ufl, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, two-stage stochastic production planning, location routing, assignment and tardiness scheduling; cg bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling, shift scheduling, graph coloring, nurse rostering), the twelve paper models from older to newer generations. Paper protocol except, added after paper-arxiv-v1: the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2) for author, reflection and judge; the generation and reflection context is mounted read-only in the agent workspace with a structured prompt (context_delivery mounted-files-v1) instead of being pasted; the solver output.json readback limit is 32 MiB (solver_output_policy output-json-readback-32MiB-v1); candidate solvers are serialized host-side by the native solver lock (two workers, one solver at a time).",
+  "dataset_inventory_sha256": "0f48abf0d51063b091e558649bd7c11af7e49b4706e60b3caa0a1864a5b47869",
   "prompt_policies": {
     "feedback": "qualitative-objective-feedback-v1",
     "workspace": "existing-target-cwd-v2"
@@ -14,8 +14,9 @@
     "algorithm_judge": "strict-decomposition-source-review-v2",
     "output_contract": "strict-decomposition-output-contract-v2",
     "reflection_delivery": "consume-reflection-opportunity-and-continue-v1",
-    "data_context": "full-or-structural-preview-512KiB-v1"
+    "context_delivery": "mounted-files-v1"
   },
+  "solver_output_policy": "output-json-readback-32MiB-v1",
   "reflection_policy": "consume-reflection-opportunity-and-continue-v1",
   "reference_policy": "strict-calibrated-references-20261013-v2",
   "model_queue": [
@@ -97,13 +98,16 @@
     "judge_effort": "high"
   },
   "cohort": {
-    "name": "small_scale_126_all_models_20261106",
+    "name": "small_scale_180_all_models_20261107",
     "families": [
       "ufl",
       "km",
       "fctp",
       "scfl",
       "lbbd_ps",
+      "tsso",
+      "lrp",
+      "lbbd",
       "bp",
       "csp",
       "gap",
@@ -112,7 +116,10 @@
       "cvrp",
       "vrptw",
       "pdptw",
-      "rcsp"
+      "rcsp",
+      "shift",
+      "gcol",
+      "nrp"
     ]
   }
 }

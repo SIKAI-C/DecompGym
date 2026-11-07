@@ -1,6 +1,7 @@
 """Fresh Docker CLI edits with private credentials and recoverable call records."""
 from __future__ import annotations
 
+from dataclasses import replace
 import hashlib
 import json
 import os
@@ -11,6 +12,8 @@ import threading
 from src.agent.cli_events import parse_events
 from src.agent.result import AgentResult, save_result
 from src.agent.container import DockerRuntime
+from src.agent import mounted_context
+from src.agent.prompts.mounted import CONTEXT_DELIVERIES, CONTEXT_DIRECTORIES, MOUNTED_WORKSPACE_POLICY, WORKSPACE, workspace_part
 from src.agent.prompts.policy import WORKSPACE_POLICY, record_workspace_prompt
 from src.agent.safe_artifacts import read_regular_text
 from src.experiments.environment import RuntimeEnvironmentError
@@ -53,17 +56,25 @@ def credential_from_environment(backend):
 
 
 class DockerCliClient:
-    def __init__(self, model, *, backend, image_id, runtime: DockerRuntime, evidence_root: Path, effort="medium", timeout=900, role="generation", credential_provider=credential_from_environment):
+    def __init__(self, model, *, backend, image_id, runtime: DockerRuntime, evidence_root: Path, effort="medium", timeout=900, role="generation", credential_provider=credential_from_environment,
+                 context_delivery=None):
         if backend not in CLI_VERSIONS or not image_id.startswith("sha256:"):
             raise ValueError("An approved backend and immutable image ID are required")
+        if context_delivery not in CONTEXT_DELIVERIES:
+            raise ValueError(f"Unknown context delivery: {context_delivery!r}")
         self.model, self.backend, self.image_id = model, backend, image_id
         self.runtime, self.evidence_root = runtime, evidence_root
         self.effort, self.timeout, self.role = effort, timeout, role
         self.credential_provider = credential_provider
+        # None: the paper's pasted context (compose_prompt). CONTEXT_DELIVERY_MOUNTED: read-only files in the workspace.
+        self.context_delivery = context_delivery
 
     def protocol(self):
-        return {"backend": self.backend, "transport": "docker", "transport_policy": DOCKER_EDIT_POLICY, "model": self.model, "effort": self.effort, "role": self.role,
-                "timeout": self.timeout, "workspace_policy": WORKSPACE_POLICY, "image_id": self.image_id, "cli_version": CLI_VERSIONS[self.backend]}
+        value = {"backend": self.backend, "transport": "docker", "transport_policy": DOCKER_EDIT_POLICY, "model": self.model, "effort": self.effort, "role": self.role,
+                 "timeout": self.timeout, "workspace_policy": WORKSPACE_POLICY, "image_id": self.image_id, "cli_version": CLI_VERSIONS[self.backend]}
+        if self.context_delivery is not None:
+            value["context_delivery"] = self.context_delivery
+        return value
 
     def prepare(self):
         key = (self.image_id, hashlib.sha256(self.runtime.seccomp_profile.read_bytes()).hexdigest())
@@ -97,12 +108,19 @@ class DockerCliClient:
                 sections.append(f"--- BEGIN CONTEXT: {label} ---\n{contents}\n{ending}")
         return "\n\n".join(sections)
 
+    def compose_mounted_prompt(self, target_name, prompt, files):
+        """Part 1 (workspace and files) before the runner's structured task prompt; returns (prompt, workspace note)."""
+        workspace, note = workspace_part(target_name, files, self.backend)
+        return workspace + "\n\n" + prompt, note
+
     def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
         target = Path(target).absolute()
         log_dir = Path(log_dir or target.parent).resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
         if target.is_symlink() or target.name not in {"solver.py", "debug.md", "alg_verifier.md"}:
             raise ValueError("Docker edits require an ordinary declared target")
+        if self.context_delivery is not None:
+            return self._edit_mounted(target, prompt, context, log_dir, step)
         effective = record_workspace_prompt(Path("/work"), target.name, self.compose_prompt(target.name, prompt, context), log_dir, step, old_absolute_note=self.backend == "agy-cli")
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
@@ -112,6 +130,38 @@ class DockerCliClient:
                                   artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role})
         return self._record(target, log_dir, step, result)
 
+    def _edit_mounted(self, target, prompt, context, log_dir, step):
+        """The mounted-files call: the same job and collection as the paper path, with the context files mounted read-only."""
+        files = mounted_context.mounted_files(context)
+        composed, note = self.compose_mounted_prompt(target.name, prompt, files)
+        effective = record_workspace_prompt(Path(WORKSPACE), target.name, composed, log_dir, step, old_absolute_note=self.backend == "agy-cli", note=note, version=MOUNTED_WORKSPACE_POLICY)
+        (log_dir / f"{step}_context.json").write_text(json.dumps(mounted_context.evidence(files, target.name), indent=2) + "\n")
+        mounts = self.prepare()
+        credential = self.credential_provider(self.backend)
+        job = {"target": target.name, "initial_content": read_regular_text(target.parent, target.name, missing_ok=True) or "", "prompt": effective,
+               "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout, "credential": credential}
+        result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
+                                  artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role,
+                                                                                                                                         "context_delivery": self.context_delivery},
+                                  context=mounted_context.volume_contents(files))
+        return self._record(target, log_dir, step, result)
+
+    def _ignore_context_copies(self, result, log_dir, step):
+        """The worker's search for a misplaced target walks /work, so it also meets the read-only mounted copies (for
+        example /work/history/attempt_01/solver.py). They are context, never a delivery: drop them from the delivery
+        report and record what was dropped. Only the mounted-files protocol has such copies."""
+        if self.context_delivery is None or "delivery.json" not in result.artifacts:
+            return result
+        delivery = json.loads(result.artifacts["delivery.json"])
+        prefixes = tuple(directory[len(WORKSPACE) + 1:] + "/" for directory in CONTEXT_DIRECTORIES)
+        misplaced = delivery.get("misplaced", {})
+        ignored = sorted(path for path in misplaced if path.startswith(prefixes))
+        if not ignored:
+            return result
+        delivery["misplaced"] = {path: text for path, text in misplaced.items() if path not in ignored}
+        (log_dir / f"{step}_context_copies_ignored.json").write_text(json.dumps({"ignored_mounted_copies": ignored}, indent=2) + "\n")
+        return replace(result, artifacts=result.artifacts | {"delivery.json": json.dumps(delivery)})
+
     def recover_file(self, target, *, log_dir, step):
         state = log_dir / f"{step}_container.json"
         if not state.exists():
@@ -119,6 +169,7 @@ class DockerCliClient:
         return self._record(target, log_dir, step, self.runtime.recover(state))
 
     def _record(self, target, log_dir, step, result):
+        result = self._ignore_context_copies(result, log_dir, step)
         for name in ("events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"):
             if name in result.artifacts:
                 (log_dir / f"{step}_{name}").write_text(result.artifacts[name])

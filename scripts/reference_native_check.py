@@ -200,6 +200,29 @@ def instances(problems, selected):
     return found
 
 
+# The acceptance harness besides the bundled reference: the native sandbox (and its runtime-environment check), the
+# numerical verifier with the output contract and the family verifier it loads by path (src.utils.families dispatch),
+# and the scoring rule (OutputVerifier.assess_status / load_gold_objective). Their src import closure is fingerprinted.
+HARNESS_MODULES = ("src.experiments.sandbox", "src.experiments.verification", "src.utils.output_contract")
+
+
+def environment_digest(environment):
+    return hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()
+
+
+def harness_identity(problem, environment):
+    """Everything besides data, golds and the bundled reference that decides a case's result: this diagnostic
+    adapter (the solver template, the cache rule and the scoring call live in this script), the src modules of the
+    sandbox, verifier, output contract and scoring code (HARNESS_MODULES plus the family's d_verifier.py, with their
+    import closure) and the native runtime environment (NativeSandboxExecutor.environment)."""
+    suite = REFERENCES[problem][0]
+    files = {str(Path(__file__).resolve().relative_to(REPO)): digest(Path(__file__).resolve())}
+    for name in import_closure([*HARNESS_MODULES, f"src.{suite}.{problem}.d_verifier"]):
+        path = module_path(name)
+        files[str(path.relative_to(REPO))] = digest(path)
+    return {"files": dict(sorted(files.items())), "native_environment_sha256": environment_digest(environment)}
+
+
 def scoring_inputs(source):
     """Files that decide the score besides data.json (gold metadata); a cached record is reused only if they are unchanged."""
     return {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}
@@ -211,12 +234,16 @@ def run_case(executor, destination, problem, instance, variant):
     case = destination / variant / suite / problem / instance
     result_path = case / "calibration.json"
     solver, inventory = solver_source(problem, variant)
+    harness = harness_identity(problem, executor.environment)
     if result_path.exists():
         previous = json.loads(result_path.read_text())
         previous_inventory = json.loads((case / "source_inventory.json").read_text())
         expected_solver = hashlib.sha256(solver.encode()).hexdigest()
         if previous_inventory["original_sources"] != inventory or previous["input_sha256"] != digest(source / "data.json") or previous["solver_sha256"] != expected_solver or previous.get("scoring_inputs_sha256") != scoring_inputs(source) or digest(case / "attempts/attempt_01/solver.py") != expected_solver:
             raise RuntimeError("Calibration inputs/source changed; use a new variant or output directory and preserve the old evidence")
+        if previous.get("harness_identity") != harness:
+            # Also a record written before the harness identity existed: it cannot show an unchanged harness.
+            raise RuntimeError("Acceptance harness (adapter, sandbox, verifier, output contract, scoring) or native environment changed or unrecorded; use a new variant or output directory and preserve the old evidence")
         if previous.get("output_sha256") and digest(case / "attempts/attempt_01/output.json") != previous["output_sha256"]:
             raise RuntimeError("Saved calibration output changed")
         return previous
@@ -241,7 +268,7 @@ def run_case(executor, destination, problem, instance, variant):
                                                execution_timed_out="[framework] solver execution timed out" in stderr)
     result = {"suite": suite, "problem": problem, "instance": instance, "variant": variant, "started_at_utc": started, "finished_at_utc": datetime.now(timezone.utc).isoformat(), "exec_ok": ok, "feasible_and_consistent": verified["ok"], "issues": verified.get("issues", []), "objective": objective, "gold": gold, "gold_monolithic": gold_monolithic,
               "gold_sources_agree": gold is not None and gold_monolithic is not None and abs(gold - gold_monolithic) <= 1e-9 * max(1.0, abs(gold)), "gap": gap, "numeric_status": status, "algorithm_review": "not performed (trusted formal reference); numeric_status is assess_status with verify_ok = numerical verification only", "passed_numeric": status == "ok", "execution_seconds": receipt.get("execution_seconds"), "timed_out": receipt.get("timed_out"), "returncode": receipt.get("returncode"),
-              "native_cleanup_verified": receipt["cleanup_verified"], "integrity_violations": receipt["integrity_violations"], "input_sha256": digest(source / "data.json"), "scoring_inputs_sha256": scoring_inputs(source), "native_environment_sha256": hashlib.sha256(json.dumps(receipt_request["environment"], sort_keys=True).encode()).hexdigest(), "solver_sha256": digest(attempt / "solver.py"), "output_sha256": receipt.get("output_sha256"),
+              "native_cleanup_verified": receipt["cleanup_verified"], "integrity_violations": receipt["integrity_violations"], "input_sha256": digest(source / "data.json"), "scoring_inputs_sha256": scoring_inputs(source), "native_environment_sha256": environment_digest(receipt_request["environment"]), "harness_identity": harness, "solver_sha256": digest(attempt / "solver.py"), "output_sha256": receipt.get("output_sha256"),
               "calibration": {key: value for key, value in ((output or {}).get("_calibration") or {}).items() if key != "model_solves"} | {"model_solve_count": len(((output or {}).get("_calibration") or {}).get("model_solves") or [])}, "solver_error_tail": stderr[-1200:] if not ok else None}
     save(result_path, result)
     print(json.dumps({key: result[key] for key in ("problem", "instance", "numeric_status", "execution_seconds", "gap", "issues")}), flush=True)
@@ -267,7 +294,7 @@ def main():
     results = [run_case(executor, destination, problem, instance, args.variant) for problem, instance in selected]
     tag = args.variant + ("_" + "_".join(args.problems) if args.problems != list(REFERENCES) else "") + ("_selected" if args.instances else "")
     save(destination / (tag + "_run_summary.json"), {"completed_at_utc": datetime.now(timezone.utc).isoformat(), "dataset": str(DATASET.relative_to(REPO)), "variant": args.variant, "timeout_seconds": 60, "threads": 1, "gap_threshold": GAP_THRESHOLD,
-                                                    "native_environment": executor.environment, "native_environment_sha256": hashlib.sha256(json.dumps(executor.environment, sort_keys=True).encode()).hexdigest(),
+                                                    "native_environment": executor.environment, "native_environment_sha256": environment_digest(executor.environment),
                                                     "all_cases_same_environment": len({row["native_environment_sha256"] for row in results}) <= 1, "expected_cases": len(selected), "completed_cases": len(results), "cases": results})
     with (destination / (tag + "_run_summary.csv")).open("w", newline="") as stream:
         writer = csv.writer(stream)

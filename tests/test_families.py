@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -87,7 +88,12 @@ def test_each_config_pins_registered_families_and_their_contract(config):
 @pytest.mark.parametrize("dataset", ["data", "data_harder", "outputs/litgen_data"])
 def test_each_dataset_holds_its_families_nine_instances(dataset):
     if not (ROOT / dataset).is_dir():
-        pytest.skip(f"{dataset} is not present (outputs/ is not part of the repository)")
+        # A missing dataset fails release validation; DECOMPGYM_ALLOW_MISSING_REFERENCE_DATA=1 turns the failure into an
+        # explicit skip (the convention of tests/reference_data.py), e.g. on a checkout without outputs/.
+        message = f"{dataset} is not present (outputs/ is not part of the repository)"
+        if os.environ.get("DECOMPGYM_ALLOW_MISSING_REFERENCE_DATA") == "1":
+            pytest.skip(message)
+        pytest.fail(message)
     for name in dataset_families(dataset):
         entry = FAMILIES[name]
         found = sorted(p.parent.name for p in (ROOT / dataset / entry.suite / name).glob("*/data.json"))

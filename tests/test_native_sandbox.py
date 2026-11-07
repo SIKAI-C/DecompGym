@@ -198,3 +198,19 @@ def test_executor_receipt_survives_controller_restart_without_execution(executor
     (work / "output.json").write_text("changed")
     with pytest.raises(Exception, match="committed native execution output changed"):
         executor(work, 10)
+
+
+def test_output_readback_limit_follows_the_recorded_policy_and_only_the_working_directory_counts(tmp_path):
+    from src.experiments.sandbox import OUTPUT_POLICY_32MIB
+    license_file = Path.home() / "gurobi.lic"
+    paper, large = NativeSandboxExecutor(license_file=license_file), NativeSandboxExecutor(license_file=license_file, output_policy=OUTPUT_POLICY_32MIB)
+    dense = "import json\nfrom pathlib import Path\nPath('output.json').write_text(json.dumps({'x': [[0.0] * 600 for _ in range(600)]}, indent=4))\n"  # about 6.5 MB
+    accepted = execute(large, tmp_path / "large", dense, timeout=30)
+    assert accepted["exec_ok"] and len(accepted["output"]["x"]) == 600 and accepted["output_limit_bytes"] == 32 * 1024 * 1024
+    rejected = execute(paper, tmp_path / "paper", dense, timeout=30)
+    assert not rejected["exec_ok"] and "size limit" in rejected["stderr"] and "output_policy" not in rejected
+    huge = "from pathlib import Path\nPath('output.json').write_text('{\"x\": \"' + 'a' * (32 * 1024 * 1024) + '\"}')\n"
+    assert not execute(large, tmp_path / "huge", huge, timeout=30)["exec_ok"]
+    misplaced = "import json\nfrom pathlib import Path\nPath('tmp/output.json').write_text(json.dumps({'status': 'optimal'}))\n"
+    result = execute(large, tmp_path / "misplaced", misplaced)
+    assert not result["exec_ok"] and "output.json missing" in result["stderr"]

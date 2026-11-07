@@ -201,6 +201,8 @@ class MultiFileDockerCliClient(DockerCliClient):
             raise ValueError("MultiFileDockerCliClient requires a multi-file DeliverySpec; single-file tasks use DockerCliClient")
         if not isinstance(runtime, MultiFileDockerRuntime):
             raise ValueError("Multi-file delivery requires the multi-file runtime entry")
+        if kwargs.get("context_delivery") is not None:
+            raise ValueError("Multi-file delivery pastes its context; the mounted-files protocol is single-file only")
         super().__init__(model, runtime=runtime, **kwargs)
         self.delivery = delivery
 
