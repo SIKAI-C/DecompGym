@@ -67,6 +67,15 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
             meta = {"seed": seed, "size": size, "folder": folder, "ground_truth_objective": truth, "ground_truth_source": source,
                     "reference_proved": bool(ref is not None and _certified(ref, tol)), "reference_seconds": (ref or {}).get("total_time"),
                     "mip_time_limit": mono_time_limit}
+            # Generator provenance (source.json / provenance.json; never shown to the agent) is summarized in meta.json.
+            # Fully synthetic recipes (no sidecar) record the scalar recipe fields of data.json instead.
+            for name in ("source.json", "provenance.json"):
+                if (inst_dir / name).is_file():
+                    provenance = json.loads((inst_dir / name).read_text())
+                    meta["source"] = {"file": name, **{k: v for k, v in provenance.items() if not isinstance(v, (list, dict))}}
+                    break
+            else:
+                meta["source"] = {"synthetic": True, **{k: v for k, v in data.items() if not isinstance(v, (list, dict))}}
             (inst_dir / "meta.json").write_text(json.dumps(meta, indent=2))
             metas.append(meta)
     return metas

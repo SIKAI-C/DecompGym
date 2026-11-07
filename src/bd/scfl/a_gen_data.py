@@ -35,6 +35,7 @@ Every CAP unit cost alloc/lambda_bar is a multiple of 1/80 (up to the double con
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -119,7 +120,8 @@ def generate_scfl_instance(seed: int, size: str = "medium", output_dir: str | Pa
         raise ValueError(f"Unknown size_label '{size}'. Expected one of {list(SIZE_CONFIG)}.")
     S = SIZE_CONFIG[size]["n_scenarios"]
     rng = np.random.default_rng([seed, 0x5CF1])
-    base = load_cap_base(CAPACITATED_BASES[int(rng.integers(len(CAPACITATED_BASES)))])
+    base_name = CAPACITATED_BASES[int(rng.integers(len(CAPACITATED_BASES)))]
+    base = load_cap_base(base_name)
     sto = make_stochastic(base, S, seed)  # the scale-up generator itself: conversion, rounding and stream
     I, J = sto.I, sto.J
     inst = SCFLInstance(size, I, J, S, [int(v) for v in sto.capacity], [float(v) for v in sto.fixed],
@@ -129,4 +131,8 @@ def generate_scfl_instance(seed: int, size: str = "medium", output_dir: str | Pa
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Provenance stays out of data.json (the only file the agent sees).
+        source = {"recipe": "Bodur et al. (2017) Sec. 4.4 scenarios on an OR-Library CAP base", "base": base_name,
+                  "n_scenarios": S, "base_stream": f"default_rng([{seed}, 0x5CF1])", "scenario_stream": f"make_stochastic(seed={seed})"}
+        (out_dir / "source.json").write_text(json.dumps(source, indent=2))
     return inst.to_dict()
