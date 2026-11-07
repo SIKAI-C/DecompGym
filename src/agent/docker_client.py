@@ -16,10 +16,11 @@ from src.agent.cli_events import parse_events
 from src.agent.result import AgentResult, save_result
 from src.agent.container import DockerRuntime
 from src.agent import mounted_context
-from src.agent.prompts.mounted import CONTEXT_DELIVERIES, MOUNTED_CPP_WORKSPACE_POLICY, MOUNTED_WORKSPACE_POLICY, WORKSPACE, workspace_part
+from src.agent.prompts.mounted import (CONTEXT_DELIVERIES, MOUNTED_CPP_WORKSPACE_POLICY, MOUNTED_REVIEW_WORKSPACE_POLICY, MOUNTED_WORKSPACE_POLICY, REVIEW_HEADING, REVIEW_TARGET, WORKSPACE,
+                                      review_files, review_workspace_part, workspace_part)
 from src.agent.prompts.policy import WORKSPACE_POLICY, record_workspace_prompt
 from src.agent.safe_artifacts import read_regular_text
-from src.agent.specs import DEFAULT_RUNTIME, MOUNT_LAYOUT, SINGLE_FILE_DELIVERY, MountLayout, RuntimeSpec
+from src.agent.specs import DEFAULT_RUNTIME, MOUNT_LAYOUT, REVIEW_LAYOUT, SINGLE_FILE_DELIVERY, MountLayout, RuntimeSpec
 from src.experiments.environment import RuntimeEnvironmentError
 
 
@@ -162,16 +163,22 @@ class DockerCliClient:
         return "\n\n".join(sections)
 
     def compose_mounted_prompt(self, target_name, prompt, files):
-        """Part 1 (workspace and files) before the runner's structured task prompt; returns (prompt, workspace note)."""
+        """Part 1 (workspace and files) before the runner's structured task prompt; returns (prompt, workspace note). A
+        method-judge call (alg_verifier.md, REVIEW_LAYOUT only) gets the review Part 1 and the review text as Part 2."""
+        if (target_name == REVIEW_TARGET) != (self.context_layout == REVIEW_LAYOUT):
+            raise ValueError("Only a method-judge call edits alg_verifier.md, and only with the review layout")
+        if target_name == REVIEW_TARGET:
+            workspace, note = review_workspace_part(target_name, files, self.backend, delivery=self.delivery, layout=self.context_layout)
+            return workspace + "\n\n" + REVIEW_HEADING + "\n\n" + prompt, note
         workspace, note = workspace_part(target_name, files, self.backend, delivery=self.delivery, runtime=self.runtime_spec, layout=self.context_layout)
         return workspace + "\n\n" + prompt, note
 
     def mounted_prompt(self, target, prompt, context, log_dir, step):
         """The mounted-files part of a call (single- or multi-file): (effective prompt, DockerRuntime.run context
         arguments). Records the workspace prompt and the context evidence ({step}_context.json)."""
-        files = mounted_context.mounted_files(context, self.context_layout)
+        files = review_files(context, self.context_layout) if target.name == REVIEW_TARGET and self.context_layout == REVIEW_LAYOUT else mounted_context.mounted_files(context, self.context_layout)
         composed, note = self.compose_mounted_prompt(target.name, prompt, files)
-        version = MOUNTED_CPP_WORKSPACE_POLICY if self.delivery.sources(target.name) else MOUNTED_WORKSPACE_POLICY
+        version = MOUNTED_REVIEW_WORKSPACE_POLICY if target.name == REVIEW_TARGET else MOUNTED_CPP_WORKSPACE_POLICY if self.delivery.sources(target.name) else MOUNTED_WORKSPACE_POLICY
         effective = record_workspace_prompt(Path(WORKSPACE), target.name, composed, log_dir, step, old_absolute_note=self.backend == "agy-cli", note=note, version=version)
         (log_dir / f"{step}_context.json").write_text(json.dumps(mounted_context.evidence(files, target.name, self.delivery, self.context_layout), indent=2) + "\n")
         run_context = {"context": mounted_context.volume_contents(files)}

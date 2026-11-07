@@ -28,8 +28,9 @@ from src.agent.docker_client import CLI_VERSIONS, DockerCliClient
 from src.agent.mounted_context import MAX_OUTPUT_JSON_BYTES, mounted_files, volume_contents
 from src.agent.prompts.builder import LOCATION_NOTE, PromptBuilder
 from src.agent.prompts.method import COMMON_REQUIREMENTS, DECOMPOSITION_POLICY, DECOMPOSITION_POLICY_V3, method_requirements
-from src.agent.prompts.mounted import (CONTEXT_DELIVERY_MOUNTED, DATA_START, HISTORY_DIR, INSTANCE_DIR, MOUNTED_WORKSPACE_POLICY, TASK_HEADINGS, TASK_LEAD, TASK_RULES,
-                                       mount_location, task_sections)
+from src.agent.prompts.mounted import (CONTEXT_DELIVERY_MOUNTED, DATA_START, HISTORY_DIR, INSTANCE_DIR, JUDGE_CONTEXT_DELIVERY, MOUNTED_WORKSPACE_POLICY, TASK_HEADINGS, TASK_LEAD,
+                                       TASK_RULES, mount_location, task_sections)
+from src.agent.specs import MOUNT_LAYOUT, REVIEW_LAYOUT
 from src.agent.prompts.policy import record_workspace_prompt
 from src.agent.result import AgentResult
 from src.experiments import campaign
@@ -175,7 +176,9 @@ def test_part_one_states_the_one_writable_target_and_the_runtime_paths(tmp_path,
         text = record_workspace_prompt(Path("/work"), target, composed, log, "s", old_absolute_note=backend == "agy-cli", note=note, version=MOUNTED_WORKSPACE_POLICY)
         headings = [line for line in text.splitlines() if line.startswith("#")]
         assert headings == ["# Part 1: Workspace and files", "## File to modify", "## Input data", "## Output file", "## Files from previous attempts", "## No other task files", "# Part 2: Task"]
-        assert f"The only file you may create or modify is /work/{target}; every other path in this workspace is read-only context." in text
+        assert (f"## File to modify\nOnly edit the existing {target} in the current working directory. That file is /work/{target}; do not create, rename or delete any file. "
+                "Every other path in this workspace is read-only context.") in text
+        assert "physical line" not in text and "soft wrapping" not in text  # the paper wrapper's prose rule is not part of the mounted prompt
         assert f"Only /work/{target} is collected after this call: anything written elsewhere is ignored." in text
         assert "solver.py must read its input from ../../data.json relative to that working directory" in text
         assert "solver.py must write its result to output.json in its working directory" in text and "a missing or misplaced output.json is an execution failure" in text
@@ -333,11 +336,12 @@ def test_paired_runner_scores_a_misplaced_delivery_as_a_failed_generation(tmp_pa
     assert all(summary["attempts"][0]["status"] == "agent_failed" for summary in summaries.values())
 
 
-def test_the_judge_keeps_the_pasted_protocol_and_rejects_mounted_targets(tmp_path):
+def test_an_author_layout_client_refuses_the_judge_target(tmp_path):
+    # The mounted judge has its own layout (tests/test_mounted_judge.py); the author's layout never edits alg_verifier.md.
     client = DockerCliClient("m", backend="codex-cli", image_id="sha256:x", runtime=FakeRuntime(tmp_path, "codex-cli"), evidence_root=tmp_path, context_delivery=MOUNTED)
     target = tmp_path / "alg_verifier.md"
     target.write_text("")
-    with pytest.raises(ValueError, match="solver.py or debug.md"):
+    with pytest.raises(ValueError, match="only with the review layout"):
         client.edit_file(target, "x", context=[], log_dir=tmp_path / "call", step="llm_verifier")
     with pytest.raises(ValueError):
         DockerCliClient("m", backend="codex-cli", image_id="sha256:x", runtime=None, evidence_root=None, context_delivery="pasted-v0")
@@ -616,7 +620,18 @@ def test_campaign_routes_the_mounted_protocol_and_the_output_policy(tmp_path, mo
     assert executors[1]["output_policy"] == OUTPUT_POLICY_32MIB and executors[1]["evidence_schema"] == "native-output-by-reference-v1"
     assert runners[0]["context_delivery"] == MOUNTED and runners[0]["data_context"] is None and runners[0]["decomposition_contract"] == DECOMPOSITION_POLICY_V3
     assert runners[0]["client"].context_delivery == MOUNTED and runners[0]["reflection_client"].context_delivery == MOUNTED
-    assert runners[0]["judge_client"].context_delivery is None
+    # The small-scale protocol mounts the judge's sources under review with the review layout.
+    assert runners[0]["judge_context_delivery"] == JUDGE_CONTEXT_DELIVERY
+    assert runners[0]["judge_client"].context_delivery == MOUNTED and runners[0]["judge_client"].context_layout == REVIEW_LAYOUT
+    assert runners[0]["client"].context_layout == MOUNT_LAYOUT
+    # Without the setting (mounted author, pasted judge) the judge keeps the paper's pasted context.
+    manifest["prompt_protocol"] = {key: value for key, value in plan["prompt_protocol"].items() if key != "judge_context_delivery"}
+    fresh = tmp_path / "campaign-pasted-judge"
+    (fresh / "controller/src").mkdir(parents=True)
+    monkeypatch.setattr(campaign, "REPOSITORY", fresh / "controller")
+    assert campaign.run(fresh) == 0
+    assert len(runners) == 2
+    assert runners[-1]["judge_context_delivery"] is None and runners[-1]["judge_client"].context_delivery is None and runners[-1]["client"].context_delivery == MOUNTED
 
 
 def test_config_and_manifest_validation(tmp_path):

@@ -32,16 +32,24 @@ Layout (WORKSPACE = /work, the agent's working directory; src.agent.specs.MOUNT_
     /work/<target>                               the one writable file (solver.py or debug.md); the only file collected
     /work/instance/data.json                     the instance data
     /work/history/attempt_NN/<name>              files of earlier attempts (HISTORY_FILES)
+
+The method judge (prompt_protocol.judge_context_delivery = JUDGE_CONTEXT_DELIVERY) uses the same transport with
+src.agent.specs.REVIEW_LAYOUT: its one writable file is /work/alg_verifier.md and its only context is the sources under
+review, /work/review/attempt_NN/solver.py (plus a multi-file delivery's cpp/ sources). Part 1 (review_workspace_part)
+has the headings File to modify | Files under review | No other task files; Part 2 is "# Part 2: Review task" followed
+by the unchanged review text (src.agent.prompts.judge.algorithm_review_prompt). Without the setting the judge's
+sources are pasted, as in the paper.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 from src.agent.prompts.method import CONTRACTS, COMMON_REQUIREMENTS, METHOD_HEADER, method_requirements, require_contract
 from src.agent.prompts.policy import edit_instruction
 # The layout constants live with the specs (src.agent.specs); they are re-exported here for the earlier importers.
-from src.agent.specs import (ATTEMPT_DIRECTORY, CONTEXT_DIRECTORIES, DEFAULT_RUNTIME, HISTORY_DIR, HISTORY_FILES, HISTORY_SECTION, INPUT_SECTION, INSTANCE_DIR,  # noqa: F401
+from src.agent.specs import (ATTEMPT_DIRECTORY, CONTEXT_DIRECTORIES, DEFAULT_RUNTIME, HISTORY_DIR, HISTORY_FILES, HISTORY_SECTION, INPUT_SECTION, INSTANCE_DIR, REVIEW_LAYOUT, REVIEW_SECTION,  # noqa: F401
                              INSTANCE_FILE, MOUNT_LAYOUT, SINGLE_FILE_DELIVERY, WORKSPACE)
 from src.utils.errors import ProtocolError
 
@@ -52,6 +60,13 @@ CONTEXT_DELIVERIES = (None, CONTEXT_DELIVERY_MOUNTED)
 MOUNTED_WORKSPACE_POLICY = "existing-target-cwd-mounted-files-v1"
 # The same record for a mounted call that may also write C++ sources (multi-file delivery; no config uses it).
 MOUNTED_CPP_WORKSPACE_POLICY = "existing-target-cwd-mounted-files-cpp-v1"
+# The method judge's mounted delivery (prompt_protocol.judge_context_delivery) and its per-call workspace record.
+JUDGE_CONTEXT_DELIVERY = "mounted-review-sources-v1"
+JUDGE_CONTEXT_DELIVERIES = (None, JUDGE_CONTEXT_DELIVERY)
+MOUNTED_REVIEW_WORKSPACE_POLICY = "existing-target-cwd-mounted-review-v1"
+REVIEW_TARGET = "alg_verifier.md"
+REVIEW_HEADING = "# Part 2: Review task"
+FLAT_SOURCE = re.compile(r"(solver\.py|cpp/[^/]+\.(cpp|hpp))")
 
 # Part 2 pieces. Every rendered prompt.txt has this Task block opening and ends with the contract text.
 TASK_LABEL = "Task:"
@@ -196,8 +211,7 @@ def workspace_part(target: str, files: list, backend: str, *, delivery=SINGLE_FI
         raise ValueError("A mounted-files call edits solver.py or debug.md")
     agy = backend == "agy-cli"
     note = workspace_note(target, delivery.instruction(target))
-    prose = "Keep prose paragraphs on one physical line." if agy else "Keep prose paragraphs and list items on one physical line; rely on editor soft wrapping."
-    modify = f"Edit only {target}. {delivery.modify_text(target, WORKSPACE)} {prose}"
+    modify = f"Edit only {target}. {delivery.modify_text(target, WORKSPACE)}"
     instance = [item for item in files if layout.section(item.path) == INPUT_SECTION]
     history = [item for item in files if layout.section(item.path) == HISTORY_SECTION]
     if not instance or len(instance) + len(history) != len(files):
@@ -225,3 +239,51 @@ def workspace_part(target: str, files: list, backend: str, *, delivery=SINGLE_FI
                f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations."
                + (" Do not use memory, skills, subagents or prior conversations." if agy else ""))
     return "\n\n".join([modify, input_data, output, "\n".join(lines), nothing]), note
+
+
+def check_review_files(files: list, layout=REVIEW_LAYOUT) -> str:
+    """The attempt directory (attempt_NN) of a mounted review's files, which must be exactly the sources under review of
+    one attempt: solver.py first, then flat cpp/<name>.cpp|hpp files, each once. Shared by the client (before the call)
+    and the runner (before its request fingerprint, so that a reused receipt or a recovered call is checked too)."""
+    if not files or any(layout.section(item.path) != REVIEW_SECTION for item in files):
+        raise ProtocolError("A mounted review call mounts only the sources under review")
+    directories = {item.path[len(layout.directory(item.path)) + 1:].split("/")[0] for item in files}
+    if len(directories) != 1 or ATTEMPT_DIRECTORY.fullmatch(next(iter(directories))) is None:
+        raise ProtocolError("A mounted review covers the sources of exactly one attempt")
+    directory = next(iter(directories))
+    relative = [item.path[len(f"{layout.directory(item.path)}/{directory}/"):] for item in files]
+    if relative[0] != "solver.py" or len(set(relative)) != len(relative) or not all(FLAT_SOURCE.fullmatch(name) for name in relative):
+        raise ProtocolError("The sources under review are solver.py first, then flat cpp/*.cpp and cpp/*.hpp files")
+    return directory
+
+
+def review_files(context, layout=REVIEW_LAYOUT) -> list:
+    """The checked mounted files of a review's context list: every listed source must exist (a review never skips one)."""
+    from src.agent.mounted_context import mounted_files
+
+    if any(not Path(path).is_file() for path in context or []):
+        raise ProtocolError("Every source under review must exist; a review never skips a file")
+    files = mounted_files(context, layout)
+    check_review_files(files, layout)
+    return files
+
+
+def review_workspace_part(target: str, files: list, backend: str, *, delivery=SINGLE_FILE_DELIVERY, layout=REVIEW_LAYOUT) -> tuple[str, str]:
+    """(prompt to pass to record_workspace_prompt, its note): Part 1 of a mounted method-judge call.
+
+    `files` must be exactly the sources under review of one attempt, solver.py first, each a flat solver.py or
+    cpp/<name>.cpp|hpp (the caller passes every reviewed source; none may be missing)."""
+    if target != REVIEW_TARGET or layout != REVIEW_LAYOUT:
+        raise ProtocolError("A mounted review call edits alg_verifier.md with the review layout")
+    directory = check_review_files(files, layout)
+    agy = backend == "agy-cli"
+    note = workspace_note(target, delivery.instruction(target))
+    modify = f"Edit only {target}. {delivery.modify_text(target, WORKSPACE)}"
+    root = layout.directory(files[0].path)
+    lines = [f"## {REVIEW_SECTION}", f"- Attempt {int(ATTEMPT_DIRECTORY.fullmatch(directory)[1])}, mounted read-only in {root}/{directory}/:"]
+    lines += [f"  - {item.path} ({item.size} bytes): {item.description}." for item in files]
+    lines.append(f"Read every file listed above completely before writing {target}.")
+    nothing = ("## No other task files\n"
+               f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations."
+               + (" Do not use memory, skills, subagents or prior conversations." if agy else ""))
+    return "\n\n".join([modify, "\n".join(lines), nothing]), note

@@ -43,7 +43,7 @@ def scoped_campaign(tmp_path, monkeypatch):
     monkeypatch.setattr(campaign.signal, "signal", lambda *_: None)
     monkeypatch.delenv("DECOMPBENCH_AGY_KEYRING_PASSPHRASE", raising=False)
     completed, calls = set(), []
-    monkeypatch.setattr(campaign, "pair_complete", lambda root, model, case, protocol: (model, case["instance"]) in completed)
+    monkeypatch.setattr(campaign, "pair_complete", lambda root, model, case, protocol, prompt_protocol=None: (model, case["instance"]) in completed)
 
     class ObservedRunner:
         def __init__(self, **kwargs):

@@ -9,8 +9,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.agent.prompts.method import DECOMPOSITION_POLICY
+from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED, JUDGE_CONTEXT_DELIVERY
 from src.experiments import completion
-from src.experiments.campaign import pair_complete
+from src.experiments.campaign import identity_settings, pair_complete
 from src.experiments.dashboard_server import Dashboard, export_csv
 from src.experiments.paired_runner import PairedRunner
 from src.utils.errors import ProtocolError
@@ -108,6 +110,20 @@ def closed_policy(tmp_path):
     return SimpleNamespace(root=root, case=case, source=source, directory=directory, plain=directories["plain"],
                            attempt=attempt, receipt=receipt, receipt_path=receipt_path, before=before,
                            phase=phase, phase_path=phase_path, wrapper=wrapper)
+
+
+def test_a_completed_pair_is_accepted_only_under_its_recorded_judge_and_context_settings(closed_policy):
+    f = closed_policy
+    paper = {"decomposition_contract": DECOMPOSITION_POLICY}
+    assert pair_complete(f.root, MODEL, f.case, "base", paper)  # the fixture's identity is the paper's (no settings recorded)
+    mounted = {"decomposition_contract": DECOMPOSITION_POLICY, "context_delivery": CONTEXT_DELIVERY_MOUNTED, "judge_context_delivery": JUDGE_CONTEXT_DELIVERY}
+    with pytest.raises(ProtocolError, match="incompatible protocol"):
+        pair_complete(f.root, MODEL, f.case, "base", mounted)  # identity lacks the campaign's settings
+    # The adjudicated identity is hash-frozen, so the remaining cases compare the recorded settings directly.
+    recorded = {"protocol_id": "base", "context_delivery": CONTEXT_DELIVERY_MOUNTED, "judge_context_delivery": JUDGE_CONTEXT_DELIVERY, "decomposition_contract": DECOMPOSITION_POLICY}
+    assert identity_settings(recorded) == identity_settings(mounted)
+    assert identity_settings(recorded) != identity_settings({**mounted, "judge_context_delivery": None})  # a pasted-judge campaign never reuses it
+    assert identity_settings({}) == identity_settings(paper)  # absent settings are the paper's
 
 
 def test_adjudication_preserves_raw_files_and_counts_one_actual_attempt(closed_policy):

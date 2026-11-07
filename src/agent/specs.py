@@ -36,6 +36,7 @@ from src.utils.errors import ProtocolError
 WORKSPACE = "/work"
 INSTANCE_DIR = WORKSPACE + "/instance"
 HISTORY_DIR = WORKSPACE + "/history"
+REVIEW_DIR = WORKSPACE + "/review"  # the method judge's sources under review (REVIEW_LAYOUT)
 # The read-only directories of MOUNT_LAYOUT (DockerRuntime.run accepts these unless a call declares others).
 CONTEXT_DIRECTORIES = (INSTANCE_DIR, HISTORY_DIR)
 ATTEMPT_DIRECTORY = re.compile(r"attempt_(\d{2})")
@@ -57,7 +58,7 @@ PREVIEW_ALONGSIDE_FILE = "a structural preview of the mounted data.json (the fir
 # A mount directory: one plain name below the workspace.
 MOUNT_DIRECTORY = re.compile(re.escape(WORKSPACE) + r"/[A-Za-z0-9_][A-Za-z0-9_.-]*")
 # Part 1 sections a role's files are listed under.
-INPUT_SECTION, HISTORY_SECTION = "Input data", "Files from previous attempts"
+INPUT_SECTION, HISTORY_SECTION, REVIEW_SECTION = "Input data", "Files from previous attempts", "Files under review"
 
 
 @dataclass(frozen=True)
@@ -114,7 +115,7 @@ class MountLayout:
     def __post_init__(self):
         sections = {}
         for role in self.roles:
-            if not MOUNT_DIRECTORY.fullmatch(role.directory) or role.section not in (INPUT_SECTION, HISTORY_SECTION):
+            if not MOUNT_DIRECTORY.fullmatch(role.directory) or role.section not in (INPUT_SECTION, HISTORY_SECTION, REVIEW_SECTION):
                 raise ValueError(f"A context role mounts one directory /work/<name> listed under a known Part 1 section: {role}")
             if sections.setdefault(role.directory, role.section) != role.section:
                 raise ValueError(f"Roles sharing {role.directory} must be listed in the same Part 1 section")
@@ -146,9 +147,16 @@ class MountLayout:
         return self.role_at(location).directory
 
 
+# The method judge's sources under review (judge_context_delivery = mounted-review-sources-v1): the delivered solver.py and,
+# for a multi-file delivery, its flat cpp/ sources, at /work/review/attempt_NN/<path> (the pasted label attempt_NN/<path>).
+REVIEW_ROLE = ContextRole("sources_under_review", REVIEW_DIR, {"solver.py": "the solver.py delivered by attempt {n} (under review)", "cpp/*.cpp": "the C++ source {path} delivered by attempt {n} (under review)",
+                                                                "cpp/*.hpp": "the C++ header {path} delivered by attempt {n} (under review)"}, per_attempt=True, section=REVIEW_SECTION)
+
+
 MOUNT_LAYOUT = MountLayout("instance-and-history-v1", (HISTORY_ROLE, INSTANCE_ROLE))
 PREVIEW_LAYOUT = MountLayout("instance-preview-and-history-v1", (HISTORY_ROLE, INSTANCE_ROLE, PREVIEW_ROLE))
 SOURCES_LAYOUT = MountLayout("instance-and-history-with-sources-v1", (HISTORY_ROLE, SOURCE_HISTORY_ROLE, INSTANCE_ROLE))
+REVIEW_LAYOUT = MountLayout("review-sources-v1", (REVIEW_ROLE,))
 
 
 # ------------------------------------------------------------------------------------------------ writable delivery
@@ -216,7 +224,7 @@ class DeliverySpec:
         """Part 1's "File to modify" rule after the legacy "Edit only <target>." prefix."""
         writable = f"{workspace}/{target}"
         if not self.sources(target):
-            return (f"The only file you may create or modify is {writable}; every other path in this workspace is read-only context. "
+            return (f"That file is {writable}; do not create, rename or delete any file. Every other path in this workspace is read-only context. "
                     f"Only {writable} is collected after this call: anything written elsewhere is ignored.")
         return (f"Apart from {writable} and those C++ sources in {workspace}/cpp/, every path in this workspace is read-only context. "
                 "Only these files are collected after this call: anything written elsewhere is ignored.")

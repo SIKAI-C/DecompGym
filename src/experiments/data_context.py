@@ -20,7 +20,7 @@ from pathlib import Path
 import tempfile
 
 from src.agent.prompts.method import CONTRACTS
-from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED
+from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED, JUDGE_CONTEXT_DELIVERY
 from src.agent.prompts.snapshot import PROMPT_PROTOCOL
 from src.agent.specs import PREVIEW_ALONGSIDE_NAME, PREVIEW_NAME
 from src.experiments.xl_inputs import preview_json
@@ -37,12 +37,14 @@ DATA_CONTEXT_BOTH = "full-and-structural-preview-512KiB-v1"
 
 def accepted_prompt_protocol(protocol) -> bool:
     """The reviewed prompt protocol, optionally with either the recorded data-context setting or the mounted-files
-    context delivery, and a registered decomposition contract other than the paper's (src.agent.prompts.method.CONTRACTS)."""
+    context delivery (itself optionally with the mounted method judge, judge_context_delivery), and a registered
+    decomposition contract other than the paper's (src.agent.prompts.method.CONTRACTS)."""
     contract = protocol.get("decomposition_contract") if isinstance(protocol, dict) else None
     if not isinstance(contract, str) or contract not in CONTRACTS:
         return False
     reviewed = {**PROMPT_PROTOCOL, "decomposition_contract": protocol["decomposition_contract"]}
-    return protocol in (reviewed, {**reviewed, "data_context": DATA_CONTEXT_PREVIEW}, {**reviewed, "context_delivery": CONTEXT_DELIVERY_MOUNTED})
+    mounted = {**reviewed, "context_delivery": CONTEXT_DELIVERY_MOUNTED}
+    return protocol in (reviewed, {**reviewed, "data_context": DATA_CONTEXT_PREVIEW}, mounted, {**mounted, "judge_context_delivery": JUDGE_CONTEXT_DELIVERY})
 
 
 def decomposition_contract_policy(protocol) -> str:
@@ -63,6 +65,13 @@ def context_delivery_policy(protocol) -> str | None:
     if not accepted_prompt_protocol(protocol):
         raise ProtocolError("Prompt protocol differs from the reviewed contracts")
     return protocol.get("context_delivery")
+
+
+def judge_context_delivery_policy(protocol) -> str | None:
+    """None: the paper's pasted judge context; JUDGE_CONTEXT_DELIVERY: the sources under review mounted read-only."""
+    if not accepted_prompt_protocol(protocol):
+        raise ProtocolError("Prompt protocol differs from the reviewed contracts")
+    return protocol.get("judge_context_delivery")
 
 
 def preview_text(data: Path, *, with_full: bool = False) -> str:

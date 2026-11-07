@@ -445,7 +445,7 @@ def test_layout_roles_are_declared_and_fail_closed(tmp_path):
 def test_single_file_delivery_and_default_runtime_render_the_earlier_text():
     for target in ("solver.py", "debug.md"):
         writable = f"/work/{target}"
-        assert SINGLE_FILE_DELIVERY.modify_text(target) == (f"The only file you may create or modify is {writable}; every other path in this workspace is read-only context. "
+        assert SINGLE_FILE_DELIVERY.modify_text(target) == (f"That file is {writable}; do not create, rename or delete any file. Every other path in this workspace is read-only context. "
                                                             f"Only {writable} is collected after this call: anything written elsewhere is ignored.")
         assert SINGLE_FILE_DELIVERY.writable_text(target) == writable and SINGLE_FILE_DELIVERY.instruction(target) == f"Only edit the existing {target} in the current working directory."
     assert DEFAULT_RUNTIME.input_lines() == ["- At run time: the harness later runs solver.py in a separate attempt directory, which is its working directory, and solver.py must read its input from ../../data.json relative to that working directory. "

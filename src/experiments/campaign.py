@@ -145,7 +145,16 @@ def validate(root):
     return manifest
 
 
-def pair_complete(root, model, case, protocol):
+def identity_settings(record):
+    """The contract and context-delivery settings of a case identity or a prompt protocol (an absent contract is the paper's)."""
+    return {"decomposition_contract": record.get("decomposition_contract", DECOMPOSITION_POLICY), "context_delivery": record.get("context_delivery"),
+            "judge_context_delivery": record.get("judge_context_delivery")}
+
+
+def pair_complete(root, model, case, protocol, prompt_protocol=None):
+    """Whether both policies of a (model, case) pair are closed under `protocol`. With the campaign's `prompt_protocol`,
+    each policy's case identity must also carry its contract, context delivery and judge context delivery (the same
+    fields PairedRunner.run_pair checks before it reuses a closed pair)."""
     from src.experiments.completion import TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
     try:
         approvals = approved_receipts(root)
@@ -161,6 +170,8 @@ def pair_complete(root, model, case, protocol):
                 return False
         except TerminalCompletionError as error:
             raise ProtocolError(str(error)) from error
+        if prompt_protocol is not None and identity_settings(read(directory / "identity.json") or {}) != identity_settings(prompt_protocol):
+            raise ProtocolError("Completed pair has an incompatible protocol")
     return True
 
 
@@ -204,6 +215,9 @@ def run(root, models=None):
     solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"], output_policy=manifest.get("solver_output_policy"),
                                             evidence_schema=manifest.get("solver_evidence_schema"))
     context_delivery = (manifest.get("prompt_protocol") or {}).get("context_delivery")
+    judge_setting = (manifest.get("prompt_protocol") or {}).get("judge_context_delivery")
+    from src.experiments.context_spec import context_spec, judge_delivery
+    judge_transport, judge_layout = judge_delivery(judge_setting, context_spec((manifest.get("prompt_protocol") or {}).get("data_context"), context_delivery))
     auth_markers = []
     class CampaignClient(DockerCliClient):
         """Records non-terminal auth markers (terminal ones raise AuthenticationRequired in the client itself)."""
@@ -233,8 +247,12 @@ def run(root, models=None):
         specification = {"backend": "codex-cli", "effort": manifest["judge_effort"]} if role == "algorithm_judge" else specifications[model]
         backend = specification["backend"]
         cls = CampaignClient
-        # The judge keeps the pasted context (the solver.py under review); generation and reflection follow the protocol.
-        delivery = {"context_delivery": context_delivery} if context_delivery is not None and role != "algorithm_judge" else {}
+        # Generation and reflection follow the protocol's context delivery; the judge pastes the sources under review
+        # unless the protocol mounts them (judge_context_delivery: the transport and REVIEW_LAYOUT).
+        if role == "algorithm_judge":
+            delivery = {"context_delivery": judge_transport, "context_layout": judge_layout} if judge_transport is not None else {}
+        else:
+            delivery = {"context_delivery": context_delivery} if context_delivery is not None else {}
         return cls(model, backend=backend, image_id=environment["image_id"], runtime=engine, evidence_root=root / "diagnostics/runtime", role=role, effort=specification["effort"], timeout=manifest["agent_timeout"], **delivery)
     def checkpoint():
         with mutex:
@@ -254,7 +272,7 @@ def run(root, models=None):
             client = make_client(model, "generation")
             reflection_client = make_client(model, "reflection")
             judge = make_client(manifest["judge_model"], "algorithm_judge")
-            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor, data_context=(manifest.get("prompt_protocol") or {}).get("data_context"), decomposition_contract=(manifest.get("prompt_protocol") or {}).get("decomposition_contract", DECOMPOSITION_POLICY), context_delivery=context_delivery)
+            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor, data_context=(manifest.get("prompt_protocol") or {}).get("data_context"), decomposition_contract=(manifest.get("prompt_protocol") or {}).get("decomposition_contract", DECOMPOSITION_POLICY), context_delivery=context_delivery, judge_context_delivery=judge_setting)
             source = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
             return runner.run_pair(source, root / "runs" / model)
         finally:
@@ -297,7 +315,7 @@ def run(root, models=None):
                 if stop_admission():
                     break
                 state["active_model"] = model
-                pending = [case for case in manifest["instances"] if not pair_complete(root, model, case, manifest["protocol_id"])]
+                pending = [case for case in manifest["instances"] if not pair_complete(root, model, case, manifest["protocol_id"], manifest.get("prompt_protocol") or {})]
                 state["models"][model] = {"completed_pairs": len(manifest["instances"]) - len(pending), "expected": len(manifest["instances"])}
                 checkpoint()
                 error = None
@@ -336,7 +354,7 @@ def run(root, models=None):
                     raise error
                 if admission_stopped:
                     break
-            remaining_models = [item["model"] for item in model_queue(manifest) if any(not pair_complete(root, item["model"], case, manifest["protocol_id"]) for case in manifest["instances"])]
+            remaining_models = [item["model"] for item in model_queue(manifest) if any(not pair_complete(root, item["model"], case, manifest["protocol_id"], manifest.get("prompt_protocol") or {}) for case in manifest["instances"])]
             scope_complete = not any(model in specifications for model in remaining_models)
             state.update(state="paused" if remaining_models or admission_stopped else "complete", active_model=None, scope_complete=scope_complete, campaign_complete=not remaining_models, remaining_models=remaining_models)
             if remaining_models or admission_stopped:
@@ -548,7 +566,7 @@ def resume(root):
 def status(root):
     manifest = validate(root)
     state = read(root / "status.json") or {"state": "not_started"}
-    done = {item["model"]: sum(pair_complete(root, item["model"], case, manifest["protocol_id"]) for case in manifest["instances"]) for item in model_queue(manifest)}
+    done = {item["model"]: sum(pair_complete(root, item["model"], case, manifest["protocol_id"], manifest.get("prompt_protocol") or {}) for case in manifest["instances"]) for item in model_queue(manifest)}
     return {"root": str(root), "state": state.get("state"), "paused": pause_requested(root), "completed_pairs": done, "expected_pairs_per_model": len(manifest["instances"])}
 
 

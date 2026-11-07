@@ -29,10 +29,10 @@ from src.agent.prompts.builder import PromptBuilder
 from src.agent.prompts.judge import PAPER_AUDIT_TARGET, algorithm_review_prompt, judge_policy, parse_verdict
 from src.agent.mounted_context import manifest as mounted_manifest, mounted_files
 from src.agent.prompts.method import DECOMPOSITION_POLICY, require_contract
-from src.agent.prompts.mounted import PROSE_SECTIONS
+from src.agent.prompts.mounted import PROSE_SECTIONS, review_files
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.agent.specs import DEFAULT_RUNTIME, MOUNT_LAYOUT, SINGLE_FILE_DELIVERY, RuntimeSpec
-from src.experiments.context_spec import LEGACY_CONTEXTS, PAPER_HISTORY, context_spec
+from src.experiments.context_spec import LEGACY_CONTEXTS, PAPER_HISTORY, context_spec, judge_delivery
 from src.experiments.data_context import DATA_CONTEXT_POLICIES
 from src.experiments.environment import require_runtime_environment
 from src.experiments.exec_log import ExecLogger
@@ -102,7 +102,8 @@ class PairedRunner:
     def __init__(self, *, client, judge_client, solver_executor, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None,
                  model=None, suite="bd", problem=None, max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1,
                  solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY, context_delivery=None,
-                 context=None, delivery=None, runtime_spec=None, execution_policy=None, task_sections=None, audit_extensions=(), audit_target=None):
+                 context=None, delivery=None, runtime_spec=None, execution_policy=None, task_sections=None, audit_extensions=(), audit_target=None,
+                 judge_context_delivery=None):
         if suite not in DEFAULT_PROBLEMS:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
@@ -122,6 +123,10 @@ class PairedRunner:
             raise ValueError("Give either a ContextSpec or the recorded data_context/context_delivery settings")
         self.context = context
         self.data_context, self.context_delivery = context.data_context, context.context_delivery
+        # The method judge's context (prompt_protocol.judge_context_delivery): None pastes the sources under review (the
+        # paper); the mounted setting resolves to the client transport and REVIEW_LAYOUT (context_spec.judge_delivery).
+        self.judge_context_delivery = judge_context_delivery
+        self.judge_transport, self.judge_layout = judge_delivery(judge_context_delivery, context)
         # The controller-side environment check (the local Python/Gurobi versions for the native policy), in its earlier place.
         self.runtime_environment = require_runtime_environment() if execution_policy is None else execution_policy.runtime_environment()
         self.model, self.suite = model, suite
@@ -201,7 +206,10 @@ class PairedRunner:
         return result.status == "ok" and result.exec_ok and result.verify_ok and result.gap_to_gold is not None and result.gap_to_gold <= gap_threshold
 
     def check_client(self, client, step):
-        """A generation or reflection client must place, describe and collect files as this runner's specs do."""
+        """A generation or reflection client must place, describe and collect files as this runner's specs do; a mounted
+        judge client must use the review layout."""
+        if step == "llm_verifier" and self.judge_transport is not None and getattr(client, "context_layout", None) != self.judge_layout:
+            raise ProtocolError("The judge client's mounted layout differs from the campaign's")
         mounted = step in ("agent", "reflection") and self.context_delivery is not None
         if mounted and (getattr(client, "context_layout", MOUNT_LAYOUT) != self.context.layout or getattr(client, "runtime_spec", DEFAULT_RUNTIME).contract != self.runtime_spec.contract):
             raise ProtocolError(f"The {step} client's mounted layout or runtime contract differs from the campaign's")
@@ -215,13 +223,20 @@ class PairedRunner:
         if data_context is not None:
             # Recorded only under an explicit data-context setting, so legacy request fingerprints are unchanged.
             request["data_context"] = data_context
-        delivery = self.context_delivery if step in ("agent", "reflection") else None
+        judge = step == "llm_verifier"
+        delivery = self.judge_transport if judge else self.context_delivery if step in ("agent", "reflection") else None
         if getattr(client, "context_delivery", None) != delivery:
             raise ProtocolError(f"The {step} client's context delivery differs from the campaign's")
         self.check_client(client, step)
         if delivery is not None:
             # The mounted layout (path and sha256 of every mounted file) is part of the request fingerprint.
-            request["context_delivery"] = {"policy": delivery, "files": [{key: entry[key] for key in ("path", "sha256")} for entry in mounted_manifest(mounted_files(context, self.context.layout))]}
+            layout = self.judge_layout if judge else self.context.layout
+            # A mounted review is checked here, before any receipt or recovered call is reused: every source exists,
+            # one attempt, solver.py first, flat C++ names (src.agent.prompts.mounted.review_files).
+            files = review_files(context, layout) if judge else mounted_files(context, layout)
+            request["context_delivery"] = {"policy": delivery, "files": [{key: entry[key] for key in ("path", "sha256")} for entry in mounted_manifest(files)]}
+            if judge:
+                request["context_delivery"] |= {"judge": self.judge_context_delivery, "layout": layout.id}
         specs = self.spec_record()
         if specs:
             request["specs"] = specs
@@ -480,6 +495,8 @@ class PairedRunner:
             expected["decomposition_contract"] = self.decomposition_contract
         if self.context_delivery is not None:
             expected["context_delivery"] = self.context_delivery
+        if self.judge_context_delivery is not None:
+            expected["judge_context_delivery"] = self.judge_context_delivery
         specs = self.spec_record()
         if specs:
             expected["specs"] = specs
@@ -568,6 +585,7 @@ class PairedRunner:
                 # A closed pair is reused only under the contract it was judged with (an absent field is the paper's v2).
                 if any((read(directory / "identity.json") or {}).get("decomposition_contract", DECOMPOSITION_POLICY) != self.decomposition_contract
                        or (read(directory / "identity.json") or {}).get("context_delivery") != self.context_delivery
+                       or (read(directory / "identity.json") or {}).get("judge_context_delivery") != self.judge_context_delivery
                        or (read(directory / "identity.json") or {}).get("specs", {}) != self.spec_record() for directory in saved.values()):
                     raise ProtocolError("Case protocol changed")
                 if all(policy_is_complete(summary, self.max_attempts, self.protocol_id) for summary in summaries.values()):

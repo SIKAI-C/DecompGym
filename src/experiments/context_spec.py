@@ -24,8 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.agent.prompts.mounted import CONTEXT_DELIVERIES, CONTEXT_DELIVERY_MOUNTED
-from src.agent.specs import MOUNT_LAYOUT, PREVIEW_LAYOUT, PREVIEW_ROLE, SOURCES_LAYOUT, MountLayout
+from src.agent.prompts.mounted import CONTEXT_DELIVERIES, CONTEXT_DELIVERY_MOUNTED, JUDGE_CONTEXT_DELIVERY
+from src.agent.specs import MOUNT_LAYOUT, PREVIEW_LAYOUT, PREVIEW_ROLE, REVIEW_LAYOUT, SOURCES_LAYOUT, MountLayout
 from src.experiments.data_context import DATA_CONTEXT_BOTH, DATA_CONTEXT_POLICIES, DATA_CONTEXT_PREVIEW, data_context_files
 
 PASTED, MOUNTED = "pasted", "mounted"
@@ -131,3 +131,18 @@ def context_spec(data_context: str | None = None, context_delivery: str | None =
     if (data_context, context_delivery) not in LEGACY_CONTEXTS:
         raise ValueError("The mounted-files protocol delivers the complete data.json; it has no data-context preview")
     return LEGACY_CONTEXTS[(data_context, context_delivery)]
+
+
+# The method judge's context: prompt_protocol.judge_context_delivery -> (client transport, mount layout). None (the paper
+# and every config without the key) pastes the sources under review; JUDGE_CONTEXT_DELIVERY mounts them read-only with
+# REVIEW_LAYOUT. The judge's context is the sources under review only, whatever the authors' ContextSpec.
+JUDGE_DELIVERIES = {None: (None, None), JUDGE_CONTEXT_DELIVERY: (CONTEXT_DELIVERY_MOUNTED, REVIEW_LAYOUT)}
+
+
+def judge_delivery(setting: str | None, context: ContextSpec) -> tuple[str | None, MountLayout | None]:
+    """(client context_delivery, client context_layout) of the judge under `setting`; a mounted judge needs a mounted author context."""
+    if setting not in JUDGE_DELIVERIES:
+        raise ValueError(f"Unknown judge context delivery: {setting!r}")
+    if setting is not None and not context.mounted:
+        raise ValueError("A mounted method judge belongs to the mounted-files protocol")
+    return JUDGE_DELIVERIES[setting]
