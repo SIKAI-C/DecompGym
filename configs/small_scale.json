@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "decompgym-small-scale-20261107",
-  "description": "Small-scale track: all twenty registered families as one cohort (180 instances from outputs/small_scale_data: bd ufl, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, two-stage stochastic production planning, location routing, assignment and tardiness scheduling; cg bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling, shift scheduling, graph coloring, nurse rostering), the twelve paper models from older to newer generations. Paper protocol except, added after paper-arxiv-v1: the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2) for author, reflection and judge; the generation and reflection context is mounted read-only in the agent workspace with a structured prompt (context_delivery mounted-files-v1) instead of being pasted, and the method judge reads the sources under review (only those) as read-only mounted files with the unchanged review text (judge_context_delivery mounted-review-sources-v1); the solver output.json readback limit is 32 MiB (solver_output_policy output-json-readback-32MiB-v1); candidate solvers are serialized host-side by the native solver lock (two workers, one solver at a time).",
+  "description": "Small-scale track: all twenty registered families as one cohort (180 instances from outputs/small_scale_data: bd ufl, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, two-stage stochastic production planning, location routing, assignment and tardiness scheduling; cg bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling, shift scheduling, graph coloring, nurse rostering), the twelve paper models, run by backend: Codex (GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, GPT-6 Astra, GPT-6.1 Sol), then Claude Code (Claude Sonnet 5, Claude Opus 5, Claude Haiku 5.5, Claude Sonnet 5.5, Claude Opus 5.5, Claude Fable 5 last), then Antigravity (Gemini 3.8 Flash), older to newer within each backend except Fable 5. Paper protocol except, added after paper-arxiv-v1: the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2) for author, reflection and judge; the generation and reflection context is mounted read-only in the agent workspace with a structured prompt (context_delivery mounted-files-v1) instead of being pasted, and the method judge reads the sources under review (only those) as read-only mounted files with the unchanged review text (judge_context_delivery mounted-review-sources-v1); the solver output.json readback limit is 32 MiB (solver_output_policy output-json-readback-32MiB-v1); candidate solvers are serialized host-side by the native solver lock (two workers, one solver at a time).",
   "dataset_inventory_sha256": "0f48abf0d51063b091e558649bd7c11af7e49b4706e60b3caa0a1864a5b47869",
   "prompt_policies": {
     "feedback": "qualitative-objective-feedback-v1",
@@ -27,21 +27,6 @@
       "effort": "medium"
     },
     {
-      "model": "claude-fable-5",
-      "backend": "claude-code-cli",
-      "effort": "medium"
-    },
-    {
-      "model": "claude-sonnet-5",
-      "backend": "claude-code-cli",
-      "effort": "medium"
-    },
-    {
-      "model": "claude-opus-5",
-      "backend": "claude-code-cli",
-      "effort": "medium"
-    },
-    {
       "model": "gpt-6-luna",
       "backend": "codex-cli",
       "effort": "medium"
@@ -57,9 +42,19 @@
       "effort": "medium"
     },
     {
-      "model": "gemini-3.8-flash-medium",
-      "backend": "agy-cli",
-      "effort": "catalog-slug"
+      "model": "gpt-6.1-sol",
+      "backend": "codex-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-sonnet-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
+    },
+    {
+      "model": "claude-opus-5",
+      "backend": "claude-code-cli",
+      "effort": "medium"
     },
     {
       "model": "claude-haiku-5-5",
@@ -77,9 +72,14 @@
       "effort": "medium"
     },
     {
-      "model": "gpt-6.1-sol",
-      "backend": "codex-cli",
+      "model": "claude-fable-5",
+      "backend": "claude-code-cli",
       "effort": "medium"
+    },
+    {
+      "model": "gemini-3.8-flash-medium",
+      "backend": "agy-cli",
+      "effort": "catalog-slug"
     }
   ],
   "execution": {
