@@ -23,9 +23,9 @@ sys.path.insert(0, str(REPO))
 from src.experiments.sandbox import NativeSandboxExecutor
 from src.experiments.verification import OutputVerifier
 from src.experiments.docker_setup import license_file
-from src.utils.families import FAMILIES, SMALL_SCALE_CONFIG, SMALL_SCALE_DATA
+from src.utils.families import FAMILIES, SMALL_SCALE_CAMPAIGN_DATA, SMALL_SCALE_CONFIG
 
-DATASET = REPO / SMALL_SCALE_DATA
+DATASET = REPO / SMALL_SCALE_CAMPAIGN_DATA
 
 
 GAP_THRESHOLD = 0.01  # the campaign's 1 % rule (paired_runner gap_threshold)

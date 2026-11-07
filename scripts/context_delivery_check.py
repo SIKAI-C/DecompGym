@@ -2,7 +2,7 @@
 
 Run it only after the Docker runtime evidence and the private logins exist:
     python src/02_experiment.py docker prepare
-    python src/02_experiment.py docker auth --backend codex|claude|agy      # AGY also needs DECOMPBENCH_AGY_KEYRING_PASSPHRASE
+    python src/02_experiment.py docker auth --backend codex|claude|agy --check   # AGY also needs DECOMPBENCH_AGY_KEYRING_PASSPHRASE
     python scripts/context_delivery_check.py                                 # all three backends
     python scripts/context_delivery_check.py --backends codex --mount-probe-only
 
@@ -41,7 +41,7 @@ from src.agent.container import DockerRuntime  # noqa: E402
 from src.agent.docker_client import DockerCliClient  # noqa: E402
 from src.agent.mounted_context import mounted_files, volume_contents  # noqa: E402
 from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED, HISTORY_DIR, INSTANCE_DIR  # noqa: E402
-from src.experiments import docker_setup  # noqa: E402
+from src.experiments import agent_auth, docker_setup  # noqa: E402
 from src.utils.families import SMALL_SCALE_CAMPAIGN_DATA  # noqa: E402
 
 BACKENDS = docker_setup.BACKENDS  # codex / claude / agy -> CLI backend
@@ -176,6 +176,10 @@ def mount_probe(engine: ProbeRuntime, image_id: str, directory: Path, instance: 
 def model_call(backend: str, engine: DockerRuntime, image_id: str, evidence_root: Path, directory: Path, instance: Path) -> dict:
     target, context, expected = make_case(directory, instance)
     model = docker_setup.READINESS_MODELS[backend]
+    # The no-inference credential check first (codex slot 0, as the client uses outside a campaign).
+    checked = agent_auth.check_backend(engine, image_id, backend, slots=[0] if backend == "codex-cli" else None, models=[] if backend == "claude-code-cli" else [model],
+                                       passphrase=os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"))
+    agent_auth.raise_for(checked)
     client = DockerCliClient(model, backend=backend, image_id=image_id, runtime=engine, evidence_root=evidence_root, role="context-delivery-check", effort=EFFORT[backend],
                              context_delivery=CONTEXT_DELIVERY_MOUNTED)
     result = client.edit_file(target, TASK, context=context, log_dir=directory / "call", step="agent")

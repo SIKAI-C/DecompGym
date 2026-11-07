@@ -246,7 +246,10 @@ def validate_delivery_call(call: Path, root: Path) -> dict:
     relative = call.resolve().relative_to(root.resolve())
     require(len(relative.parts) == 10 and relative.parts[0] == "runs" and relative.parts[2] == "reflection"
             and relative.parts[-2] == "calls", "Wrong-target evidence is not a reflection call")
-    if read(call / "reflection_workspace.json").get("version") == "existing-target-cwd-v2":
+    from src.agent.prompts.mounted import MOUNTED_WORKSPACE_POLICY
+    from src.agent.prompts.policy import WORKSPACE_POLICY
+    # The pasted-context record and the mounted-files record (src.agent.prompts.mounted) share the fresh-cohort checks.
+    if read(call / "reflection_workspace.json").get("version") in (WORKSPACE_POLICY, MOUNTED_WORKSPACE_POLICY):
         return _validate_fresh_delivery_call(call, root, relative.parts[1])
     metadata = read(call / "execution_phase.json")
     phases = [(path, read(path)) for path in (root / "execution_phases").glob("*/phase.json")]
@@ -294,6 +297,7 @@ def validate_delivery_call(call: Path, root: Path) -> dict:
 
 def _validate_fresh_delivery_call(call: Path, root: Path, model: str) -> dict:
     """The new campaign authorizes the short wording without redefining legacy phases."""
+    from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED, MOUNTED_WORKSPACE_POLICY, workspace_note
     from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, edit_instruction
     manifest = read(root / "campaign.json")
     require(manifest.get("protocol_id") == identity({k: v for k, v in manifest.items() if k != "protocol_id"}), "Delivery campaign changed")
@@ -314,7 +318,10 @@ def _validate_fresh_delivery_call(call: Path, root: Path, model: str) -> dict:
     invocation = read(call / "reflection_invocation.json")
     require(invocation.get("backend") == models[model]["backend"], "Delivery backend differs")
     workspace = read(call / "reflection_workspace.json")
-    require(workspace.get("version") == WORKSPACE_POLICY and Path(workspace["workspace"]).is_absolute()
+    mounted = workspace.get("version") == MOUNTED_WORKSPACE_POLICY
+    # A mounted-files record belongs only to a campaign that froze the mounted-files context delivery.
+    require(not mounted or (manifest.get("prompt_protocol") or {}).get("context_delivery") == CONTEXT_DELIVERY_MOUNTED, "Mounted workspace record outside a mounted-files campaign")
+    require(workspace.get("version") in (WORKSPACE_POLICY, MOUNTED_WORKSPACE_POLICY) and Path(workspace["workspace"]).is_absolute()
             and workspace.get("target") == str(Path(workspace["workspace"]) / "debug.md"), "Clarified target changed")
     before = _evidence_path(call, "reflection_prompt_before_workspace.md")
     sent = _evidence_path(call, "reflection_prompt.md")
@@ -325,7 +332,7 @@ def _validate_fresh_delivery_call(call: Path, root: Path, model: str) -> dict:
         old = old[len(legacy_note):]
     else:
         require(workspace.get("before_policy") == "edit-only-basename-v0", "Unknown comparison policy")
-    note = edit_instruction("debug.md")
+    note = workspace_note("debug.md") if mounted else edit_instruction("debug.md")
     require(old.startswith("Edit only debug.md.") and workspace.get("note") == note
             and sent.read_text() == note + old[len("Edit only debug.md."):]
             and digest(before) == workspace.get("before_prompt_sha256") and digest(sent) == workspace.get("effective_prompt_sha256"), "Actual prompt differs from the short instruction")

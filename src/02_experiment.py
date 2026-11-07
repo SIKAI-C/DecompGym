@@ -2,7 +2,9 @@
 
 One-time setup on a machine:
     python src/02_experiment.py docker prepare                      # record image and sandbox evidence in outputs/runtime/
-    python src/02_experiment.py docker auth --backend codex --verify  # private CLI login (codex, claude or agy)
+    python src/02_experiment.py docker auth --backend codex --slot 0 --login  # store a login (codex slots 0 and 1, claude; agy: docker agy-login)
+    python src/02_experiment.py docker auth --backend codex --check   # no-inference credential check (codex, claude or agy)
+    python src/02_experiment.py docker auth --backend codex --verify  # one unscored test edit: readiness evidence
 
 A campaign (one frozen copy of the code, data and config):
     python src/02_experiment.py check-config --config configs/paper.json

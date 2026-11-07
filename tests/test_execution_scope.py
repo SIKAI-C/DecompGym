@@ -8,7 +8,6 @@ import pytest
 
 from src.experiments import campaign, docker_setup
 from src.experiments import sandbox as native_solver
-from src.agent.docker_client import AuthenticationRequired
 from src.experiments.paired_runner import ProtocolError, read, save
 from src.agent.prompts.policy import FEEDBACK_POLICY, REFLECTION_POLICY, WORKSPACE_POLICY
 from src.agent.prompts.snapshot import PROMPT_PROTOCOL
@@ -38,6 +37,7 @@ def scoped_campaign(tmp_path, monkeypatch):
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
     readiness = []
     monkeypatch.setattr(campaign, "require_backend_readiness", lambda env, backends: readiness.append(set(backends)) or {})
+    monkeypatch.setattr(campaign, "require_backend_authentication", lambda *args, **kwargs: {})
     monkeypatch.setattr(campaign, "state_root", lambda: tmp_path / "locks")
     monkeypatch.setattr(campaign, "runtime_lock", lambda *_: nullcontext())
     monkeypatch.setattr(campaign.signal, "signal", lambda *_: None)
@@ -108,8 +108,8 @@ def test_later_scopes_keep_claude_effort_and_require_agy_credentials(scoped_camp
     assert all(item["client"].effort == item["reflection_client"].effort == "medium" for item in fixture.calls if item["model"] == "claude")
     save(fixture.root / "pause_request.json", {"resume_requires_explicit_user_request": False})
     before = len(fixture.calls)
-    with pytest.raises(AuthenticationRequired):
-        campaign.run(fixture.root, models=["gemini"])
+    assert campaign.run(fixture.root, models=["gemini"]) == 64
+    assert read(fixture.root / "status.json")["state"] == "repair_required" and "passphrase" in read(fixture.root / "auth_invalid.json")["error"]
     assert len(fixture.calls) == before
     monkeypatch.setenv("DECOMPBENCH_AGY_KEYRING_PASSPHRASE", "synthetic-test-only")
     assert campaign.run(fixture.root, models=["gemini"]) == 0

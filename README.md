@@ -113,7 +113,9 @@ print(verify("bd", "ufl", "data/bd/ufl/ufl_small_seed000/data.json", result["out
 ```bash
 docker build -f docker/agents/Dockerfile -t decompbench-agents-v2:20261013 .
 python src/02_experiment.py docker prepare                        # check the image and record the runtime in outputs/runtime/
-python src/02_experiment.py docker auth --backend codex --verify  # once per CLI: codex, claude or agy (see below)
+python src/02_experiment.py docker auth --backend codex --slot 0 --login   # store a login once (see below)
+python src/02_experiment.py docker auth --backend codex --check   # no-inference credential check: codex, claude or agy
+python src/02_experiment.py docker auth --backend codex --verify  # once per CLI: one unscored test edit (readiness)
 
 python src/02_experiment.py init   --root outputs/experiments/my_run --config configs/paper.json
 python src/02_experiment.py resume --root outputs/experiments/my_run      # a new campaign starts paused
@@ -122,11 +124,13 @@ python src/02_experiment.py dashboard --root outputs/experiments/my_run   # http
 python src/03_analysis.py --campaign outputs/experiments/my_run           # audited report in outputs/reports/
 ```
 
-`docker auth` stores a login in the CLI's private Docker volume and, with `--verify`, makes one unscored test edit that also runs in the solver sandbox:
+Each CLI's login lives only in its private Docker volume; the host's own logins are never copied. `docker auth --login` stores one, `--check` tests it without any model call, and `--verify` makes one unscored test edit that also runs in the solver sandbox (readiness evidence for campaigns). A saved login is replaced only with `--login --replace`; the old file is kept in the volume as `<file>.replaced-<UTC>` and never used again automatically.
 
-- **Codex:** sign in on the host first (`codex login`); `auth` copies `~/.codex/auth.json`.
-- **Claude Code:** create a subscription token with `claude setup-token` and paste it at the hidden prompt (or set `CLAUDE_CODE_OAUTH_TOKEN`).
+- **Codex:** `docker auth --backend codex --slot 0 --login`, then the same with `--slot 1`. Each runs ChatGPT's device-code sign-in inside the agent image (open the URL, enter the code; enable device-code sign-in in ChatGPT's security settings if it is refused). The two concurrent Codex calls of a campaign use one slot each, so no two containers share a refresh token. `--import-host` copies `~/.codex/auth.json` instead, as an emergency option only: that copy shares the host's refresh token and breaks when the host refreshes it.
+- **Claude Code:** create a token with `claude setup-token` and store it with `docker auth --backend claude --login` (hidden prompt; `--from-env` reads `CLAUDE_CODE_OAUTH_TOKEN` instead). Its `--check` is local only; `--verify` proves the token works.
 - **Antigravity:** sign in once with `python src/02_experiment.py docker agy-login`. It asks you to choose a passphrase for a dedicated encrypted keyring, runs Antigravity's Google sign-in inside the agent image (open the URL, paste the code, then press Ctrl+C), and seals the login into the keyring volume. `docker agy-models` checks a saved login. Campaigns need the passphrase in `DECOMPBENCH_AGY_KEYRING_PASSPHRASE`.
+
+Before it starts, `run` checks the credentials of every queued CLI and of the Codex judge in the same way as `--check` and refuses to start if one fails. A call that fails with an invalid credential is kept uncommitted (it is retried after the repair and never counts against the model), the campaign stops with exit 64 and `auth_invalid.json` names the repair command.
 
 To test other models, copy [configs/paper.json](configs/paper.json) and edit `model_queue`; the attempt budget, time limits, judge and prompts are fixed by the protocol. `init` freezes a copy of `src/`, `docker/`, the data and the config inside the campaign root, and `run`/`watch` only execute that copy, so later code changes never alter a running or finished campaign. `watch` restarts the run after infrastructure failures and pauses it under resource pressure.
 

@@ -22,6 +22,7 @@ def test_controller_saves_unexpected_failure_and_stops_without_retry(tmp_path, m
     monkeypatch.setattr(docker_setup, "runtime", lambda: SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None))
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: object())
     monkeypatch.setattr(campaign, "require_backend_readiness", lambda *_: {})
+    monkeypatch.setattr(campaign, "require_backend_authentication", lambda *args, **kwargs: {})
     monkeypatch.setattr(campaign, "validate", lambda _: manifest)
     monkeypatch.setattr(campaign, "ensure_execution_allowed", lambda *_: None)
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
@@ -65,6 +66,7 @@ def test_campaign_routes_every_role_through_docker_and_the_native_executor(tmp_p
     monkeypatch.setattr(campaign, "require_campaign_environment", lambda *_: None)
     checked_backends = []
     monkeypatch.setattr(campaign, "require_backend_readiness", lambda env, backends: checked_backends.extend(backends) or {})
+    monkeypatch.setattr(campaign, "require_backend_authentication", lambda *args, **kwargs: {})
     monkeypatch.setattr(campaign, "pair_complete", lambda *_: False)
     monkeypatch.setattr(campaign, "state_root", lambda: tmp_path / "locks")
     monkeypatch.setattr(campaign, "runtime_lock", lambda *_: nullcontext())

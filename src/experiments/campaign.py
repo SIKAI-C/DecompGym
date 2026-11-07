@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,7 @@ import traceback
 from src.agent.prompts.method import DECOMPOSITION_POLICY
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.agent.prompts.snapshot import judge_prompt_hashes, snapshot_prompt
+from src.experiments.agent_auth import require_backend_authentication
 from src.experiments.data_context import accepted_prompt_protocol, context_delivery_policy, data_context_policy, decomposition_contract_policy
 from src.experiments.docker_setup import load_execution_environment, validate_execution_environment, require_backend_readiness
 from src.experiments.environment import RuntimeEnvironmentError, require_runtime_environment
@@ -38,6 +40,8 @@ FAMILIES = list(PAPER_FAMILIES)
 
 SOURCE = Path(__file__).resolve().parents[1]
 REPOSITORY = SOURCE.parent
+# The watchdog stops (repair required) after this many consecutive restarts whose failure carried an auth marker.
+AUTH_RESTART_CAP = 3
 
 
 def initialize(root, data, plan_path, runtime_path):
@@ -189,26 +193,37 @@ def run(root, models=None):
     engine.bind_environment(environment)
     if engine.image_id(environment["image_id"]) != environment["image_id"]:
         raise RuntimeEnvironmentError("The frozen Docker image is unavailable")
-    if any(item["backend"] == "agy-cli" for item in queue) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
-        raise AuthenticationRequired("Supply the benchmark AGY keyring passphrase privately in the local launch environment")
     solver_executor = NativeSandboxExecutor(license_file=Path(environment["license_file"]), expected_environment=environment["native_environment"], output_policy=manifest.get("solver_output_policy"))
     context_delivery = (manifest.get("prompt_protocol") or {}).get("context_delivery")
-    class CampaignCodexClient(DockerCliClient):
+    auth_markers = []
+    class CampaignClient(DockerCliClient):
+        """Records non-terminal auth markers (terminal ones raise AuthenticationRequired in the client itself)."""
         def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
             result = super().edit_file(target, prompt, context=context, log_dir=log_dir, step=step)
             stderr_path = (log_dir or target.parent) / f"{step}_stderr.log"
             marker = auth_failure_marker(result, stderr_path.read_text() if stderr_path.exists() else "")
             if marker:
-                gate.fallback(marker, role=self.role, invocation_id=Path(log_dir or target.parent).name)
+                if not result.ok:
+                    with mutex:
+                        auth_markers.append({"backend": self.backend, "role": self.role, "marker": marker, "invocation_id": Path(log_dir or target.parent).name})
+                if self.backend == "codex-cli":
+                    gate.fallback(marker, role=self.role, invocation_id=Path(log_dir or target.parent).name)
             return result
+    @contextmanager
     def call_lock(client):
+        """Codex: a gate slot and that slot's own auth volume; Claude Code and AGY: one call at a time per backend."""
         backend = client.protocol()["backend"]
-        return gate.enter() if backend == "codex-cli" else runtime_lock("native-agy-auth" if backend == "agy-cli" else "native-claude-auth")
+        if backend == "codex-cli":
+            with gate.enter() as slot, client.bind_auth_slot(slot):
+                yield
+        else:
+            with runtime_lock("native-agy-auth" if backend == "agy-cli" else "native-claude-auth"):
+                yield
     specifications = {item["model"]: item for item in queue}
     def make_client(model, role):
         specification = {"backend": "codex-cli", "effort": manifest["judge_effort"]} if role == "algorithm_judge" else specifications[model]
         backend = specification["backend"]
-        cls = CampaignCodexClient if backend == "codex-cli" else DockerCliClient
+        cls = CampaignClient
         # The judge keeps the pasted context (the solver.py under review); generation and reflection follow the protocol.
         delivery = {"context_delivery": context_delivery} if context_delivery is not None and role != "algorithm_judge" else {}
         return cls(model, backend=backend, image_id=environment["image_id"], runtime=engine, evidence_root=root / "diagnostics/runtime", role=role, effort=specification["effort"], timeout=manifest["agent_timeout"], **delivery)
@@ -238,11 +253,29 @@ def run(root, models=None):
                 state["active_instances"].pop(worker, None)
                 checkpoint()
     def stop(signum, frame):
+        from src.agent import auth
+        auth.CANCEL.set()  # threads waiting for an auth-volume lock give up at once
         raise KeyboardInterrupt("Native campaign stop requested")
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    auth_failures = []  # every AuthenticationRequired seen, also those a more severe exit error does not carry
     with runtime_lock("fixed81-native-campaign"):
         try:
+            if any(item["backend"] == "agy-cli" for item in queue) and not os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"):
+                from src.agent.auth import AUTH_VOLUMES
+                raise AuthenticationRequired("Supply the benchmark AGY keyring passphrase privately in the local launch environment",
+                                             {"kind": "passphrase_missing", "backend": "agy-cli", "auth_volume": AUTH_VOLUMES["agy-cli"]})
+            # Admission: every queued backend and the Codex judge must pass the no-inference credential check.
+            backends = [item["backend"] for item in queue] + ["codex-cli"]
+            catalog = {}
+            for item in queue:
+                catalog.setdefault(item["backend"], set()).add(item["model"])
+            catalog.setdefault("codex-cli", set()).add(manifest["judge_model"])
+            state["authentication"] = require_backend_authentication(engine, environment["image_id"], backends, models={backend: sorted(names) for backend, names in catalog.items()},
+                                                                     codex_slots=gate.limit, agy_passphrase=os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE"),
+                                                                     record_dir=root / "diagnostics" / "auth_checks")
+            resolve_auth_sentinel(root, state["authentication"])
+            checkpoint()
             admission_stopped = False
             def stop_admission():
                 nonlocal admission_stopped
@@ -280,8 +313,12 @@ def run(root, models=None):
                                     state["models"][model]["completed_pairs"] += 1
                                     checkpoint()
                             except Exception as caught:
-                                error = caught
-                                state.update(error=f"{type(caught).__name__}: {caught}", state="draining_for_recovery")
+                                if isinstance(caught, AuthenticationRequired):
+                                    auth_failures.append(caught)
+                                # A repair-required failure is never replaced by a later retryable one while draining.
+                                if error is None or (isinstance(error, InfrastructureError) and not isinstance(caught, InfrastructureError)):
+                                    error = caught
+                                state.update(error=f"{type(error).__name__}: {error}", state="draining_for_recovery")
                                 checkpoint()
                         if error is None:
                             for _ in finished:
@@ -308,8 +345,13 @@ def run(root, models=None):
         except Exception as error:
             retryable = isinstance(error, InfrastructureError)
             state.update(state="infrastructure_stopped" if retryable else "repair_required", error=f"{type(error).__name__}: {error}")
+            for failure_error in auth_failures + ([error] if isinstance(error, AuthenticationRequired) and error not in auth_failures else []):
+                record_auth_sentinel(root, failure_error, state.get("authentication"))
             checkpoint()
-            save(root / "controller_failures" / f"{time.time_ns()}.json", {"recorded_at": now(), "retryable": retryable, "error_type": type(error).__name__, "error": str(error), "traceback": traceback.format_exc()})
+            failure = {"recorded_at": now(), "retryable": retryable, "error_type": type(error).__name__, "error": str(error), "traceback": traceback.format_exc()}
+            if retryable and auth_markers:
+                failure["auth_markers"] = auth_markers[-5:]
+            save(root / "controller_failures" / f"{time.time_ns()}.json", failure)
             print(state["error"], flush=True)
             return 75 if retryable else 64
 
@@ -325,7 +367,7 @@ def watch(root, models=None):
     engine.bind_environment(manifest["execution_environment"])
     monitor_root = root / "monitor"
     monitor_root.mkdir(exist_ok=True)
-    attempts = 0
+    attempts = auth_restarts = 0
     def stop(signum, frame):
         raise KeyboardInterrupt("Watchdog termination requested")
     signal.signal(signal.SIGTERM, stop)
@@ -339,6 +381,7 @@ def watch(root, models=None):
             save(root / "watchdog.json", {"pid": os.getpid(), "started_at": now(), "command": command, "execution_scope": selected_models, "continuous_resource_monitor": True})
             while True:
                 ensure_execution_allowed(root, manifest)
+                launched = time.time_ns()
                 try:
                     try:
                         result = supervise(command, monitor_root, interval=5, guard=ResourceGuard(**guard_options), container_sampler=engine.resource_samples)
@@ -355,6 +398,13 @@ def watch(root, models=None):
                     print(f"Monitoring startup failed: {type(error).__name__}: {error}", flush=True)
                 if result != 75:
                     return result
+                auth_restarts = auth_restarts + 1 if latest_failure_has_auth_markers(root, launched) else 0
+                if auth_restarts >= AUTH_RESTART_CAP:
+                    state = read(root / "status.json") or {}
+                    state.update(state="repair_required", updated_at=now(), error=f"{auth_restarts} consecutive restarts failed with authentication markers; check the credentials with `docker auth --check`")
+                    save(root / "status.json", state)
+                    print(state["error"], flush=True)
+                    return 64
                 delay = manifest["retry_delays_seconds"][min(attempts, len(manifest["retry_delays_seconds"]) - 1)]
                 attempts += 1
                 with (root / "restarts.jsonl").open("a") as stream:
@@ -377,6 +427,68 @@ def watch(root, models=None):
         state.update(state="stopped", updated_at=now(), error="Watchdog stopped by user")
         save(root / "status.json", state)
         return 130
+
+
+def latest_failure_has_auth_markers(root, since_ns):
+    """Whether the newest controller failure written after `since_ns` was retryable and carried an auth marker."""
+    failures = sorted((root / "controller_failures").glob("*.json"), key=lambda path: path.name)
+    for path in reversed(failures):
+        if not path.stem.isdigit() or int(path.stem) < since_ns:
+            return False
+        receipt = read(path) or {}
+        return bool(receipt.get("retryable") and receipt.get("auth_markers"))
+    return False
+
+
+def record_auth_sentinel(root, error, authentication=None):
+    """root/auth_invalid.json: the credential failures that stopped the campaign (shown by the dashboard): per failed
+    volume its backend, the failure time and the credential generation the last admission check saw (informational)."""
+    evidence = getattr(error, "evidence", {}) or {}
+    volumes, observed = {}, getattr(error, "raised_at", None) or now()
+    for report in [evidence] + list(evidence.get("reports", [])):
+        volume = report.get("auth_volume") or report.get("volume")
+        if volume:
+            generation = report["generation"] if "generation" in report else (authentication or {}).get(volume, {}).get("generation")
+            # The time the failure was observed (the call record or the check), not the later write after draining.
+            failed_at = report.get("recorded_at") or report.get("checked_at") or observed
+            volumes[volume] = {"backend": report.get("backend"), "generation": generation, "failed_at": failed_at}
+    previous = read(root / "auth_invalid.json") or {}
+    errors = (previous.get("errors") or ([previous["error"]] if previous.get("error") else [])) + [str(error)]
+    save(root / "auth_invalid.json", {"recorded_at": now(), "error": str(error), "errors": errors[-10:], "evidence": evidence, "volumes": (previous.get("volumes") or {}) | volumes})
+
+
+def stored_after(checked, entry):
+    """Whether the checked credential was stored (meta.json created_at) after the recorded failure."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(checked.get("created_at")) > datetime.fromisoformat(entry.get("failed_at"))
+    except (TypeError, ValueError):
+        return False
+
+
+def resolve_auth_sentinel(root, summary):
+    """Clear the sentinel's volumes that this admission checked and passed; archive it once none is left.
+
+    Claude Code's check is local only, so its volume is cleared only by a token stored after the failure (a new
+    `--login`); otherwise the start is refused. A volume outside this launch scope stays recorded."""
+    path = root / "auth_invalid.json"
+    sentinel = read(path) if path.exists() else None
+    if sentinel is None:
+        return
+    remaining = {}
+    for volume, entry in (sentinel.get("volumes") or {}).items():
+        checked = (summary or {}).get(volume)
+        if checked is None:
+            remaining[volume] = entry
+        elif entry.get("backend") == "claude-code-cli" and not stored_after(checked, entry):
+            from src.agent.docker_client import AuthenticationRequired
+            raise AuthenticationRequired(f"The Claude Code token in {volume} failed ({sentinel.get('recorded_at')}) and has not been replaced since; "
+                                         "store a new one with `python src/02_experiment.py docker auth --backend claude --login --replace`",
+                                         {"kind": "credential_invalid", "backend": "claude-code-cli", "auth_volume": volume, "generation": entry.get("generation")})
+    if remaining:
+        save(path, sentinel | {"volumes": remaining})
+    else:
+        path.replace(root / f"auth_invalid.resolved-{time.time_ns()}.json")
 
 
 def pause_requested(root):

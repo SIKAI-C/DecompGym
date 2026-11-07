@@ -243,6 +243,13 @@ class DockerRuntime:
         if result.returncode or (json.loads(result.stdout or "null") or {}).get(label) != purpose:
             raise RuntimeEnvironmentError("Docker volume ownership label does not match")
 
+    def volume_users(self, volume):
+        """(name, io.decompbench.runtime label) of each running container that mounts `volume`."""
+        result = self.command("ps", "--filter", f"volume={volume}", "--filter", "status=running", "--format", "{{.Names}}\t{{.Label \"" + self.LABEL + "\"}}")
+        if result.returncode:
+            raise ContainerError("Cannot list the containers that use an auth volume")
+        return [tuple((line.split("\t") + [""])[:2]) for line in result.stdout.splitlines() if line.strip()]
+
     def inspect(self, name):
         result = self.command("container", "inspect", name)
         if result.returncode:

@@ -592,7 +592,7 @@ def test_campaign_routes_the_mounted_protocol_and_the_output_policy(tmp_path, mo
     monkeypatch.setattr(docker_setup, "runtime", lambda: SimpleNamespace(image_id=lambda name: name, bind_environment=lambda _: None))
     monkeypatch.setattr(native_solver, "NativeSandboxExecutor", lambda **kwargs: executors.append(kwargs) or object())
     for name, value in (("validate", lambda _: manifest), ("ensure_execution_allowed", lambda *_: None), ("require_campaign_environment", lambda *_: None),
-                        ("require_backend_readiness", lambda *_: {}), ("pair_complete", lambda *_: False), ("state_root", lambda: tmp_path / "locks"), ("runtime_lock", lambda *_: nullcontext())):
+                        ("require_backend_readiness", lambda *_: {}), ("require_backend_authentication", lambda *args, **kwargs: {}), ("pair_complete", lambda *_: False), ("state_root", lambda: tmp_path / "locks"), ("runtime_lock", lambda *_: nullcontext())):
         monkeypatch.setattr(campaign, name, value)
     monkeypatch.setattr(campaign.signal, "signal", lambda *_: None)
     runners = []

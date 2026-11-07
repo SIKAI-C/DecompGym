@@ -31,7 +31,8 @@ import shutil
 import threading
 
 from src.agent.container import DockerRuntime
-from src.agent.docker_client import AUTH_VOLUMES, CLI_VERSIONS, DockerCliClient, worker_file_hashes
+from src.agent.auth import forbid_job_credential
+from src.agent.docker_client import CLI_VERSIONS, DockerCliClient, worker_file_hashes
 from src.agent.prompts.policy import WORKSPACE_POLICY, edit_instruction, record_workspace_prompt
 from src.agent.result import save_result
 from src.agent.safe_artifacts import UnsafeArtifact, read_regular, read_regular_text
@@ -226,12 +227,8 @@ class MultiFileDockerCliClient(DockerCliClient):
                         or observed.get("extension_files_sha256") != extension_file_hashes()):
                     raise RuntimeEnvironmentError("Multi-file Docker isolation, CLI version or worker preflight failed before authentication")
                 _PREFLIGHTS.add(key)
-        volume = AUTH_VOLUMES[self.backend]
-        if self.backend == "agy-cli":
-            self.runtime.ensure_volume(volume, "agy-native-auth", label="io.decompbench.purpose", create=False)
-            return {volume: "/auth/keyrings"}
-        self.runtime.ensure_volume(volume, self.backend + "-v2-auth")
-        return {volume: "/auth"}
+        # The paper client's auth volume (bound call-gate slot for Codex) and lock rules apply unchanged.
+        return self.auth_mounts()
 
     def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
         target = Path(target).absolute()
@@ -244,12 +241,14 @@ class MultiFileDockerCliClient(DockerCliClient):
                                             old_absolute_note=self.backend == "agy-cli", note=note, version=self.workspace_policy())
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
+        forbid_job_credential(self.backend, credential)
         job = {"target": target.name, "initial_content": read_regular_text(target.parent, target.name, missing_ok=True) or "", "prompt": effective,
                "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout, "credential": credential,
                "delivery": {"mode": MULTI_FILE, "track": self.delivery.track}}
-        result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
-                                  artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json", BUNDLE_NAME],
-                                  public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role, "delivery_mode": MULTI_FILE, "delivery_track": self.delivery.track})
+        with self.auth_lock(mounts, log_dir / f"{step}_container.json"):
+            result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
+                                      artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json", BUNDLE_NAME],
+                                      public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role, "delivery_mode": MULTI_FILE, "delivery_track": self.delivery.track})
         return self._record(target, log_dir, step, result)
 
     def _record(self, target, log_dir, step, result):
@@ -278,7 +277,19 @@ class MultiFileDockerCliClient(DockerCliClient):
             # An invalid delivery is an undelivered target: no solver.py content and no sources are committed.
             artifacts[target.name] = ""
             target.write_text("")
-        answer = super()._record(target, log_dir, step, replace(result, artifacts=artifacts))
+        try:
+            answer = super()._record(target, log_dir, step, replace(result, artifacts=artifacts))
+        except BaseException:
+            # The paper record raised (for example a terminal credential failure or a credential checkpoint repair).
+            # Unless it committed a successful result first, no partial delivery may stay presented as committed.
+            committed = json.loads(read_regular_text(log_dir, f"{step}_metrics.json", missing_ok=True) or "{}").get("ok") is True
+            if not committed:
+                _clear_sources(target.parent)
+                files_path.unlink(missing_ok=True)
+                interrupted = failure or {"error": "the call record was interrupted before the delivery was committed", "rejected": []}
+                _atomic_json(record_path, {"version": RECORD_VERSION, "mode": MULTI_FILE, "track": track, "manifest": None, "failure": interrupted,
+                                           "manifest_sha256": None, "sources_materialized": False})
+            raise
         if not answer.ok:
             manifest = files = None
             materialized = False

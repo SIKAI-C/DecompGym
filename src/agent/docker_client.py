@@ -1,7 +1,9 @@
 """Fresh Docker CLI edits with private credentials and recoverable call records."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import replace
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -9,6 +11,7 @@ import re
 from pathlib import Path
 import threading
 
+from src.agent.auth import AUTH_VOLUMES, auth_volume, forbid_job_credential, mounted_auth_volume, repair_command, require_exclusive_volume, terminal_auth_marker, volume_lock
 from src.agent.cli_events import parse_events
 from src.agent.result import AgentResult, save_result
 from src.agent.container import DockerRuntime
@@ -22,7 +25,6 @@ from src.experiments.environment import RuntimeEnvironmentError
 DOCKER_EDIT_POLICY = "fresh-docker-cli-edit-v1"
 IMAGE_TAG = "decompbench-agents-v2:20261013"
 CLI_VERSIONS = {"codex-cli": "codex-cli 0.162.1", "claude-code-cli": "2.1.296 (Claude Code)", "agy-cli": "1.3.1"}
-AUTH_VOLUMES = {"codex-cli": "decompbench-v3-codex-auth", "claude-code-cli": "decompbench-v2-claude-auth", "agy-cli": "decompbench-agy-native-keyring-v1"}
 _PREFLIGHT_LOCK = threading.Lock()
 _PREFLIGHTS = set()
 
@@ -34,21 +36,20 @@ def worker_file_hashes():
 
 
 class AuthenticationRequired(RuntimeEnvironmentError):
-    """The owner must supply subscription authentication through a private channel."""
+    """The owner must repair or supply subscription authentication through a private channel (exit 64)."""
+
+    def __init__(self, message, evidence=None):
+        super().__init__(message)
+        self.evidence = evidence or {}
+        self.raised_at = datetime.now(timezone.utc).isoformat()  # when the failure was observed (sentinel lifecycle)
 
 
 def credential_from_environment(backend):
-    if backend == "codex-cli":
-        directory = Path.home() / ".codex"
-        value = read_regular_text(directory, "auth.json", missing_ok=True)
-        return json.loads(value) if value else None
-    if backend == "claude-code-cli":
-        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-        if token:
-            return {"oauth_token": token}
-        directory = Path.home() / ".claude"
-        value = read_regular_text(directory, ".credentials.json", missing_ok=True) if directory.exists() else None
-        return {"credentials": json.loads(value)} if value else None
+    """The job credential. None for Codex and Claude Code: their auth volume is the only source (src/agent/auth.py),
+    so neither the host's ~/.codex/auth.json nor a launch-environment CLAUDE_CODE_OAUTH_TOKEN is used unless
+    `docker auth --login` imported it explicitly. AGY receives only its keyring passphrase."""
+    if backend in ("codex-cli", "claude-code-cli"):
+        return None
     password = os.environ.get("DECOMPBENCH_AGY_KEYRING_PASSPHRASE")
     if not password:
         raise AuthenticationRequired("AGY requires its benchmark keyring passphrase in the local launch environment; do not send it in chat")
@@ -66,6 +67,8 @@ class DockerCliClient:
         self.runtime, self.evidence_root = runtime, evidence_root
         self.effort, self.timeout, self.role = effort, timeout, role
         self.credential_provider = credential_provider
+        # The call-gate slot whose Codex auth volume this call uses (None: slot 0); see bind_auth_slot.
+        self.auth_slot = None
         # None: the paper's pasted context (compose_prompt). CONTEXT_DELIVERY_MOUNTED: read-only files in the workspace.
         self.context_delivery = context_delivery
 
@@ -87,12 +90,53 @@ class DockerCliClient:
                 if result.returncode or not observed.get("ok") or observed.get("versions") != expected or observed.get("worker_files_sha256") != worker_file_hashes():
                     raise RuntimeEnvironmentError("Docker isolation or CLI version preflight failed before authentication")
                 _PREFLIGHTS.add(key)
-        volume = AUTH_VOLUMES[self.backend]
+        return self.auth_mounts()
+
+    def auth_volume(self):
+        return auth_volume(self.backend, self.auth_slot)
+
+    @contextmanager
+    def bind_auth_slot(self, slot):
+        """Use the Codex auth volume of call-gate slot `slot` while the gate holds that slot."""
+        previous, self.auth_slot = self.auth_slot, slot
+        try:
+            yield
+        finally:
+            self.auth_slot = previous
+
+    def auth_mounts(self):
+        volume = self.auth_volume()
         if self.backend == "agy-cli":
             self.runtime.ensure_volume(volume, "agy-native-auth", label="io.decompbench.purpose", create=False)
             return {volume: "/auth/keyrings"}
         self.runtime.ensure_volume(volume, self.backend + "-v2-auth")
         return {volume: "/auth"}
+
+    @contextmanager
+    def auth_lock(self, mounts, state_path=None):
+        """Hold the host lock of the auth volume a container of this call may use, until the call returns.
+
+        An existing container state (a recovery, also inside DockerRuntime.run) is locked on the volume its container
+        mounted, which may be another slot's than the one bound now. With the lock held, no other running container
+        may still use the volume (require_exclusive_volume)."""
+        volumes = list(mounts or {})
+        if len(volumes) > 1:
+            raise RuntimeEnvironmentError("A Docker agent call mounts exactly one auth volume")
+        recorded, allowed = None, ()
+        if state_path is not None and Path(state_path).exists():
+            try:
+                state = json.loads(Path(state_path).read_text())
+            except (OSError, ValueError):
+                state = {}
+            recorded = mounted_auth_volume(state)
+            allowed = (state["name"],) if isinstance(state.get("name"), str) else ()
+        volume = recorded or (volumes[0] if volumes else None)
+        if volume is None:
+            yield None
+            return
+        with volume_lock(volume):
+            require_exclusive_volume(self.runtime, volume, allowed=allowed)
+            yield volume
 
     def compose_prompt(self, target_name, prompt, context=None):
         """Workspace rules, the task prompt and each context file; record_workspace_prompt then rewrites the first line."""
@@ -124,10 +168,12 @@ class DockerCliClient:
         effective = record_workspace_prompt(Path("/work"), target.name, self.compose_prompt(target.name, prompt, context), log_dir, step, old_absolute_note=self.backend == "agy-cli")
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
+        forbid_job_credential(self.backend, credential)
         job = {"target": target.name, "initial_content": read_regular_text(target.parent, target.name, missing_ok=True) or "", "prompt": effective,
                "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout, "credential": credential}
-        result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
-                                  artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role})
+        with self.auth_lock(mounts, log_dir / f"{step}_container.json"):
+            result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
+                                      artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role})
         return self._record(target, log_dir, step, result)
 
     def _edit_mounted(self, target, prompt, context, log_dir, step):
@@ -138,12 +184,14 @@ class DockerCliClient:
         (log_dir / f"{step}_context.json").write_text(json.dumps(mounted_context.evidence(files, target.name), indent=2) + "\n")
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
+        forbid_job_credential(self.backend, credential)
         job = {"target": target.name, "initial_content": read_regular_text(target.parent, target.name, missing_ok=True) or "", "prompt": effective,
                "model": self.model, "effort": self.effort, "role": self.role, "timeout": self.timeout, "credential": credential}
-        result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
-                                  artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role,
-                                                                                                                                         "context_delivery": self.context_delivery},
-                                  context=mounted_context.volume_contents(files))
+        with self.auth_lock(mounts, log_dir / f"{step}_container.json"):
+            result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
+                                      artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role,
+                                                                                                                                             "context_delivery": self.context_delivery},
+                                      context=mounted_context.volume_contents(files))
         return self._record(target, log_dir, step, result)
 
     def _ignore_context_copies(self, result, log_dir, step):
@@ -166,7 +214,10 @@ class DockerCliClient:
         state = log_dir / f"{step}_container.json"
         if not state.exists():
             return None
-        return self._record(target, log_dir, step, self.runtime.recover(state))
+        # A recovered container may still run and write its auth volume: hold the lock of the volume it mounted.
+        with self.auth_lock(None, state):
+            result = self.runtime.recover(state)
+        return self._record(target, log_dir, step, result)
 
     def _record(self, target, log_dir, step, result):
         result = self._ignore_context_copies(result, log_dir, step)
@@ -191,6 +242,11 @@ class DockerCliClient:
         host_markers = ("code-mode host exited during handshake", "timed out negotiating with the code-mode host", "failed to initialize code-mode", "failed to spawn code-mode")
         if any(marker in diagnostics for marker in host_markers):
             error, terminal = "CLI tool host failed to initialize", "infrastructure_failed"
+        # A terminal credential failure is infrastructure: the call is recorded but never committed, so it is retried
+        # after the owner repairs the credential and is never charged to the agent.
+        auth_marker = terminal_auth_marker(self.backend, result.artifacts.get("events.jsonl", ""), result.artifacts.get("stderr.log", ""), succeeded=returncode == 0 and terminal == "completed" and error is None)
+        if auth_marker:
+            error, terminal = f"credential_invalid: {auth_marker}", "infrastructure_failed"
         contents = result.artifacts.get(target.name, "")
         ok = returncode == 0 and terminal == "completed" and error is None and bool(contents.strip())
         if ok:
@@ -218,8 +274,16 @@ class DockerCliClient:
         answer = AgentResult(ok, returncode, worker.get("agent_seconds", result.elapsed_seconds), parsed["usage"], error if error else (None if ok else "Completed CLI did not deliver the requested file"), parsed["warnings"], terminal,
                              hashlib.sha256(contents.encode()).hexdigest() if ok else None)
         save_result(log_dir, step, answer)
+        volume = mounted_auth_volume(result.metadata) or self.auth_volume()
+        if auth_marker:
+            evidence = {"kind": "credential_invalid", "backend": self.backend, "auth_volume": volume, "marker": auth_marker, "role": self.role, "model": self.model,
+                        "call": str(log_dir), "step": step, "recorded_at": datetime.now(timezone.utc).isoformat(), "committed": False, "charged_to_agent": False,
+                        "repair": repair_command(self.backend, volume)}
+            (log_dir / f"{step}_auth_invalid.json").write_text(json.dumps(evidence, indent=2) + "\n")
+            raise AuthenticationRequired(f"{self.backend} credential in {volume} is invalid ({auth_marker}); repair with `{evidence['repair']}`", evidence)
         if worker.get("credential_checkpoint_error"):
             raise RuntimeEnvironmentError("The completed CLI artifact was saved, but credential persistence needs repair")
         if not worker and "worker_error" in result.stdout:
-            raise AuthenticationRequired(f"{self.backend} could not initialize its private authentication channel; inspect the saved container diagnostics")
+            raise AuthenticationRequired(f"{self.backend} could not initialize its private authentication channel; inspect the saved container diagnostics (repair: `{repair_command(self.backend, volume)}`)",
+                                         {"kind": "credential_unavailable", "backend": self.backend, "auth_volume": volume, "call": str(log_dir), "step": step, "repair": repair_command(self.backend, volume)})
         return answer

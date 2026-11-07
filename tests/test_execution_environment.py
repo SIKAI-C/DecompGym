@@ -57,3 +57,10 @@ def test_modified_readiness_records_block_dispatch(tmp_path, changed):
     (run / changed).write_text("changed")
     with pytest.raises(RuntimeEnvironmentError):
         environment.require_backend_readiness(config, ["codex-cli"])
+
+
+def test_readiness_proved_before_the_auth_policy_is_rejected(tmp_path):
+    from src.agent.auth import AUTH_POLICY
+    config, run = readiness(tmp_path)
+    with pytest.raises(RuntimeEnvironmentError, match="predates the current authentication policy"):
+        environment.require_backend_readiness(config | {"auth_policy": AUTH_POLICY}, ["codex-cli"])

@@ -1,4 +1,8 @@
-"""Bound concurrent Codex calls and fall back to one call after an authentication failure."""
+"""Bound concurrent Codex calls and fall back to one call after an authentication failure.
+
+Each slot is bound to its own Codex auth volume (src.agent.auth.CODEX_SLOT_VOLUMES): `enter()` yields the slot index,
+and the campaign mounts that slot's volume for the call. The limit-1 fallback is the single-volume mode: it holds the
+legacy lock exclusively and always yields slot 0."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -11,7 +15,7 @@ from src.utils.records import now, save
 
 
 class NativeCallGate:
-    """Two shared-lock slots, or one exclusive legacy lock after an auth failure."""
+    """Two shared-lock slots, or one exclusive legacy lock after an auth failure; `enter()` yields the slot index."""
     def __init__(self, state_directory, phase_directory):
         self.state_directory = state_directory
         self.phase_directory = phase_directory
@@ -39,24 +43,24 @@ class NativeCallGate:
                 self.condition.wait(timeout=0.2)
             parallel = self.limit == 2
             self.active += 1
-        legacy, slot = None, None
+        legacy, slot, index = None, None, 0
         try:
             legacy = self.descriptor("codex-native-auth.lock")
             # Existing serialized runners use this same lock exclusively.
             fcntl.flock(legacy, fcntl.LOCK_SH if parallel else fcntl.LOCK_EX)
             if parallel:
                 while slot is None:
-                    for index in range(2):
-                        candidate = self.descriptor(f"codex-native-auth.slot{index}.lock")
+                    for candidate_index in range(2):
+                        candidate = self.descriptor(f"codex-native-auth.slot{candidate_index}.lock")
                         try:
                             fcntl.flock(candidate, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                            slot = candidate
+                            slot, index = candidate, candidate_index
                             break
                         except BlockingIOError:
                             os.close(candidate)
                     if slot is None:
                         time.sleep(0.05)
-            yield
+            yield index
         finally:
             for descriptor in (slot, legacy):
                 if descriptor is not None:

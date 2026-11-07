@@ -285,6 +285,9 @@ class FakeRuntime(MultiFileDockerRuntime):
     def ensure_volume(self, *args, **kwargs):
         pass
 
+    def volume_users(self, volume):
+        return []  # the lock guard's probe; no Docker engine in this test
+
     def run(self, image, command, **kwargs):
         kwargs["state_path"].parent.mkdir(parents=True, exist_ok=True)
         kwargs["state_path"].write_text("{}")
@@ -573,10 +576,12 @@ def test_a_crash_after_the_paper_bookkeeping_keeps_metrics_as_the_commit_marker(
     with pytest.raises(OSError):
         client.edit_file(target, "Solve.", log_dir=tmp_path / "call")
     record = json.loads((tmp_path / "call/agent_delivery_manifest.json").read_text())
-    assert record["manifest"] == manifest and "sources_materialized" in record
     if parent_ok:
+        assert record["manifest"] == manifest and "sources_materialized" in record
         assert load_delivery(target, tmp_path / "call") == (manifest, FILES)
-    else:  # the stale pre-written record must not count as a delivery
+    else:  # the pre-written partial delivery is withdrawn: no manifest, no committed files, no sources
+        assert record["manifest"] is None and record["failure"] and record["sources_materialized"] is False
+        assert not (tmp_path / "call/agent_delivery_files.json").exists() and not (target.parent / "cpp").exists()
         with pytest.raises(DeliveryError, match="no committed successful result"):
             load_delivery(target, tmp_path / "call")
 
@@ -591,3 +596,30 @@ def test_durable_preflight_evidence_is_keyed_by_the_whole_preflight_key(mw, tmp_
     runtime.seccomp_profile.write_text('{"changed": true}')
     client.prepare()
     assert len(paths) == 2 and paths[0] != paths[1] and paths[0].parent == paths[1].parent.parent / paths[0].parent.name
+
+
+def test_a_terminal_credential_failure_withdraws_the_partial_delivery(mw, tmp_path):
+    from src.agent.docker_client import AuthenticationRequired
+    text, _ = bundle_for(mw, FILES)
+    client, runtime = client_for(tmp_path, text)
+    run = runtime.run
+
+    def failing(image, command, **kwargs):
+        result = run(image, command, **kwargs)
+        if command != ["preflight"]:
+            message = "Your access token could not be refreshed. Please log out and sign in again."
+            worker = json.loads(result.artifacts["worker.json"]) | {"returncode": 1, "terminal_state": "failed", "error": message}
+            result.artifacts.update({"worker.json": json.dumps(worker), "events.jsonl": json.dumps({"type": "turn.failed", "error": {"message": message}}) + "\n"})
+            result.returncode = 1
+        return result
+
+    runtime.run = failing
+    target = tmp_path / "attempt/solver.py"
+    target.parent.mkdir()
+    with client.bind_auth_slot(1), pytest.raises(AuthenticationRequired):
+        client.edit_file(target, "Solve.", log_dir=tmp_path / "call")
+    record = json.loads((tmp_path / "call/agent_delivery_manifest.json").read_text())
+    assert record["manifest"] is None and record["sources_materialized"] is False
+    assert not (tmp_path / "call/agent_delivery_files.json").exists() and not (target.parent / "cpp").exists()
+    assert json.loads((tmp_path / "call/agent_metrics.json").read_text())["ok"] is False and target.read_text() == ""
+    assert json.loads((tmp_path / "call/agent_auth_invalid.json").read_text())["auth_volume"] == "decompbench-v3-codex-auth-slot1"

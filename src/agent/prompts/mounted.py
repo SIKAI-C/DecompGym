@@ -140,6 +140,12 @@ def reflection_part(instructions: list[str], closing: str) -> str:
     return "# Part 3: Reflection\n" + "\n".join(instructions) + "\n" + closing
 
 
+def workspace_note(target: str) -> str:
+    """The note that opens Part 1 of a mounted-files call (record_workspace_prompt `note`): the Part 1 heading, the
+    File to modify heading and the paper's edit instruction."""
+    return "# Part 1: Workspace and files\n\n## File to modify\n" + edit_instruction(target)
+
+
 def workspace_part(target: str, files: list, backend: str) -> tuple[str, str]:
     """(prompt to pass to record_workspace_prompt, its note): Part 1 for the writable /work/<target> and the mounted files.
 
@@ -150,7 +156,7 @@ def workspace_part(target: str, files: list, backend: str) -> tuple[str, str]:
         raise ValueError("A mounted-files call edits solver.py or debug.md")
     agy = backend == "agy-cli"
     writable = f"{WORKSPACE}/{target}"
-    note = "# Part 1: Workspace and files\n\n## File to modify\n" + edit_instruction(target)
+    note = workspace_note(target)
     prose = "Keep prose paragraphs on one physical line." if agy else "Keep prose paragraphs and list items on one physical line; rely on editor soft wrapping."
     modify = (f"Edit only {target}. The only file you may create or modify is {writable}; every other path in this workspace is read-only context. "
               f"Only {writable} is collected after this call: anything written elsewhere is ignored. {prose}")
