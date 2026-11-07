@@ -15,6 +15,7 @@ import uuid
 from src.agent.prompts.builder import PromptBuilder
 from src.agent.prompts.judge import algorithm_review_prompt, parse_verdict
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
+from src.experiments.data_context import DATA_CONTEXT_POLICIES, data_context_file
 from src.experiments.environment import require_runtime_environment
 from src.experiments.exec_log import ExecLogger
 from src.experiments.locks import runtime_lock
@@ -66,11 +67,15 @@ class PairedRunner:
 
     def __init__(self, *, client, judge_client, solver_executor, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None,
                  model=None, suite="bd", problem=None, max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1,
-                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01):
+                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None):
         if suite not in SUITE_PROBLEMS:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
             raise ValueError("Attempt/time/tolerance budgets must be positive; gap threshold must be nonnegative.")
+        if data_context not in DATA_CONTEXT_POLICIES:
+            raise ValueError(f"Unknown data-context policy: {data_context}")
+        # None keeps the paper rule (the full data.json in every context); see src.experiments.data_context.
+        self.data_context = data_context
         self.runtime_environment = require_runtime_environment()
         self.model, self.suite = model, suite
         self.problems = list(problem) if problem else list(SUITE_PROBLEMS[suite])
@@ -100,10 +105,17 @@ class PairedRunner:
     def can_early_stop(result: AttemptResult, gap_threshold: float) -> bool:
         return result.status == "ok" and result.exec_ok and result.verify_ok and result.gap_to_gold is not None and result.gap_to_gold <= gap_threshold
 
-    def edit(self, client, target, prompt, context, step):
+    def data_context_file(self, instance):
+        """The data.json entry of a generation or reflection context and its evidence record (None: legacy rule)."""
+        return data_context_file(instance, self.data_context)
+
+    def edit(self, client, target, prompt, context, step, data_context=None):
         """Commit each physical call once; retain all failed-call evidence."""
         directory = target.parent
         request = {"protocol": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "step": step, "prompt": prompt, "target": target.name, "context": [{"label": f"{p.parent.name}/{p.name}", "sha256": digest(p)} for p in context if p.exists()]}
+        if data_context is not None:
+            # Recorded only under an explicit data-context setting, so legacy request fingerprints are unchanged.
+            request["data_context"] = data_context
         fingerprint = identity(request)
         receipt_path = directory / f"{step}_receipt.json"
         cached = read(receipt_path)
@@ -217,10 +229,11 @@ class PairedRunner:
         canonical = Path(case_identity.get("canonical_source", instance)) / "data.json"
         if not canonical.is_file() or digest(canonical) != case_identity.get("inputs", {}).get("data.json"):
             raise ProtocolError("Canonical scoring input differs from the frozen case identity")
-        context = [instance / "data.json"]
+        data_file, data_record = self.data_context_file(instance)
+        context = [data_file]
         if self.mode == "reflection" and idx > 1:
             context += previous_attempt_files(attempt_dir.parent, idx)
-        generation = self.edit(self.client, attempt_dir / "solver.py", self.generation_prompt(instance), context, "agent")
+        generation = self.edit(self.client, attempt_dir / "solver.py", self.generation_prompt(instance), context, "agent", data_context=data_record)
         metrics = {"generation": generation}
         if not generation["ok"]:
             result = AttemptResult(idx, "agent_failed", False, False, None, gold, None, [generation["error"] or "Model omitted the requested solver"], metrics=metrics)
@@ -352,8 +365,9 @@ class PairedRunner:
         self.ensure_generation_failure_log(attempt_dir, result)
         instance = attempt_dir.parent.parent
         prompt = PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=self.objective_quality_failed(result))
-        context = [instance / "data.json"] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
-        reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection")
+        data_file, data_record = self.data_context_file(instance)
+        context = [data_file] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
+        reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection", data_context=data_record)
         if reflected.get("file_delivery_failure"):
             feedback = attempt_dir / "reflection_feedback.md"
             contents = reflection_delivery_feedback(result.attempt) + "\n"
@@ -368,6 +382,8 @@ class PairedRunner:
         destination.mkdir(parents=True, exist_ok=True)
         expected = {"protocol_id": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
         expected["canonical_source"] = str(source.resolve())
+        if self.data_context is not None:
+            expected["data_context"] = self.data_context
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")

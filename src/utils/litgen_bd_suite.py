@@ -1,7 +1,8 @@
 """Instance generation for the literature-recipe small-scale BD families (UFL Koerkel-Ghosh, TSPLIB-derived p-median,
 Agarwal-Aneja / Roberti FCTP), in the paper's artifact format.
 
-Each instance folder gets data.json, prompt.txt, gold_monolithic.json, gold_bd.json and meta.json. The ground truth is
+Each instance folder gets data.json, prompt.txt, gold_monolithic.json, gold_bd.json, meta.json and the generator's
+source.json (recipe provenance, copied to meta.json["instance_info"]; data.json holds only the model data). The ground truth is
 the monolithic MIP optimum, proved on one thread with MIPGap = 0 within `mono_time_limit` (the MIP wrapper raises
 otherwise) and its measured solve time must not exceed the limit. Both gold plans are re-verified with the harness
 checks. The decomposition reference must finish within `ref_time_limit` (measured) and reach the MIP optimum within `max_reference_gap` (relative); its exact gap is
@@ -57,7 +58,9 @@ def generate_suite(problem: str, *, gen: Callable, render_prompt: Callable, size
                     "mip_seconds": mono.get("total_time"), "mip_params": {**MONO_PARAMS, "TimeLimit": mono_time_limit},
                     "mip_seconds_definition": "wall time of the Gurobi optimize() call (BaseBaseline total_time)", "reference_objective": value, "reference_gap": gap,
                     "reference_seconds": ref.get("total_time"), "reference_proved": bool(ref.get("proven_optimal")),
-                    "reference_termination": ref.get("termination_reason"), "instance_info": data.get("instance_info")}
+                    "reference_termination": ref.get("termination_reason"),
+                    # Recipe provenance comes from the source.json sidecar (never part of data.json or the prompt).
+                    "instance_info": json.loads(source.read_text()) if (source := inst_dir / "source.json").is_file() else None}
             (inst_dir / "meta.json").write_text(json.dumps(meta, indent=2))
             final = out_root / folder
             out_root.mkdir(parents=True, exist_ok=True)

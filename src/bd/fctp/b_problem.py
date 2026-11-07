@@ -70,7 +70,6 @@ The data for this instance is in data.json with fields:
   - "supply": list length m
   - "demand": list length n
   - "unit_cost", "fixed_cost", "capacity": each an m x n matrix
-  - "instance_info": provenance of the instance only
 
 Sample rows (full data is in the JSON file):
 Supply vector:
@@ -114,10 +113,18 @@ def _fmt_matrix(name: str, mat: list[list[Any]], limit: int = 4) -> str:
     return "\n".join(lines)
 
 
+def _balanced_min_capacity(data: dict[str, Any]) -> bool:
+    """Literature-recipe data: total supply equals total demand and capacity[i][j] = min(supply[i], demand[j]) on every
+    arc (the facts BASE_PROMPT_FCTP_LIT states). Checked on the data itself; paper-format data keep BASE_PROMPT_FCTP."""
+    supply, demand, capacity = data.get("supply") or [], data.get("demand") or [], data.get("capacity") or []
+    return (bool(supply) and bool(demand) and sum(supply) == sum(demand) and len(capacity) == len(supply)
+            and all(len(row) == len(demand) and all(row[j] == min(a, demand[j]) for j in range(len(demand))) for a, row in zip(supply, capacity)))
+
+
 def render_prompt(data: dict[str, Any]) -> str:
     m = data.get("m", 0)
     n = data.get("n", 0)
-    if data.get("instance_info"):
+    if _balanced_min_capacity(data):
         total = sum(data.get("supply", []))
         return BASE_PROMPT_FCTP_LIT.format(
             m=m,

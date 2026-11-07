@@ -81,7 +81,6 @@ CAPACITATED_BASES = [b for b in CAP_BASES if b[3:5] in ("11", "12")]  # cap111-c
 
 @dataclass
 class SCFLInstance(JsonDataMixin):
-    instance_size: str
     n_facilities: int
     n_customers: int
     n_scenarios: int
@@ -124,7 +123,7 @@ def generate_scfl_instance(seed: int, size: str = "medium", output_dir: str | Pa
     base = load_cap_base(base_name)
     sto = make_stochastic(base, S, seed)  # the scale-up generator itself: conversion, rounding and stream
     I, J = sto.I, sto.J
-    inst = SCFLInstance(size, I, J, S, [int(v) for v in sto.capacity], [float(v) for v in sto.fixed],
+    inst = SCFLInstance(I, J, S, [int(v) for v in sto.capacity], [float(v) for v in sto.fixed],
                         [[float(v) for v in row] for row in sto.cost], [[int(v) for v in row] for row in sto.demand],
                         [1.0 / S] * S)
     if output_dir is not None:

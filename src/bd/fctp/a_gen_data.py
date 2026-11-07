@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,15 +32,6 @@ class FCTPInstance(JsonDataMixin):
     unit_cost: np.ndarray  # (m, n)
     fixed_cost: np.ndarray  # (m, n)
     capacity: np.ndarray  # (m, n)
-    instance_info: dict[str, Any] | None = None  # recipe provenance (literature-recipe instances only)
-
-    def to_dict(self) -> dict[str, Any]:
-        # Absent provenance is omitted, so paper-format files keep exactly their original keys.
-        return {key: value for key, value in super().to_dict().items() if value is not None}
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> FCTPInstance:
-        return cast("FCTPInstance", super().from_dict({"instance_info": None, **payload}))
 
     def __post_init__(self) -> None:
         self.supply = np.asarray(self.supply, dtype=float).reshape(-1)
@@ -303,10 +295,12 @@ def generate_fctp_instance(
             "unit_cost_rule": "floor(theta * f_ij * (2n - 1) / sum_i a_i)", "capacity_rule": "min(supply_i, demand_j)",
             "balanced": True, "balance_draws": draws}
     inst = FCTPInstance(m=n, n=n, supply=a.astype(float), demand=b.astype(float), unit_cost=unit.astype(float),
-                        fixed_cost=fixed.astype(float), capacity=capacity.astype(float), instance_info=info)
+                        fixed_cost=fixed.astype(float), capacity=capacity.astype(float))
     data = inst.to_dict()
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Recipe provenance stays outside data.json (agents receive only data.json and prompt.txt).
+        (out_dir / "source.json").write_text(json.dumps(info, indent=2))
     return data

@@ -19,8 +19,7 @@ CONNECTIONS = [
     [5, "SINK", 1, 0, -1, -1, 0, 0],
     [6, "SINK", 3, 0, -1, -1, 0, 0],
 ]
-DATA = {"instance_size": "tiny", "variant": "single", "n_tasks": 4, "tasks": TASKS, "stations": [0, 1], "crew_bases": [0],
-        "connections": CONNECTIONS, "source": {}}
+DATA = {"n_tasks": 4, "tasks": TASKS, "stations": [0, 1], "crew_bases": [0], "connections": CONNECTIONS}
 
 
 def _out(duties, objective=0):
@@ -67,7 +66,10 @@ def test_rcsp_labour_rules_on_chains():
 def generated():
     from src.cg.rcsp.a_gen_data import RCSPInstance, generate_rcsp_instance
 
-    return [RCSPInstance.from_dict(generate_rcsp_instance(seed, size)) for size in ("small", "medium") for seed in range(3)]
+    data = [generate_rcsp_instance(seed, size) for size in ("small", "medium") for seed in range(3)]
+    # Only the model data reach the agent: no labels, parent name, window or original indices.
+    assert all(set(d) == {"n_tasks", "tasks", "stations", "crew_bases", "connections"} for d in data)
+    return [RCSPInstance.from_dict(d) for d in data]
 
 
 def test_rcsp_generator_windows_coverage_and_parents(generated):
@@ -76,12 +78,11 @@ def test_rcsp_generator_windows_coverage_and_parents(generated):
     for inst in generated:
         assert inst.n_tasks > 0
         assert {t for _, path, _ in enumerate_duties(inst) for t in path} == set(range(inst.n_tasks))
-        assert set(inst.source) == {"recipe"}  # no parent name, window or original indices in the agent data
     for size, cfg in SIZE_CONFIG.items():
         for seed in (0, 1, 2, 100, 101):  # evaluation and development parents (generation only, no solve)
             inst, prov = RCSPGenerator().draw(seed, size)
             assert prov["benchmark"] in (DEV_PARENTS if seed >= 100 else EVAL_PARENTS)
-            assert prov["variant"] == ("multi" if seed % 2 else "single")
+            assert prov["variant"] == ("multi" if seed % 2 else "single") and (len(inst.crew_bases) == 1) == (prov["variant"] == "single")
             lo, hi = prov["window"]
             assert hi - lo == round(cfg["window_hours"] * 3600) - prov["window_shortened_seconds"]
             assert prov["window_shortened_seconds"] % 900 == 0 and prov["n_duties"] <= cfg["max_duties"]

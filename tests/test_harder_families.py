@@ -12,7 +12,7 @@ from src.utils.output_contract import validate_output_contract
 # Codex review 4, finding 4: arrival 118.00000000000001 > 118 in floating point rejected the optimal PDPTW route.
 # Rewritten for the 1000x rounded-distance convention (2026-11-05): the route [1, 2, 3, 4] reaches node 4 at exactly 118064.
 PDPTW_EDGE = {
-    "instance_size": "small", "n_requests": 2, "capacity": 60,
+    "n_requests": 2, "capacity": 60,
     "x": [50, 51, 52, 53, 51], "y": [50, 51, 52, 53, 52],
     "demand": [0, 10, 10, -10, -10],
     "ready": [0, 83000, 47000, 96000, 58000], "due": [600000, 143000, 107000, 156000, 118064],
@@ -118,7 +118,7 @@ def test_vrptw_reference_does_not_certify_an_infeasible_seed(tmp_path):
     # Codex review 5, finding 2: depot opens at 50, the customer is 10 away and due at 55.
     from src.cg.vrptw.a_gold_cg import BranchAndPrice
 
-    data = {"instance_size": "small", "n_customers": 1, "capacity": 10, "x": [0.0, 10.0], "y": [0.0, 0.0], "demand": [0, 1],
+    data = {"n_customers": 1, "capacity": 10, "x": [0.0, 10.0], "y": [0.0, 0.0], "demand": [0, 1],
             "ready": [50.0, 0.0], "due": [100.0, 55.0], "service": [0.0, 0.0]}
     with pytest.raises(RuntimeError, match="no feasible routing plan"):
         BranchAndPrice(time_limit=10).run(str(_write(tmp_path, "data.json", data)))

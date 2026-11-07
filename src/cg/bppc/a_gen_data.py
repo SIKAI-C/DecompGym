@@ -57,7 +57,6 @@ def regime_for_seed(seed: int) -> str:
 
 @dataclass
 class BPPCInstance(JsonDataMixin):
-    instance_size: str
     n_items: int
     capacity: int
     weights: list[int]
@@ -75,13 +74,13 @@ class BPPCInstance(JsonDataMixin):
         return cast("BPPCInstance", super().from_json_file(path))
 
 
-def sv_instance(size_label: str, n: int, regime: str, rho: float, rnd: random.Random) -> BPPCInstance:
+def sv_instance(n: int, regime: str, rho: float, rnd: random.Random) -> BPPCInstance:
     """One Sadykov-Vanderbeck arbitrary-graph instance (weights first, then the graph, from one stream)."""
     cfg = REGIMES[regime]
     lo, hi = cfg["weight_range"]
     weights = [rnd.randint(lo, hi) for _ in range(n)]
     conflicts = sorted([a, b] for a, b in random_conflicts(n, rho, rnd))
-    return BPPCInstance(size_label, n, cfg["capacity"], weights, conflicts)
+    return BPPCInstance(n, cfg["capacity"], weights, conflicts)
 
 
 def recipe_record(seed: int, size: str) -> dict[str, Any]:
@@ -98,7 +97,7 @@ class BPPCGenerator(BaseInstanceGenerator[BPPCInstance]):
         seed = 0 if seed is None else seed
         regime = regime_for_seed(seed)
         rnd = random.Random(f"bppc-litgen:{regime}:{size_label}:{seed}")
-        return sv_instance(size_label, SIZE_CONFIG[size_label][regime], regime, DENSITY[regime], rnd)
+        return sv_instance(SIZE_CONFIG[size_label][regime], regime, DENSITY[regime], rnd)
 
 
 def generate_bppc_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:

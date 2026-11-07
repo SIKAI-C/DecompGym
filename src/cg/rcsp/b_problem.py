@@ -29,7 +29,6 @@ Input file data.json contains:
   - "n_tasks": int; "tasks": list of n_tasks rows [startTime, endTime, startStation, endStation, duration] (tasks 0..n_tasks-1)
   - "crew_bases": list of station indices a duty may start and end at; "stations": all station indices
   - "connections": list of rows [index, type, startBlock, endBlock, timeBeforeBreak, timeAfterBreak, duration, cost], where type is "SOURCE" (startBlock = base station, endBlock = task), "CONNECTION" (task -> task) or "SINK" (startBlock = task, endBlock = base station); there is at most one connection per (type, startBlock, endBlock)
-  - "variant", "instance_size", "source": descriptive only (the instance is a time window of a synthetic benchmark day; times are seconds from midnight)
 
 Examples from this instance:
 {examples}
@@ -59,5 +58,5 @@ def render_prompt(data: dict[str, Any]) -> str:
         rows = [c for c in data["connections"] if c[1] == kind]
         brk = [c for c in rows if c[4] >= 0]
         lines += [f"  - connection {c}" for c in (rows[:1] + brk[:1])]
-    return BASE_PROMPT_RCSP.format(n=data["n_tasks"], bases=data["crew_bases"], m=len(data["connections"]), variant=data["variant"],
+    return BASE_PROMPT_RCSP.format(n=data["n_tasks"], bases=data["crew_bases"], m=len(data["connections"]), variant="single" if len(data["crew_bases"]) == 1 else "multi",
                                    examples="\n".join(lines) + "\n  - ...", method_requirements=method_requirements("cg"))

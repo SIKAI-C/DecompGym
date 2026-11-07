@@ -46,7 +46,7 @@ def test_packing_test():
 
 
 def test_costs_round_up():
-    inst = CLRPInstance("t", 1, 1, 70, 1000, [0], [0], [70], [1], [1], [1], [11])
+    inst = CLRPInstance(1, 1, 70, 1000, [0], [0], [70], [1], [1], [1], [11])
     assert inst.cost(0, 1) == 142  # ceil(141.42)
     assert inst.route_cost(0, [0]) == 1000 + 284
 

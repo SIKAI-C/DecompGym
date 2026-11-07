@@ -78,7 +78,6 @@ def scaled_distance(dx: int, dy: int) -> int:
 
 @dataclass
 class PDPTWInstance(JsonDataMixin):
-    instance_size: str
     n_requests: int
     capacity: int
     x: list[int]
@@ -154,7 +153,7 @@ def build_instance(seed: int, size_label: str) -> tuple[PDPTWInstance, dict[str,
     for row in deliveries:
         for key, value in zip(node, row):
             node[key].append(value)
-    inst = PDPTWInstance(size_label, n, sol.capacity, node["x"], node["y"], node["demand"],
+    inst = PDPTWInstance(n, sol.capacity, node["x"], node["y"], node["demand"],
                          *([SCALE * v for v in node[key]] for key in ("ready", "due", "service")))
     # The paired heuristic routes are a feasible plan (the construction keeps their visiting order).
     new_id = {}

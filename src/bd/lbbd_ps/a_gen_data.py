@@ -43,10 +43,12 @@ fixed rule (de: the facility-0 ranges change between job counts; df: the five df
 seeds use class c, odd seeds class e.
 Small-scale adaptation: only (class, n, m) combinations that occur in the archive are generated (SIZE_CONFIG); the
 archive's sizes are kept, so no size is shrunk below the published ones.
+data.json holds only the model data; the class label and the size label go to the source.json sidecar.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import math
 from fractions import Fraction
 from pathlib import Path
@@ -74,8 +76,6 @@ SIZE_CONFIG = {
 
 @dataclass
 class PSInstance(JsonDataMixin):
-    instance_size: str
-    kind: str
     n_jobs: int
     n_facilities: int
     capacity: list[int]  # C_i
@@ -141,8 +141,20 @@ def generate(kind: str, n: int, m: int, seed: int) -> dict[str, Any]:
         p[i] = rng.integers(plo, phi, size=n)
         f[i] = rng.integers(flo, fhi, size=n)
     c = rng.integers(1, 10, size=n)
-    return {"kind": kind, "n_jobs": n, "n_facilities": m, "capacity": [10] * m, "release": [0] * n, "deadline": [d] * n,
+    return {"n_jobs": n, "n_facilities": m, "capacity": [10] * m, "release": [0] * n, "deadline": [d] * n,
             "proc": p.tolist(), "rate": np.tile(c, (m, 1)).tolist(), "cost": f.tolist()}
+
+
+def instance_class(seed: int) -> str:
+    """Hooker class of a seed: c for even seeds, e for odd seeds."""
+    return "c" if int(seed) % 2 == 0 else "e"
+
+
+def source_record(seed: int, size_label: str) -> dict[str, Any]:
+    """Provenance of an instance (the source.json sidecar; never part of data.json)."""
+    kind = instance_class(seed)
+    n, m = SIZE_CONFIG[size_label][kind]
+    return {"synthetic": True, "instance_size": size_label, "kind": kind, "n_jobs": n, "n_facilities": m}
 
 
 class PSGenerator(BaseInstanceGenerator[PSInstance]):
@@ -150,9 +162,9 @@ class PSGenerator(BaseInstanceGenerator[PSInstance]):
         if size_label not in SIZE_CONFIG:
             raise ValueError(f"Unknown size_label '{size_label}'. Expected one of {list(SIZE_CONFIG)}.")
         seed = 0 if seed is None else int(seed)
-        kind = "c" if seed % 2 == 0 else "e"
+        kind = instance_class(seed)
         n, m = SIZE_CONFIG[size_label][kind]
-        return PSInstance(instance_size=size_label, **generate(kind, n, m, seed))
+        return PSInstance(**generate(kind, n, m, seed))
 
 
 def generate_lbbd_ps_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:
@@ -161,4 +173,6 @@ def generate_lbbd_ps_instance(seed: int, size: str = "medium", output_dir: str |
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Class and size labels stay outside data.json: agents receive only data.json and prompt.txt.
+        (out_dir / "source.json").write_text(json.dumps(source_record(seed, size), indent=2))
     return inst.to_dict()

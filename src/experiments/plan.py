@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.agent.docker_client import CLI_VERSIONS
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
-from src.agent.prompts.snapshot import PROMPT_PROTOCOL
+from src.experiments.data_context import accepted_prompt_protocol
 from src.utils.errors import ProtocolError
 from src.utils.records import identity
 
@@ -26,7 +26,8 @@ def load_plan(path: Path) -> dict:
         raise ProtocolError("Unsupported config schema; expected schema_version 2")
     if plan.get("prompt_policies") != {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}:
         raise ProtocolError("Config prompt policy differs from the current harness")
-    if plan.get("prompt_protocol") != PROMPT_PROTOCOL:
+    # The reviewed contracts, optionally with the recorded data-context setting (src.experiments.data_context).
+    if not accepted_prompt_protocol(plan.get("prompt_protocol")):
         raise ProtocolError("Config must freeze the reviewed problem, judge, and output contracts")
     if plan.get("reflection_policy") != REFLECTION_POLICY:
         raise ProtocolError("Completed reflection omissions must consume their opportunity and advance")

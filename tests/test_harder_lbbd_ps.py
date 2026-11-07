@@ -13,7 +13,7 @@ from src.utils.output_contract import validate_output_contract
 
 # Two facilities, three jobs, capacity 4; job 0 and job 1 (rate 3 each) cannot run together on facility 0.
 DATA = {
-    "instance_size": "small", "kind": "c", "n_jobs": 3, "n_facilities": 2, "capacity": [4, 4],
+    "n_jobs": 3, "n_facilities": 2, "capacity": [4, 4],
     "release": [0, 0, 1], "deadline": [4, 4, 4],
     "proc": [[2, 2, 1], [3, 3, 3]], "rate": [[3, 3, 1], [2, 2, 2]], "cost": [[1, 1, 1], [5, 5, 5]],
 }
@@ -24,15 +24,16 @@ def _out(schedule, objective=None):
 
 
 def test_generator_follows_hookers_class_c_and_e_recipe():
-    from src.bd.lbbd_ps.a_gen_data import SIZE_CONFIG, class_ranges, generate_lbbd_ps_instance
+    from src.bd.lbbd_ps.a_gen_data import SIZE_CONFIG, class_ranges, generate_lbbd_ps_instance, instance_class
 
     c = generate_lbbd_ps_instance(0, "medium")
     e = generate_lbbd_ps_instance(1, "large")
-    assert (c["kind"], c["n_jobs"], c["n_facilities"]) == ("c", *SIZE_CONFIG["medium"]["c"])
+    assert "kind" not in c and "instance_size" not in c  # labels live in source.json, not in the agent's data
+    assert (instance_class(0), c["n_jobs"], c["n_facilities"]) == ("c", *SIZE_CONFIG["medium"]["c"])
     assert c["deadline"] == [42] * 20 and c["capacity"] == [10] * 4  # 5 * 20 * 5 / 12 = 41.7
     assert all(4 - i <= p < 10 * (4 - i) for i in range(4) for p in c["proc"][i])
     assert all(10 * (i + 1) <= f < 20 * (i + 1) for i in range(4) for f in c["cost"][i])
-    assert (e["kind"], e["n_jobs"], e["n_facilities"], e["deadline"][0]) == ("e", *SIZE_CONFIG["large"]["e"], 33)
+    assert (instance_class(1), e["n_jobs"], e["n_facilities"], e["deadline"][0]) == ("e", *SIZE_CONFIG["large"]["e"], 33)
     assert all(row == e["rate"][0] for row in e["rate"]) and all(1 <= v <= 9 for v in e["rate"][0])
     assert generate_lbbd_ps_instance(1, "large") == e
     # Archive values: e m = 3 middle facility f in [20, 40) (e15j3m1.dat has 21..37), e m = 4 tops, c ties rounded down.
@@ -165,7 +166,7 @@ def test_deletion_filter_returns_an_irreducible_core():
 # Codex review (11-05): all three jobs fit pairwise on facility 0 but not together (every interval covers [1, 2)), and
 # no relaxation row sees it, so only the exact subproblem and a three-job core can cut the cost-0 assignment.
 TRIPLE = {
-    "instance_size": "small", "kind": "c", "n_jobs": 3, "n_facilities": 2, "capacity": [2, 2],
+    "n_jobs": 3, "n_facilities": 2, "capacity": [2, 2],
     "release": [0, 0, 0], "deadline": [3, 3, 3],
     "proc": [[2, 2, 2], [2, 2, 2]], "rate": [[1, 1, 1], [1, 1, 1]], "cost": [[0, 0, 0], [1, 1, 1]],
 }

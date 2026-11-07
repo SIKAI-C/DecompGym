@@ -172,3 +172,16 @@ def test_mismatched_inputs_fail_before_creating_a_campaign(tmp_path):
 def test_campaign_with_other_prompts_cannot_execute(tmp_path):
     with pytest.raises(ProtocolError, match="fresh cohort"):
         ensure_execution_allowed(tmp_path, {"protocol_id": "old"})
+
+
+def test_initialization_records_the_data_context_setting(tmp_path):
+    from src.experiments.data_context import DATA_CONTEXT_PREVIEW
+    data, config = fixture_config(tmp_path)
+    plan = read(config)
+    plan["prompt_protocol"] = {**PROMPT_PROTOCOL, "data_context": DATA_CONTEXT_PREVIEW}
+    save(config, plan)
+    root = tmp_path / "preview-campaign"
+    initialize(root, data, config, tmp_path / "runtime.json")
+    manifest = validate(root)
+    assert manifest["prompt_protocol"] == {**PROMPT_PROTOCOL, "data_context": DATA_CONTEXT_PREVIEW}
+    assert manifest["experiment_plan"]["prompt_protocol"]["data_context"] == DATA_CONTEXT_PREVIEW

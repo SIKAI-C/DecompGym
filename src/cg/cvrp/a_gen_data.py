@@ -72,7 +72,6 @@ ROUTE_SIZE = (3.0, 6.0, 25.0)  # triangular (min, mode, max)
 
 @dataclass
 class CVRPInstance(JsonDataMixin):
-    instance_size: str
     n_customers: int
     capacity: int
     x: list[int]  # node coordinates, index 0 = depot
@@ -165,7 +164,7 @@ def build_instance(seed: int, size_label: str) -> tuple[CVRPInstance, dict[str, 
         large = set(rng.sample(range(n), max(1, round((1 - share) * n))))
         demand = [rng.randint(50, 100) if i in large else rng.randint(1, 10) for i in range(n)]
     capacity = max(max(demand), math.ceil(att["r"] * sum(demand) / n))
-    inst = CVRPInstance(size_label, n, capacity, [depot[0]] + [p[0] for p in pts], [depot[1]] + [p[1] for p in pts], [0] + demand)
+    inst = CVRPInstance(n, capacity, [depot[0]] + [p[0] for p in pts], [depot[1]] + [p[1] for p in pts], [0] + demand)
     source = {"recipe": "Uchoa et al. (2017) X generator", **att, "n_seeds": n_seeds, "k_lower_bound": math.ceil(sum(demand) / capacity),
               "stream": f"x-cvrp/{size_label}/{seed}"}
     return inst, source

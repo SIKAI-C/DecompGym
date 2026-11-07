@@ -63,7 +63,6 @@ SIZE_CONFIG = {
 
 @dataclass
 class VRPTWInstance(JsonDataMixin):
-    instance_size: str
     n_customers: int
     capacity: int
     x: list[float]  # node coordinates, index 0 = depot
@@ -134,7 +133,7 @@ def sample_subset(seed: int, size_label: str) -> tuple[VRPTWInstance, dict[str, 
         go = truncated(depot[:2], (x, y))
         if max(10 * depot[3] + go, 10 * a) > 10 * b or max(10 * depot[3] + go, 10 * a) + 10 * s + go > 10 * depot[4]:
             raise ValueError(f"{parent}: a customer cannot be served on its own")
-    inst = VRPTWInstance(size_label, n, sol.capacity, *([float(r[k]) for r in rows] for k in (0, 1)), [r[2] for r in rows],
+    inst = VRPTWInstance(n, sol.capacity, *([float(r[k]) for r in rows] for k in (0, 1)), [r[2] for r in rows],
                          *([float(r[k]) for r in rows] for k in (3, 4, 5)), sol.vehicles)
     source = {"recipe": "Solomon (1987) random customer subset", "parent": parent, "parent_class": next(c for c in CLASSES if parent in CLASS_FILES[c]),
               "parent_customers": customers, "parent_vehicles": sol.vehicles, "stream": f"solomon-subset/{size_label}/{seed}"}

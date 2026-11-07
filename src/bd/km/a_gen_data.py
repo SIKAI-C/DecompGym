@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,15 +30,6 @@ class KMedianInstance(JsonDataMixin):
     Xc: np.ndarray  # (n, 2)
     Xf: np.ndarray  # (m, 2)
     D: np.ndarray  # (m, n) assignment cost
-    instance_info: dict[str, Any] | None = None  # recipe provenance (TSPLIB-derived instances only)
-
-    def to_dict(self) -> dict[str, Any]:
-        # Absent provenance is omitted, so paper-format files keep exactly their original keys.
-        return {key: value for key, value in super().to_dict().items() if value is not None}
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> KMedianInstance:
-        return cast("KMedianInstance", super().from_dict({"instance_info": None, **payload}))
 
     def __post_init__(self) -> None:
         self.Xc = np.asarray(self.Xc, dtype=float)
@@ -287,10 +279,12 @@ def generate_km_instance(
     info = {"recipe": "tsplib-derived-p-median", "parent": parent, "parent_sha256": TSP_PARENT_SHA256[parent],
             "parent_nodes_1based": [int(v) + 1 for v in nodes], "p": p, "distance": "floor(euclidean)",
             "sites_equal_customers": True}
-    inst = KMedianInstance(m=n, n=n, k=p, Xc=X, Xf=X.copy(), D=floor_euclidean(X, X), instance_info=info)
+    inst = KMedianInstance(m=n, n=n, k=p, Xc=X, Xf=X.copy(), D=floor_euclidean(X, X))
     data = inst.to_dict()
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Recipe provenance (parent file and node list) stays outside data.json.
+        (out_dir / "source.json").write_text(json.dumps(info, indent=2))
     return data

@@ -12,7 +12,7 @@ from src.utils.output_contract import validate_output_contract
 # Both facilities are needed (capacity 10 each, scenario demand 12). Scenario 0: each customer from its cheap
 # facility, 6 * 1 + 6 * 2 = 18; scenario 1: customer 0 takes 10 from facility 0 and 2 from facility 1, 10 + 8 = 18.
 TINY = {
-    "instance_size": "small", "n_facilities": 2, "n_customers": 2, "n_scenarios": 2,
+    "n_facilities": 2, "n_customers": 2, "n_scenarios": 2,
     "capacity": [10, 10], "fixed_cost": [100.0, 50.0], "unit_cost": [[1.0, 5.0], [4.0, 2.0]],
     "demand": [[6, 6], [12, 0]], "probability": [0.5, 0.5],
 }
@@ -73,7 +73,7 @@ def test_scfl_reference_and_mip_agree_on_the_tiny_instance(tmp_path, kwargs):
 # is already the optimum 10000.01990 (facility 0 alone), a relative gap of 5e-9. A loose relative stopping tolerance
 # returned the worse design; the 1e-9 certificate must not.
 NEAR_TIE = {
-    "instance_size": "small", "n_facilities": 2, "n_customers": 1, "n_scenarios": 20,
+    "n_facilities": 2, "n_customers": 1, "n_scenarios": 20,
     "capacity": [2, 1], "fixed_cost": [10000.0, 0.01], "unit_cost": [[0.199], [0.0]],
     "demand": [[2]] + [[0]] * 19, "probability": [1 / 20] * 20,
 }
@@ -158,7 +158,7 @@ def test_scfl_reference_does_not_stop_on_a_near_tie(tmp_path):
 # Codex review counterexample (2026-11-05): with the plain cover u.y >= D the root LP picks y = 0.5, where the
 # strong recourse x <= d y cannot serve the demand; the strengthened cover sum_i min(u_i, D) y_i >= D cannot.
 OVERSIZED = {
-    "instance_size": "small", "n_facilities": 1, "n_customers": 1, "n_scenarios": 1,
+    "n_facilities": 1, "n_customers": 1, "n_scenarios": 1,
     "capacity": [2], "fixed_cost": [1.0], "unit_cost": [[0.0]], "demand": [[1]], "probability": [1.0],
 }
 

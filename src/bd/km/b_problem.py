@@ -4,6 +4,7 @@ Prompt template for the k-Median problem (Benders).
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from src.agent.prompts.method import method_requirements
@@ -62,7 +63,7 @@ The data for this instance lives in data.json with fields:
   - "Xc": n x 2 node coordinates (customers)
   - "Xf": m x 2 node coordinates (sites; identical to Xc)
   - "D": m x n assignment costs (row = site i, column = customer j)
-  - "m", "n", "k", and "instance_info" (provenance of the instance only)
+  - "m", "n", "k"
 
 Samples:
 Node coords (first few):
@@ -96,8 +97,19 @@ def _fmt_matrix(name: str, mat: list[list[Any]], max_rows: int = 4) -> str:
     return "\n".join(lines)
 
 
+def _sites_are_customers(data: dict[str, Any]) -> bool:
+    """TSPLIB-derived p-median data, i.e. the facts BASE_PROMPT_KM_TSP states: every node is both a customer and a site
+    (m = n, Xf = Xc) and D[i][j] = floor(sqrt(dx * dx + dy * dy)) (IEEE double, as in a_gen_data.floor_euclidean). The
+    paper-format generator draws facilities and customers separately, so its data never satisfy this."""
+    X, D = data.get("Xc") or [], data.get("D") or []
+    if not X or data.get("m") != data.get("n") or X != data.get("Xf") or len(D) != len(X) or any(len(row) != len(X) for row in D):
+        return False
+    return all(D[i][j] == math.floor(math.sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1])))
+               for i, p in enumerate(X) for j, q in enumerate(X))
+
+
 def render_prompt(data: dict[str, Any]) -> str:
-    if data.get("instance_info"):
+    if _sites_are_customers(data):
         return BASE_PROMPT_KM_TSP.format(
             m=data.get("m", 0),
             n=data.get("n", 0),

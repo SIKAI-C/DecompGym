@@ -146,12 +146,10 @@ class GAPMachine(JsonDataMixin):
 
 @dataclass
 class GAPInstance(JsonDataMixin):
-    instance_size: str
     machines: list[GAPMachine]
     jobs: list[GAPJob]
 
     def __post_init__(self) -> None:
-        self.instance_size = str(self.instance_size)
         if self.machines and isinstance(self.machines[0], dict):
             self.machines = [GAPMachine(**m) for m in self.machines]
         if self.jobs and isinstance(self.jobs[0], dict):
@@ -203,7 +201,7 @@ class GAPGenerator(BaseInstanceGenerator[GAPInstance]):
         ]
         self.last_recipe = {"recipe": "yagiura-type-" + gap_type, "gap_type": gap_type, "redraw_index": k,
                             "n_machines": n_machines, "n_jobs": n_jobs}
-        return GAPInstance(instance_size=size, machines=machines, jobs=jobs)
+        return GAPInstance(machines=machines, jobs=jobs)
 
 
 def generate_gap_instance_with_recipe(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -245,7 +243,7 @@ def generate_gap_xl_instance(seed: int, output_dir: str | Path | None = None) ->
         GAPJob(id=i, name=f"Order_{i}", assignments=[GAPAssignment(machine_id=j, resource=a[i][j], cost=c[i][j]) for j in range(n_machines)])
         for i in range(n_jobs)
     ]
-    inst = GAPInstance(instance_size="xl", machines=machines, jobs=jobs)
+    inst = GAPInstance(machines=machines, jobs=jobs)
     data = inst.to_dict()
     if output_dir is not None:
         out_dir = Path(output_dir)
@@ -254,12 +252,12 @@ def generate_gap_xl_instance(seed: int, output_dir: str | Path | None = None) ->
     return data
 
 
-def gap_instance_from_arrays(cost: list[list[float]], resource: list[list[int]], capacity: list[int], size_label: str = "xl") -> GAPInstance:
+def gap_instance_from_arrays(cost: list[list[float]], resource: list[list[int]], capacity: list[int]) -> GAPInstance:
     """Build a GAPInstance from agent-major arrays cost[k][i], resource[k][i] (k = machine, i = job)."""
     m, n = len(capacity), len(cost[0])
     machines = [GAPMachine(id=k, name=f"Plant_{k}", capacity=int(capacity[k])) for k in range(m)]
     jobs = [GAPJob(id=i, name=f"Order_{i}", assignments=[GAPAssignment(machine_id=k, resource=int(resource[k][i]), cost=float(cost[k][i])) for k in range(m)]) for i in range(n)]
-    return GAPInstance(instance_size=size_label, machines=machines, jobs=jobs)
+    return GAPInstance(machines=machines, jobs=jobs)
 
 
 def load_orlib_gap_file(path: str | Path) -> list[GAPInstance]:

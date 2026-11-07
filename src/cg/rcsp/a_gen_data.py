@@ -77,18 +77,16 @@ SIZE_CONFIG = {
 
 DEFAULT_CONFIG = {"max_draws": 100, "shrink_seconds": 900}
 RECIPE_VERSION = "rcsp-window-v3-20261106"
+RECIPE = "time-window sub-instance of a van Rossum (2026) benchmark instance"
 
 
 @dataclass
 class RCSPInstance(JsonDataMixin):
-    instance_size: str
-    variant: str
     n_tasks: int
     tasks: list[list[int]]  # [start, end, start_station, end_station, duration] per task
     stations: list[int]
     crew_bases: list[int]
     connections: list[list[Any]]  # [index, type, startBlock, endBlock, timeBeforeBreak, timeAfterBreak, duration, cost]
-    source: dict[str, Any]
 
     def __post_init__(self) -> None:
         if len(self.tasks) != self.n_tasks:
@@ -165,7 +163,7 @@ def _read(name: str, variant: str) -> dict[str, Any]:
             "bases": sorted(int(r[0]) for r in rows(f"crewbases_{variant}_depot.txt"))}
 
 
-def cut(raw: dict[str, Any], keep: list[int], variant: str, size: str) -> tuple[RCSPInstance, list[int], list[int]]:
+def cut(raw: dict[str, Any], keep: list[int]) -> tuple[RCSPInstance, list[int], list[int]]:
     """The induced sub-instance on the kept task ids (renumbered by start, end, original id), with the original task
     and connection ids of its tasks and connections."""
     keep = sorted(keep, key=lambda t: (raw["tasks"][t][0], raw["tasks"][t][1], t))
@@ -183,17 +181,16 @@ def cut(raw: dict[str, Any], keep: list[int], variant: str, size: str) -> tuple[
             continue
         conns.append([len(conns), *row, *c[4:8]])
         origin.append(c[0])
-    inst = RCSPInstance(size, variant, len(keep), [raw["tasks"][t] for t in keep], raw["stations"], raw["bases"], conns,
-                        {"recipe": "time-window sub-instance of a van Rossum (2026) benchmark instance"})
+    inst = RCSPInstance(len(keep), [raw["tasks"][t] for t in keep], raw["stations"], raw["bases"], conns)
     return inst, keep, origin
 
 
-def window_cut(raw: dict[str, Any], t0: int, t1: int, variant: str, size: str) -> tuple[RCSPInstance, list[int], list[int], int]:
+def window_cut(raw: dict[str, Any], t0: int, t1: int) -> tuple[RCSPInstance, list[int], list[int], int]:
     """Steps 2-4 of the module docstring for the window [t0, t1]: the tasks inside it, then the paper's
     postprocessing. Returns the instance, its original task and connection ids, and its number of feasible duties."""
     keep = [t for t, row in raw["tasks"].items() if row[0] >= t0 and row[1] <= t1]
     while True:
-        inst, ids, origin = cut(raw, keep, variant, size)
+        inst, ids, origin = cut(raw, keep)
         duties = enumerate_duties(inst)
         covered = {t for _, path, _ in duties for t in path}
         if len(covered) == inst.n_tasks:
@@ -201,12 +198,12 @@ def window_cut(raw: dict[str, Any], t0: int, t1: int, variant: str, size: str) -
         keep = [ids[k] for k in sorted(covered)]
 
 
-def _too_many_duties(raw: dict[str, Any], t0: int, t1: int, variant: str, cap: int) -> bool:
+def _too_many_duties(raw: dict[str, Any], t0: int, t1: int, cap: int) -> bool:
     """True if the tasks inside [t0, t1] admit more than `cap` feasible duties (before postprocessing, which only
     removes tasks that lie in no duty and so leaves the count unchanged)."""
     keep = [t for t, row in raw["tasks"].items() if row[0] >= t0 and row[1] <= t1]
     try:
-        enumerate_duties(cut(raw, keep, variant, "probe")[0], limit=cap)
+        enumerate_duties(cut(raw, keep)[0], limit=cap)
     except RuntimeError:
         return True
     return False
@@ -230,12 +227,12 @@ class RCSPGenerator(BaseInstanceGenerator[RCSPInstance]):
             t0 = first + 60 * rng.randint(0, max(0, (last - first) // 60))
             t1 = t0 + span
             # Structural size rule: shorten the window from the right until it admits at most `cap` feasible duties.
-            while t1 > t0 and _too_many_duties(raw, t0, t1, variant, cap):
+            while t1 > t0 and _too_many_duties(raw, t0, t1, cap):
                 t1 -= DEFAULT_CONFIG["shrink_seconds"]
-            inst, ids, origin, n_duties = window_cut(raw, t0, t1, variant, size_label)
+            inst, ids, origin, n_duties = window_cut(raw, t0, t1)
             if inst.n_tasks:
                 files = [BENCHMARK / name / f for f in ("tasks.txt", f"connections_{variant}_depot.txt", f"crewbases_{variant}_depot.txt", "stations.txt")]
-                provenance = {"recipe_version": RECIPE_VERSION, "seed": seed, "size": size_label, "benchmark": name, "variant": variant,
+                provenance = {"recipe": RECIPE, "recipe_version": RECIPE_VERSION, "seed": seed, "size": size_label, "benchmark": name, "variant": variant,
                               "upstream": "https://github.com/BartvanRossum/rcsp-benchmark (MIT), files vendored in src/cg/rcsp/benchmark",
                               "file_sha256": {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in files},
                               "window": [t0, t1], "window_shortened_seconds": t0 + span - t1, "draw": draw, "n_duties": n_duties,

@@ -72,13 +72,11 @@ class BPItem(JsonDataMixin):
 class BinPackingInstance(JsonDataMixin):
     """1D bin packing instance."""
 
-    instance_size: str
     bin_capacity: int
     bin_unit: str
     items: list[BPItem]
 
     def __post_init__(self) -> None:
-        self.instance_size = str(self.instance_size)
         self.bin_capacity = int(self.bin_capacity)
         self.bin_unit = str(self.bin_unit)
         if self.items and isinstance(self.items[0], dict):
@@ -133,7 +131,6 @@ class BinPackingGenerator(BaseInstanceGenerator[BinPackingInstance]):
             for i in range(SIZE_SCALING[size]["n_items"])
         ]
         return BinPackingInstance(
-            instance_size=size,
             bin_capacity=SCHOLL_CLASS["capacity"],
             bin_unit=cfg["bin_unit"],
             items=items,

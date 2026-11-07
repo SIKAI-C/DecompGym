@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -42,7 +43,6 @@ class UFLInstance(JsonDataMixin):
     Xf: np.ndarray | None  # (m, 2) facility coords; None for non-geometric instances
     f: np.ndarray  # (m,) fixed opening costs
     D: np.ndarray  # (m, n) shipping costs
-    instance_info: dict[str, Any] | None = None  # recipe provenance (Koerkel-Ghosh instances only)
 
     def __post_init__(self) -> None:
         self.Xc = None if self.Xc is None else np.asarray(self.Xc, dtype=float)
@@ -56,7 +56,7 @@ class UFLInstance(JsonDataMixin):
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> UFLInstance:
-        return cast("UFLInstance", super().from_dict({"Xc": None, "Xf": None, "instance_info": None, **payload}))
+        return cast("UFLInstance", super().from_dict({"Xc": None, "Xf": None, **payload}))
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> UFLInstance:
@@ -314,12 +314,14 @@ def generate_ufl_instance(
     info = {"recipe": "koerkel-ghosh", "opening_cost_class": fclass.upper(), "symmetric": symmetric,
             "opening_cost_range": list(KG_CLASSES[fclass]), "connection_cost_range": list(KG_COST_RANGE),
             "generator": "UflLib kggen port (MSVC rand, srand 123456)", "generator_instance_number": seed + 1}
-    inst = UFLInstance(m=n, n=n, Xc=None, Xf=None, f=np.asarray(F, dtype=float), D=np.asarray(C, dtype=float), instance_info=info)
+    inst = UFLInstance(m=n, n=n, Xc=None, Xf=None, f=np.asarray(F, dtype=float), D=np.asarray(C, dtype=float))
     data = inst.to_dict()
     if output_dir is not None:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         inst.to_json_file(out_dir / "data.json")
+        # Recipe provenance stays outside data.json (agents receive only data.json and prompt.txt).
+        (out_dir / "source.json").write_text(json.dumps(info, indent=2))
     return data
 
 

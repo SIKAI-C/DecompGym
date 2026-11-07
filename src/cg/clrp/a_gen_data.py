@@ -89,7 +89,6 @@ DEFAULT_CONFIG = {
 
 @dataclass
 class CLRPInstance(JsonDataMixin):
-    instance_size: str
     n_customers: int
     n_depots: int
     vehicle_capacity: int
@@ -139,7 +138,7 @@ def packs(demand: list[int], capacity: list[int]) -> bool:
     return True
 
 
-def read_prodhon(path: str | Path, size_label: str = "fixture") -> CLRPInstance:
+def read_prodhon(path: str | Path) -> CLRPInstance:
     """Parse a published Prodhon file (Format.txt layout) into a CLRPInstance (integer-cost files only)."""
     t = Path(path).read_text().split()
     n, m = int(t[0]), int(t[1])
@@ -156,7 +155,7 @@ def read_prodhon(path: str | Path, size_label: str = "fixture") -> CLRPInstance:
     if flag != 0:
         raise ValueError("only integer-cost (code 0) Prodhon files are supported")
     i = lambda v: int(round(v))
-    return CLRPInstance(size_label, n, m, i(Q), i(F), [i(v) for v in depots[0::2]], [i(v) for v in depots[1::2]],
+    return CLRPInstance(n, m, i(Q), i(F), [i(v) for v in depots[0::2]], [i(v) for v in depots[1::2]],
                         [i(v) for v in W], [i(v) for v in O], [i(v) for v in customers[0::2]], [i(v) for v in customers[1::2]],
                         [i(v) for v in q])
 
@@ -189,7 +188,7 @@ class CLRPGenerator(BaseInstanceGenerator[CLRPInstance]):
         else:
             raise RuntimeError(f"no packable depot capacities for {size_label} seed {seed}")
         opening = [rng.randint(*cfg["opening_cost_range"]) for _ in range(m)]
-        return CLRPInstance(size_label, n, m, Q, cfg["vehicle_cost"], dx, dy, capacity, opening, cx, cy, demand)
+        return CLRPInstance(n, m, Q, cfg["vehicle_cost"], dx, dy, capacity, opening, cx, cy, demand)
 
 
 def generate_clrp_instance(seed: int, size: str = "medium", output_dir: str | Path | None = None) -> dict[str, Any]:

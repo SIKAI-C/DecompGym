@@ -59,8 +59,8 @@ facilities to open and how to assign each customer so total open-plus-connection
 - Connection cost matrix (D): each line is for one facility i, listing the cost to serve each customer j (i -> j):
 {D}
 
-All input data are stored in a JSON file named data.json with fields "m", "n", "f" (length m), "D" (m x n, row =
-facility, column = customer) and "instance_info" (provenance of the instance only).
+All input data are stored in a JSON file named data.json with fields "m", "n", "f" (length m) and "D" (m x n, row =
+facility, column = customer).
 
 Task:
 Assume gurobipy and NumPy are available; the Python standard library is also allowed. Do not depend on any files other than data.json. Write a Python program solver.py that:
@@ -142,9 +142,13 @@ def render_prompt(data: dict[str, Any]) -> str:
     )
 
 
+def _is_symmetric(D: list[list[Any]]) -> bool:
+    """D is square and D[i][j] == D[j][i] for every pair (a property of the data itself)."""
+    return all(len(row) == len(D) for row in D) and all(D[i][j] == D[j][i] for i in range(len(D)) for j in range(i))
+
+
 def _render_prompt_kg(data: dict[str, Any]) -> str:
-    symmetric = (data.get("instance_info") or {}).get("symmetric")
-    note = "; in this instance D is symmetric, D[i][j] = D[j][i]" if symmetric else "; in this instance D is not symmetric" if symmetric is False else ""
+    note = "; in this instance D is symmetric, D[i][j] = D[j][i]" if _is_symmetric(data.get("D", [])) else "; in this instance D is not symmetric"
     return BASE_PROMPT_UFL_KG.format(
         m=data.get("m", 0),
         n=data.get("n", 0),

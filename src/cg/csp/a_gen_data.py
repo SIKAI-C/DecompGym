@@ -123,13 +123,11 @@ class CSPItemType(JsonDataMixin):
 
 @dataclass
 class CuttingStockInstance(JsonDataMixin):
-    instance_size: str
     stock_size: int
     stock_unit: str
     item_types: list[CSPItemType]
 
     def __post_init__(self) -> None:
-        self.instance_size = str(self.instance_size)
         self.stock_size = int(self.stock_size)
         if self.item_types and isinstance(self.item_types[0], dict):
             self.item_types = [CSPItemType(**it) for it in self.item_types]
@@ -171,7 +169,6 @@ class CuttingStockGenerator(BaseInstanceGenerator[CuttingStockInstance]):
         ]
 
         return CuttingStockInstance(
-            instance_size=size,
             stock_size=stock_size,
             stock_unit=cfg["stock_unit"],
             item_types=items,
