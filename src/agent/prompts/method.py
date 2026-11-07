@@ -1,8 +1,18 @@
 """Shared prospective method contract for generation, reflection, and source review."""
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 
+from src.utils.errors import ProtocolError
+
+
+# The paper's contract (the default everywhere). A campaign config selects a contract through
+# prompt_protocol.decomposition_contract; every contract id below is frozen once used.
 DECOMPOSITION_POLICY = "strict-decomposition-20261013-v2"
+# Added after paper-arxiv-v1: the Benders recourse-cost clause applies only when the subproblems carry cost, so a
+# feasibility-only logic-based Benders (all cost in the master) is not excluded by the wording. Nothing else changes.
+DECOMPOSITION_POLICY_V3 = "strict-decomposition-20261106-v3"
 METHOD_HEADER = "Decomposition method requirements:"
 METHOD_NAMES = {"bd": "Benders decomposition", "cg": "column generation"}
 
@@ -18,5 +28,36 @@ COMMON_REQUIREMENTS = (
 )
 
 
-def method_requirements(suite: str) -> str:
-    return "\n\n".join((METHOD_HEADER, METHOD_REQUIREMENTS[suite], *COMMON_REQUIREMENTS))
+_V2_BD_OPENING = "Use a master problem for the complicating decisions and recourse-cost estimates."
+_V3_BD_OPENING = "Use a master problem for the complicating decisions and, when applicable, recourse-cost estimates."
+assert METHOD_REQUIREMENTS["bd"].count(_V2_BD_OPENING) == 1 and METHOD_REQUIREMENTS["bd"].startswith(_V2_BD_OPENING)
+
+# Contract id -> per-suite method requirement; METHOD_REQUIREMENTS stays the paper's (v2) text.
+CONTRACTS = {
+    DECOMPOSITION_POLICY: METHOD_REQUIREMENTS,
+    DECOMPOSITION_POLICY_V3: {"bd": METHOD_REQUIREMENTS["bd"].replace(_V2_BD_OPENING, _V3_BD_OPENING, 1), "cg": METHOD_REQUIREMENTS["cg"]},
+}
+
+# The contract that b_problem.render_prompt uses (they call method_requirements(suite) without an id).
+_ACTIVE_CONTRACT = ContextVar("decomposition_contract", default=DECOMPOSITION_POLICY)
+
+
+def require_contract(contract: str) -> str:
+    if not isinstance(contract, str) or contract not in CONTRACTS:
+        raise ProtocolError(f"Unknown decomposition contract: {contract!r}")
+    return contract
+
+
+@contextmanager
+def decomposition_contract(contract: str):
+    """Render instance prompts under the selected contract (the paper's v2 outside this block)."""
+    token = _ACTIVE_CONTRACT.set(require_contract(contract))
+    try:
+        yield
+    finally:
+        _ACTIVE_CONTRACT.reset(token)
+
+
+def method_requirements(suite: str, contract: str | None = None) -> str:
+    requirements = CONTRACTS[require_contract(_ACTIVE_CONTRACT.get() if contract is None else contract)]
+    return "\n\n".join((METHOD_HEADER, requirements[suite], *COMMON_REQUIREMENTS))

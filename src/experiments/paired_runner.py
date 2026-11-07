@@ -14,6 +14,7 @@ import uuid
 
 from src.agent.prompts.builder import PromptBuilder
 from src.agent.prompts.judge import algorithm_review_prompt, parse_verdict
+from src.agent.prompts.method import DECOMPOSITION_POLICY, require_contract
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
 from src.experiments.data_context import DATA_CONTEXT_POLICIES, data_context_file
 from src.experiments.environment import require_runtime_environment
@@ -67,7 +68,7 @@ class PairedRunner:
 
     def __init__(self, *, client, judge_client, solver_executor, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None,
                  model=None, suite="bd", problem=None, max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1,
-                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None):
+                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY):
         if suite not in SUITE_PROBLEMS:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
@@ -76,6 +77,8 @@ class PairedRunner:
             raise ValueError(f"Unknown data-context policy: {data_context}")
         # None keeps the paper rule (the full data.json in every context); see src.experiments.data_context.
         self.data_context = data_context
+        # The method judge applies the campaign's contract, the same one rendered into the instance prompt.txt.
+        self.decomposition_contract = require_contract(decomposition_contract)
         self.runtime_environment = require_runtime_environment()
         self.model, self.suite = model, suite
         self.problems = list(problem) if problem else list(SUITE_PROBLEMS[suite])
@@ -287,7 +290,7 @@ class PairedRunner:
                     objective = float(verification["objective_value"])
             else:
                 issues.append(stderr or "solver execution failed")
-            prompt = algorithm_review_prompt(self.suite)
+            prompt = algorithm_review_prompt(self.suite, self.decomposition_contract)
             judged = self.edit(self.judge_client, attempt_dir / "alg_verifier.md", prompt, [attempt_dir / "solver.py"], "llm_verifier")
             notes = (attempt_dir / "alg_verifier.md").read_text().strip()
             verdict = parse_verdict(notes)
@@ -384,6 +387,8 @@ class PairedRunner:
         expected["canonical_source"] = str(source.resolve())
         if self.data_context is not None:
             expected["data_context"] = self.data_context
+        if self.decomposition_contract != DECOMPOSITION_POLICY:
+            expected["decomposition_contract"] = self.decomposition_contract
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")
@@ -414,6 +419,9 @@ class PairedRunner:
         if any(has_terminal_receipt(directory) or (campaign_root and str((directory / TERMINAL_RECEIPT).relative_to(campaign_root)) in approvals) for directory in saved.values()):
             try:
                 summaries = {mode: load_policy_summary(directory, campaign_root=campaign_root, approvals=approvals) for mode, directory in saved.items()}
+                # A closed pair is reused only under the contract it was judged with (an absent field is the paper's v2).
+                if any((read(directory / "identity.json") or {}).get("decomposition_contract", DECOMPOSITION_POLICY) != self.decomposition_contract for directory in saved.values()):
+                    raise ProtocolError("Case protocol changed")
                 if all(policy_is_complete(summary, self.max_attempts, self.protocol_id) for summary in summaries.values()):
                     return summaries
                 raise ProtocolError("An adjudicated pair is not fully closed")

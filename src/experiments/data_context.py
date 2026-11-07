@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import tempfile
 
+from src.agent.prompts.method import CONTRACTS
 from src.agent.prompts.snapshot import PROMPT_PROTOCOL
 from src.experiments.xl_inputs import preview_json
 from src.utils.errors import ProtocolError
@@ -26,8 +27,20 @@ DATA_CONTEXT_POLICIES = (None, DATA_CONTEXT_PREVIEW)
 
 
 def accepted_prompt_protocol(protocol) -> bool:
-    """The reviewed prompt protocol, optionally with the recorded data-context setting."""
-    return protocol == PROMPT_PROTOCOL or protocol == {**PROMPT_PROTOCOL, "data_context": DATA_CONTEXT_PREVIEW}
+    """The reviewed prompt protocol, optionally with the recorded data-context setting and a registered
+    decomposition contract other than the paper's (src.agent.prompts.method.CONTRACTS)."""
+    contract = protocol.get("decomposition_contract") if isinstance(protocol, dict) else None
+    if not isinstance(contract, str) or contract not in CONTRACTS:
+        return False
+    reviewed = {**PROMPT_PROTOCOL, "decomposition_contract": protocol["decomposition_contract"]}
+    return protocol == reviewed or protocol == {**reviewed, "data_context": DATA_CONTEXT_PREVIEW}
+
+
+def decomposition_contract_policy(protocol) -> str:
+    """The contract id that the instance prompts, reflection and method judge of this protocol use."""
+    if not accepted_prompt_protocol(protocol):
+        raise ProtocolError("Prompt protocol differs from the reviewed contracts")
+    return protocol["decomposition_contract"]
 
 
 def data_context_policy(protocol) -> str | None:

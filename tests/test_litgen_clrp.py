@@ -11,7 +11,6 @@ import pytest
 
 from src.cg.clrp.a_gen_data import DEFAULT_CONFIG, SIZE_CONFIG, CLRPInstance, generate_clrp_instance, packs, read_prodhon
 
-PRODHON = Path(__file__).resolve().parents[2] / "DecompBench/outputs/scaleup/raw/lrp/prodhon"
 
 
 @pytest.mark.parametrize("size", list(SIZE_CONFIG))
@@ -51,8 +50,10 @@ def test_costs_round_up():
     assert inst.route_cost(0, [0]) == 1000 + 284
 
 
-@pytest.mark.skipif(not PRODHON.is_dir(), reason="published Prodhon files not available locally")
 def test_published_20_customer_files_parse():
+    from tests.reference_data import ROOT, reference_path
+
+    PRODHON = reference_path("DECOMPGYM_PRODHON_DIR", ROOT / "prodhon", "Prodhon CLRP instances (coord*.dat)")
     inst = read_prodhon(PRODHON / "coord20-5-1.dat")
     assert (inst.n_customers, inst.n_depots, inst.vehicle_capacity, inst.vehicle_cost) == (20, 5, 70, 1000)
     assert inst.depot_capacity == [140] * 5 and inst.opening_cost == [10841, 11961, 6091, 7570, 7497]

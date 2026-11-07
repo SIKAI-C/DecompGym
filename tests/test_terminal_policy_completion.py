@@ -184,3 +184,18 @@ def test_dashboard_and_csv_separate_completion_from_first_attempt(closed_policy)
     assert row["reflection_outcome"] == "terminal_failed"
     assert Dashboard(f.root).details(MODEL, f.case["instance"])["policies"]["reflection"]["unexecuted_attempt_slots"] == 9
 
+
+
+def test_direct_resume_of_closed_pair_rejects_another_decomposition_contract(closed_policy):
+    from src.agent.prompts.method import DECOMPOSITION_POLICY_V3
+    f = closed_policy
+    class NoCalls:
+        def protocol(self):
+            return {"backend": "agy-cli", "model": MODEL}
+        def edit_file(self, *args, **kwargs):
+            pytest.fail("Closed policy attempted a model call")
+    client = NoCalls()
+    runner = PairedRunner(client=client, judge_client=client, reflection_client=client, protocol_id="base", model=MODEL, suite="bd", problem=["ufl"],
+                          max_attempts=10, solver_executor=lambda *args: pytest.fail("Closed pair ran a solver"), decomposition_contract=DECOMPOSITION_POLICY_V3)
+    with pytest.raises(ProtocolError, match="Case protocol changed"):
+        runner.run_pair(f.source, f.root / "runs" / MODEL)

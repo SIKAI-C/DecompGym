@@ -326,7 +326,16 @@ def main() -> None:
     parser.add_argument("--family-set", choices=["paper", "harder"], default="paper",
                         help="paper: the nine paper families (default); harder: the exploration cohort, written to a separate root.")
     parser.add_argument("--regenerate", action="store_true", help="Explicitly regenerate existing instances.")
+    parser.add_argument("--prompt-contract-config", type=Path, default=None,
+                        help="Only re-render every prompt.txt under --instances-root with this campaign config's decomposition contract, then exit.")
     args = parser.parse_args()
+    if args.prompt_contract_config is not None:
+        from src.agent.prompts.snapshot import render_dataset_prompts
+        from src.experiments.data_context import decomposition_contract_policy
+        from src.experiments.plan import load_plan
+        contract = decomposition_contract_policy(load_plan(args.prompt_contract_config)["prompt_protocol"])
+        print(json.dumps(render_dataset_prompts(Path(args.instances_root), contract)))
+        return
 
     root = Path(args.instances_root)
 

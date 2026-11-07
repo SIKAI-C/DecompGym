@@ -185,3 +185,21 @@ def test_initialization_records_the_data_context_setting(tmp_path):
     manifest = validate(root)
     assert manifest["prompt_protocol"] == {**PROMPT_PROTOCOL, "data_context": DATA_CONTEXT_PREVIEW}
     assert manifest["experiment_plan"]["prompt_protocol"]["data_context"] == DATA_CONTEXT_PREVIEW
+
+
+def test_initialization_applies_the_selected_decomposition_contract(tmp_path):
+    from src.agent.prompts.method import DECOMPOSITION_POLICY_V3, method_requirements
+    data, config = fixture_config(tmp_path)
+    plan = read(config)
+    plan["prompt_protocol"] = {**PROMPT_PROTOCOL, "decomposition_contract": DECOMPOSITION_POLICY_V3}
+    save(config, plan)
+    root = tmp_path / "v3-campaign"
+    initialize(root, data, config, tmp_path / "runtime.json")
+    manifest = validate(root)
+    assert manifest["prompt_protocol"]["decomposition_contract"] == DECOMPOSITION_POLICY_V3
+    assert manifest["algorithm_judge_prompt_sha256"] == judge_prompt_hashes(DECOMPOSITION_POLICY_V3)
+    assert manifest["algorithm_judge_prompt_sha256"]["bd"] != judge_prompt_hashes()["bd"]
+    assert manifest["algorithm_judge_prompt_sha256"]["cg"] == judge_prompt_hashes()["cg"]
+    for case in manifest["instances"]:
+        prompt = (root / "dataset" / case["suite"] / case["problem"] / case["instance"] / "prompt.txt").read_text()
+        assert method_requirements(case["suite"], DECOMPOSITION_POLICY_V3) in prompt

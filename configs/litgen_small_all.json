@@ -1,14 +1,14 @@
 {
   "schema_version": 2,
   "name": "decompgym-litgen-small-all-20261106",
-  "description": "Literature-recipe families, small scale track (126 instances: UFL, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling), paper protocol except that a data.json above 512 KiB (only k-median) reaches the agent context as a structural preview, the twelve paper models from older to newer generations; candidate solvers are also serialized host-side by the native solver lock (two workers, one solver at a time), added after paper-arxiv-v1.",
-  "dataset_inventory_sha256": "8dc45d38799d29bed53ed427f47962d8bf8cfee06f725679bc334ff4d43398ef",
+  "description": "Literature-recipe families, small scale track (126 instances: UFL, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling), paper protocol except that a data.json above 512 KiB (only k-median) reaches the agent context as a structural preview and the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2), the twelve paper models from older to newer generations; candidate solvers are also serialized host-side by the native solver lock (two workers, one solver at a time), added after paper-arxiv-v1.",
+  "dataset_inventory_sha256": "576feb5779f43bd3555d281d69ee65789d4577870fbd9e91b61fdb0846546c8b",
   "prompt_policies": {
     "feedback": "qualitative-objective-feedback-v1",
     "workspace": "existing-target-cwd-v2"
   },
   "prompt_protocol": {
-    "decomposition_contract": "strict-decomposition-20261013-v2",
+    "decomposition_contract": "strict-decomposition-20261106-v3",
     "problem_templates": "instance-bound-decomposition-prompts-20261013-v3",
     "runtime_location": "separate-edit-runtime-v1",
     "algorithm_judge": "strict-decomposition-source-review-v2",

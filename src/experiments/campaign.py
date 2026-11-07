@@ -17,9 +17,10 @@ import threading
 import time
 import traceback
 
+from src.agent.prompts.method import DECOMPOSITION_POLICY
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.agent.prompts.snapshot import judge_prompt_hashes, snapshot_prompt
-from src.experiments.data_context import accepted_prompt_protocol, data_context_policy
+from src.experiments.data_context import accepted_prompt_protocol, data_context_policy, decomposition_contract_policy
 from src.experiments.docker_setup import load_execution_environment, validate_execution_environment, require_backend_readiness
 from src.experiments.environment import RuntimeEnvironmentError, require_runtime_environment
 from src.experiments.locks import runtime_lock, state_root
@@ -65,6 +66,8 @@ def initialize(root, data, plan_path, runtime_path):
     cases.sort(key=lambda c: (["small", "medium", "large"].index(c["size"]), c["seed"], families.index(c["problem"])))
     if identity(cases) != plan["dataset_inventory_sha256"]:
         raise ProtocolError("Dataset differs from the fixed-81 inventory pinned in the plan")
+    # One contract id for the re-rendered instance prompts (and so the reflection prompts) and the method judge.
+    contract = decomposition_contract_policy(plan["prompt_protocol"])
     for case in cases:
         case["source_sha256"] = dict(case["sha256"])
         relative = Path(case["suite"]) / case["problem"] / case["instance"]
@@ -74,7 +77,7 @@ def initialize(root, data, plan_path, runtime_path):
             shutil.copyfile(data / relative / filename, destination / filename)
             if digest(destination / filename) != expected_hash:
                 raise ProtocolError("Dataset copy differs")
-        case["prompt_snapshot"] = snapshot_prompt(destination, case["suite"], case["problem"])
+        case["prompt_snapshot"] = snapshot_prompt(destination, case["suite"], case["problem"], contract)
         case["sha256"]["prompt.txt"] = digest(destination / "prompt.txt")
         case["sha256"]["prompt.original.txt"] = digest(destination / "prompt.original.txt")
         for filename in case["sha256"]:
@@ -96,7 +99,7 @@ def initialize(root, data, plan_path, runtime_path):
     manifest.update(schema_version=4, experiment_plan=plan, experiment_plan_id=identity(plan),
                     prompt_policies=plan["prompt_policies"], model_queue=queue,
                     reflection_policy=plan["reflection_policy"],
-                    prompt_protocol=plan["prompt_protocol"], algorithm_judge_prompt_sha256=judge_prompt_hashes(),
+                    prompt_protocol=plan["prompt_protocol"], algorithm_judge_prompt_sha256=judge_prompt_hashes(contract),
                     maximum_unique_generated_candidates=n_cases * len(queue) * 19, fresh_execution_pairs=n_cases * len(queue))
     manifest["protocol_id"] = identity(manifest)
     save(root / "campaign.json", manifest)
@@ -219,7 +222,7 @@ def run(root, models=None):
             client = make_client(model, "generation")
             reflection_client = make_client(model, "reflection")
             judge = make_client(manifest["judge_model"], "algorithm_judge")
-            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor, data_context=(manifest.get("prompt_protocol") or {}).get("data_context"))
+            runner = PairedRunner(client=client, judge_client=judge, reflection_client=reflection_client, protocol_id=manifest["protocol_id"], model=model, suite=case["suite"], problem=[case["problem"]], max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1, solver_cooldown_seconds=10, on_stage=phase, call_lock=call_lock, solver_executor=solver_executor, data_context=(manifest.get("prompt_protocol") or {}).get("data_context"), decomposition_contract=(manifest.get("prompt_protocol") or {}).get("decomposition_contract", DECOMPOSITION_POLICY))
             source = root / "dataset" / case["suite"] / case["problem"] / case["instance"]
             return runner.run_pair(source, root / "runs" / model)
         finally:

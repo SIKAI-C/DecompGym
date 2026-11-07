@@ -87,6 +87,17 @@ python -m pytest -q                                   # unit tests; no model cal
 python src/01_gen.py -s all -m validate -vl simple    # check the 81 instances and their references
 ```
 
+### Reference data for recipe tests
+
+Generating instances needs no download: the published files the generators sample from (TSPLIB, OR-Library CAP, Solomon, the railway crew scheduling benchmark) are vendored under `src/` with pinned SHA-256 hashes. Two tests also compare a generator with published instances that are not redistributed here; they fail, rather than pass silently, when the files are missing:
+
+| Test | Files | Source | Default location (or environment variable) |
+|---|---|---|---|
+| `tests/test_harder_lbbd_ps.py` | Hooker planning and scheduling archive, unpacked | `planningandscheduling.zip` from https://johnhooker.tepper.cmu.edu/instances.htm (SHA-256 `13988f37f7d272629099ef27c6771f0a7af3cd606952d5e1631f206db13f8bf7`) | `outputs/reference_data/hooker/dat/` (`DECOMPGYM_HOOKER_DAT`) |
+| `tests/test_litgen_clrp.py` | Prodhon CLRP instances `coord*.dat` | http://prodhonc.free.fr/Instances/instances_us.htm | `outputs/reference_data/prodhon/` (`DECOMPGYM_PRODHON_DIR`) |
+
+Set `DECOMPGYM_ALLOW_MISSING_REFERENCE_DATA=1` to turn these two failures into explicit skips on a machine without the downloads.
+
 The reference solvers can also be called from Python:
 
 ```python

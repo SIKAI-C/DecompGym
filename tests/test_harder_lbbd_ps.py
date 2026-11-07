@@ -42,13 +42,12 @@ def test_generator_follows_hookers_class_c_and_e_recipe():
     assert class_ranges("e", 12, 2)[1] == 40 and class_ranges("c", 18, 4)[1] == 37 and class_ranges("c", 30, 4)[1] == 62
 
 
-HOOKER = Path(os.environ.get("DECOMPGYM_HOOKER_DAT", Path(__file__).resolve().parents[1] / "outputs" / "scaleup" / "raw" / "lbbd" / "hooker_zip" / "dat"))
-
-
-@pytest.mark.skipif(not HOOKER.exists(), reason="Hooker archive (planningandscheduling.zip) not unpacked")
 def test_recipe_reproduces_every_archive_c_and_e_file():
     """Every value of every c/e archive file lies in the recipe's ranges, windows and capacities match exactly, and every
     range endpoint is attained somewhere in the archive (one sampling miss allowed: e m = 3 row 0 tops at 23 of 24)."""
+    from tests.reference_data import ROOT, reference_path
+
+    HOOKER = reference_path("DECOMPGYM_HOOKER_DAT", ROOT / "hooker" / "dat", "Hooker archive (planningandscheduling.zip, unpacked dat/)")
     from src.bd.lbbd.a_data import load_hooker_dat
     from src.bd.lbbd_ps.a_gen_data import class_ranges
 

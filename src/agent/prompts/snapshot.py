@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from src.agent.prompts.judge import algorithm_review_prompt
-from src.agent.prompts.method import DECOMPOSITION_POLICY
+from src.agent.prompts.method import DECOMPOSITION_POLICY, decomposition_contract
 from src.utils.output_contract import OUTPUT_CONTRACT_POLICY
 from src.agent.prompts.policy import REFLECTION_POLICY
 
@@ -22,19 +22,36 @@ PROMPT_PROTOCOL = {
 }
 
 
-def render_case_prompt(suite, problem, data):
+def render_case_prompt(suite, problem, data, contract=DECOMPOSITION_POLICY):
     renderer = importlib.import_module(f"src.{suite}.{problem}.b_problem")
-    return renderer.render_prompt(data).rstrip() + "\n"
+    with decomposition_contract(contract):
+        return renderer.render_prompt(data).rstrip() + "\n"
 
 
-def snapshot_prompt(destination: Path, suite: str, problem: str):
+def snapshot_prompt(destination: Path, suite: str, problem: str, contract=DECOMPOSITION_POLICY):
     original = (destination / "prompt.txt").read_bytes()
     (destination / "prompt.original.txt").write_bytes(original)
-    prompt = render_case_prompt(suite, problem, json.loads((destination / "data.json").read_text()))
+    prompt = render_case_prompt(suite, problem, json.loads((destination / "data.json").read_text()), contract)
     # The copy belongs to the new cohort; the source dataset is never changed.
     (destination / "prompt.txt").write_text(prompt)
     return {"policy": PROMPT_PROTOCOL["problem_templates"], "original_sha256": hashlib.sha256(original).hexdigest(), "effective_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
 
 
-def judge_prompt_hashes():
-    return {suite: hashlib.sha256(algorithm_review_prompt(suite).encode()).hexdigest() for suite in ("bd", "cg")}
+def render_dataset_prompts(data: Path, contract=DECOMPOSITION_POLICY):
+    """Rewrite data/<suite>/<problem>/<instance>/prompt.txt under one contract (the dataset writers render v2).
+
+    Prompt-only: data, references and metadata are untouched. Run it before pinning a dataset inventory for a config
+    whose decomposition_contract is not the paper's. Returns the number of instances and of rewritten prompts."""
+    total = changed = 0
+    for path in sorted(Path(data).glob("*/*/*/data.json")):
+        suite, problem = path.relative_to(data).parts[:2]
+        prompt = render_case_prompt(suite, problem, json.loads(path.read_text()), contract)
+        total += 1
+        if (path.parent / "prompt.txt").read_text() != prompt:
+            (path.parent / "prompt.txt").write_text(prompt)
+            changed += 1
+    return {"contract": contract, "instances": total, "rewritten": changed}
+
+
+def judge_prompt_hashes(contract=DECOMPOSITION_POLICY):
+    return {suite: hashlib.sha256(algorithm_review_prompt(suite, contract).encode()).hexdigest() for suite in ("bd", "cg")}
