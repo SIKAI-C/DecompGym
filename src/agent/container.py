@@ -147,6 +147,14 @@ def check_context(context, directories=CONTEXT_DIRECTORIES) -> None:
                 raise ValueError("Context files need normalized relative paths and bytes")
 
 
+def qualified_local_name(image: str) -> str:
+    """docker.io/library/<name>[:tag] for a short local name; ids, digests and registry-qualified names are unchanged."""
+    # Ids (sha256:..., bare hex ids or prefixes), digests and any registry/namespace-qualified name stay as given.
+    if image.startswith("sha256:") or re.fullmatch(r"[0-9a-f]{4,64}", image) or "@" in image or "/" in image:
+        return image
+    return f"docker.io/library/{image}"
+
+
 def save_state(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -221,6 +229,10 @@ class DockerRuntime:
 
     def image_id(self, image):
         result = self.command("image", "inspect", image, "--format", "{{.Id}}")
+        if result.returncode and "no such image" in result.stderr.lower() and qualified_local_name(image) != image:
+            # Docker Desktop's containerd image store intermittently fails to resolve a short local tag that it
+            # still lists; the fully qualified name of the same local image resolves to the same content id.
+            result = self.command("image", "inspect", qualified_local_name(image), "--format", "{{.Id}}")
         if result.returncode and "no such image" in result.stderr.lower():
             raise RuntimeEnvironmentError(f"Required frozen Docker image is unavailable: {image}")
         if result.returncode or not result.stdout.strip().startswith("sha256:"):

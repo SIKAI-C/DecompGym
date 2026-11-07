@@ -144,3 +144,65 @@ def test_sampling_skips_a_worker_that_exits_mid_sample_and_keeps_the_others(tmp_
     monkeypatch.setattr(runtime, "command", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, "alive\n", "") if args[0] == "ps" else subprocess.CompletedProcess(args, 1, "", "daemon error"))
     with pytest.raises(ContainerError, match="Cannot sample"):
         runtime.resource_samples()
+
+
+def test_image_id_falls_back_to_the_qualified_local_name(monkeypatch):
+    # Docker Desktop's containerd store intermittently fails to resolve a short local tag it still lists.
+    import subprocess
+    from src.agent.container import DockerRuntime, qualified_local_name
+
+    assert qualified_local_name("decompbench-agents-v2:20261013") == "docker.io/library/decompbench-agents-v2:20261013"
+    for unchanged in ("sha256:" + "a" * 64, "a" * 64, "abcdef123456", "abcdef12", "abcd", "ghcr.io/org/img:1", "org/img:1", "localhost:5000/org/img:1",
+                      "img@sha256:" + "b" * 64):
+        assert qualified_local_name(unchanged) == unchanged
+    calls = []
+
+    def fake(self, *args, timeout=30):
+        calls.append(args[2])
+        if args[2].startswith("docker.io/library/"):
+            return subprocess.CompletedProcess(args, 0, "sha256:" + "c" * 64 + "\n", "")
+        return subprocess.CompletedProcess(args, 1, "", "Error response from daemon: No such image: x")
+    monkeypatch.setattr(DockerRuntime, "command", fake)
+    runtime = DockerRuntime.__new__(DockerRuntime)
+    assert runtime.image_id("decompbench-agents-v2:20261013") == "sha256:" + "c" * 64
+    assert calls == ["decompbench-agents-v2:20261013", "docker.io/library/decompbench-agents-v2:20261013"]
+
+
+def test_image_id_retries_only_on_a_missing_short_name(monkeypatch):
+    import subprocess
+    import pytest
+    from src.agent.container import ContainerError, DockerRuntime
+    from src.experiments.environment import RuntimeEnvironmentError
+
+    calls = []
+
+    def respond(outcomes):
+        def fake(self, *args, timeout=30):
+            calls.append(args)
+            code, out, err = outcomes.pop(0)
+            return subprocess.CompletedProcess(args, code, out, err)
+        return fake
+    runtime = DockerRuntime.__new__(DockerRuntime)
+    good = "sha256:" + "d" * 64
+    monkeypatch.setattr(DockerRuntime, "command", respond([(0, good + "\n", "")]))
+    assert runtime.image_id("img:1") == good and calls == [("image", "inspect", "img:1", "--format", "{{.Id}}")]
+    calls.clear()
+    monkeypatch.setattr(DockerRuntime, "command", respond([(1, "", "permission denied")]))
+    with pytest.raises(ContainerError):
+        runtime.image_id("img:1")
+    assert len(calls) == 1  # an unrelated error is not retried
+    calls.clear()
+    monkeypatch.setattr(DockerRuntime, "command", respond([(1, "", "No such image: img:1"), (1, "", "No such image: docker.io/library/img:1")]))
+    with pytest.raises(RuntimeEnvironmentError):
+        runtime.image_id("img:1")
+    assert [c[2] for c in calls] == ["img:1", "docker.io/library/img:1"] and all(c[:2] == ("image", "inspect") for c in calls)
+    calls.clear()
+    monkeypatch.setattr(DockerRuntime, "command", respond([(1, "", "No such image: x")]))
+    with pytest.raises(RuntimeEnvironmentError):
+        runtime.image_id("localhost:5000/org/img:1")
+    assert len(calls) == 1  # qualified names are not rewritten
+    calls.clear()
+    monkeypatch.setattr(DockerRuntime, "command", respond([(1, "", "No such image: abcdef12")]))
+    with pytest.raises(RuntimeEnvironmentError):
+        runtime.image_id("abcdef12")
+    assert len(calls) == 1  # a short id prefix is never retried as a repository name
