@@ -8,17 +8,22 @@ from pathlib import Path
 from src.agent.docker_client import CLI_VERSIONS
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY
 from src.experiments.data_context import accepted_prompt_protocol, context_delivery_policy
+from src.experiments.execution_policy import PAIRED_EXECUTION, SMALL_SCALE_NATIVE_POLICY
 from src.utils.errors import ProtocolError
-from src.utils.families import FAMILIES, PAPER_FAMILIES
+from src.utils.families import FAMILIES, PAPER_FAMILIES, cohort_tracks
 from src.utils.records import identity
 
 
 # The paired protocol of the paper. A config may not change it; a different protocol needs code review.
-EXECUTION = {"workers": 2, "max_attempts": 10, "solver_timeout": 60, "solver_threads": 1,
-             "solver_cooldown_seconds": 10, "agent_timeout": 900, "active_codex_invocation_limit": 2,
-             "active_agy_invocation_limit": 1, "active_claude_invocation_limit": 1,
-             "shared_first_attempt": True, "stop_after_success": True, "gap_threshold": 0.01,
-             "judge_model": "gpt-6-astra", "judge_effort": "high"}
+EXECUTION = PAIRED_EXECUTION
+# The reviewed execution settings of each execution policy (src.experiments.execution_policy). A config without an
+# "execution_policy" key (every config so far) uses the paper's native policy.
+EXECUTION_SETTINGS = {SMALL_SCALE_NATIVE_POLICY: EXECUTION}
+
+
+def planned_cases(plan: dict) -> int:
+    """The instances of the plan's cohort (the paper's fixed 81 without a cohort), from the families' track descriptors."""
+    return sum(track.instance_count for track in cohort_tracks(plan.get("cohort", {}).get("families", PAPER_FAMILIES)).values())
 
 
 def load_plan(path: Path) -> dict:
@@ -46,7 +51,8 @@ def load_plan(path: Path) -> dict:
     for item in queue:
         if not item.get("model") or item.get("backend") not in CLI_VERSIONS or not item.get("effort"):
             raise ProtocolError(f"Each model needs a model ID, a backend in {sorted(CLI_VERSIONS)} and an effort: {item}")
-    if plan.get("execution") != EXECUTION:
+    policy = plan.get("execution_policy", SMALL_SCALE_NATIVE_POLICY)
+    if not isinstance(policy, str) or policy not in EXECUTION_SETTINGS or plan.get("execution") != EXECUTION_SETTINGS[policy]:
         raise ProtocolError("Execution settings differ from the paired protocol")
     if not plan.get("dataset_inventory_sha256"):
         raise ProtocolError("The config must pin the fixed dataset inventory")
@@ -66,7 +72,7 @@ def main(argv=None):
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args(argv)
     plan = load_plan(args.config)
-    print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": 9 * len(plan.get("cohort", {}).get("families", PAPER_FAMILIES)) * len(plan["model_queue"]), "launch_performed": False}, indent=2))
+    print(json.dumps({"config_id": identity(plan), "models": plan["model_queue"], "planned_pairs": planned_cases(plan) * len(plan["model_queue"]), "launch_performed": False}, indent=2))
 
 
 if __name__ == "__main__":

@@ -25,12 +25,13 @@ from src.experiments.agent_auth import require_backend_authentication
 from src.experiments.data_context import accepted_prompt_protocol, context_delivery_policy, data_context_policy, decomposition_contract_policy
 from src.experiments.docker_setup import load_execution_environment, validate_execution_environment, require_backend_readiness
 from src.experiments.environment import RuntimeEnvironmentError, require_runtime_environment
+from src.experiments.execution_policy import SMALL_SCALE_NATIVE_POLICY
 from src.experiments.locks import runtime_lock, state_root
 from src.experiments.paired_runner import PairedRunner
 from src.experiments.plan import load_plan, model_queue
 from src.experiments.resources import CleanupError, ResourceGuard, sample_host, supervise, thermal_warnings
 from src.utils.errors import InfrastructureError, ProtocolError
-from src.utils.families import PAPER_FAMILIES
+from src.utils.families import PAPER_FAMILIES, cohort_tracks
 from src.utils.records import digest, identity, now, read, save
 
 
@@ -50,9 +51,11 @@ def initialize(root, data, plan_path, runtime_path):
         raise ProtocolError("Choose a new campaign root; existing experiments are preserved")
     environment = require_runtime_environment()
     execution_environment = load_execution_environment(runtime_path)
-    # A plan may name a cohort of registered families (src.utils.families); without it, the paper's fixed 81.
+    # A plan may name a cohort of registered families (src.utils.families); without it, the paper's fixed 81. Each
+    # family's small-scale track descriptor gives its sizes and seeds (3 x 3 for every family).
     families = plan.get("cohort", {}).get("families", FAMILIES)
-    n_cases = 9 * len(families)
+    tracks = cohort_tracks(families)
+    n_cases = sum(track.instance_count for track in tracks.values())
     paths = list(data.glob("*/*/*/data.json"))
     if len(paths) != n_cases:
         raise ProtocolError(f"Exactly {n_cases} existing fixed instances are required")
@@ -60,16 +63,17 @@ def initialize(root, data, plan_path, runtime_path):
     for path in paths:
         suite, problem, name = path.relative_to(data).parts[:3]
         _, size, seed = name.rsplit("_", 2)
-        if problem not in families or size not in ("small", "medium", "large") or seed not in ("seed000", "seed001", "seed002"):
+        if problem not in tracks or size not in tracks[problem].sizes or seed not in {f"seed{k:03d}" for k in tracks[problem].seeds}:
             raise ProtocolError("Dataset identity differs from the fixed 81")
         # A named cohort also freezes its decomposition reference, which may certify the gold value.
         frozen_files = ("data.json", "prompt.txt", "meta.json", "gold_monolithic.json") + ((f"gold_{suite}.json",) if "cohort" in plan else ())
         hashes = {filename: digest(path.parent / filename) for filename in frozen_files}
         cases.append({"suite": suite, "problem": problem, "instance": name, "size": size, "seed": int(seed[4:]), "sha256": hashes})
-    expected = {(p, s, k) for p in families for s in ("small", "medium", "large") for k in range(3)}
+    expected = {(p, s, k) for p, track in tracks.items() for s in track.sizes for k in track.seeds}
     if {(c["problem"], c["size"], c["seed"]) for c in cases} != expected:
         raise ProtocolError("Fixed dataset coverage mismatch")
-    cases.sort(key=lambda c: (["small", "medium", "large"].index(c["size"]), c["seed"], families.index(c["problem"])))
+    sizes = list(dict.fromkeys(size for track in tracks.values() for size in track.sizes))
+    cases.sort(key=lambda c: (sizes.index(c["size"]), c["seed"], families.index(c["problem"])))
     if identity(cases) != plan["dataset_inventory_sha256"]:
         raise ProtocolError("Dataset differs from the fixed-81 inventory pinned in the plan")
     # One contract id for the re-rendered instance prompts (and so the reflection prompts) and the method judge.
@@ -503,6 +507,8 @@ def ensure_execution_allowed(root, manifest):
         raise ProtocolError("This controller requires the new reflection delivery policy; preserve the legacy controller")
     if not accepted_prompt_protocol(manifest.get("prompt_protocol")):
         raise ProtocolError("This controller requires the reviewed prompt and output contracts")
+    if (manifest.get("experiment_plan") or {}).get("execution_policy", SMALL_SCALE_NATIVE_POLICY) != SMALL_SCALE_NATIVE_POLICY:
+        raise ProtocolError("This controller runs only the native execution policy")
     if "solver_output_policy" in manifest:
         from src.experiments.sandbox import OUTPUT_LIMITS
         if manifest["solver_output_policy"] is None or manifest["solver_output_policy"] not in OUTPUT_LIMITS or context_delivery_policy(manifest["prompt_protocol"]) is None:

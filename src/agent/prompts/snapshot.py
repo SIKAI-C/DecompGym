@@ -6,7 +6,7 @@ import importlib
 import json
 from pathlib import Path
 
-from src.agent.prompts.judge import algorithm_review_prompt
+from src.agent.prompts.judge import ALGORITHM_JUDGE, algorithm_review_prompt
 from src.agent.prompts.method import DECOMPOSITION_POLICY, decomposition_contract
 from src.utils.output_contract import OUTPUT_CONTRACT_POLICY
 from src.agent.prompts.policy import REFLECTION_POLICY
@@ -16,7 +16,7 @@ PROMPT_PROTOCOL = {
     "decomposition_contract": DECOMPOSITION_POLICY,
     "problem_templates": "instance-bound-decomposition-prompts-20261013-v3",
     "runtime_location": "separate-edit-runtime-v1",
-    "algorithm_judge": "strict-decomposition-source-review-v2",
+    "algorithm_judge": ALGORITHM_JUDGE,
     "output_contract": OUTPUT_CONTRACT_POLICY,
     "reflection_delivery": REFLECTION_POLICY,
 }
@@ -53,5 +53,7 @@ def render_dataset_prompts(data: Path, contract=DECOMPOSITION_POLICY):
     return {"contract": contract, "instances": total, "rewritten": changed}
 
 
-def judge_prompt_hashes(contract=DECOMPOSITION_POLICY):
-    return {suite: hashlib.sha256(algorithm_review_prompt(suite, contract).encode()).hexdigest() for suite in ("bd", "cg")}
+def judge_prompt_hashes(contract=DECOMPOSITION_POLICY, extensions=(), target=None):
+    """sha256 of each suite's single-file judge prompt (with the campaign's audit target and extensions, if any)."""
+    options = {"extensions": extensions} | ({"target": target} if target is not None else {})
+    return {suite: hashlib.sha256(algorithm_review_prompt(suite, contract, **options).encode()).hexdigest() for suite in ("bd", "cg")}

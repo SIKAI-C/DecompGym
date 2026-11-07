@@ -889,13 +889,15 @@ src/
   01_gen.py           generate and validate the dataset              -> bd/, cg/, utils/
   02_experiment.py    Docker setup, campaigns, dashboard             -> experiments/
   03_analysis.py      every paper table and figure; campaign reports -> results/
-  agent/              Docker CLI client, container runtime, agent-side prompts (prompts/: workspace rules,
-                      method contract, generation, reflection, judge)
-  experiments/        campaign controller, paired runner, solver sandbox, verification, dashboard
+  agent/              Docker CLI client, container runtime, call specs (specs.py: read-only mount layout, writable
+                      delivery, run-time contract), agent-side prompts (prompts/: workspace rules, method contract,
+                      generation, reflection, judge)
+  experiments/        campaign controller, paired runner and its parts (context_spec.py: what each call reads;
+                      execution_policy.py: how a candidate runs and is scored), solver sandbox, verification, dashboard
   results/            audit snapshot, paper tables and figures, failure analysis, prompt examples
   bd/, cg/            the problem families: generator, task prompt template, references, verifier
-  utils/              base classes, the family registry (families.py), instance generation and admission
-                      (instance_suite.py), dataset helpers, Python API, shared records
+  utils/              base classes, the family registry (families.py, with small- and large-scale track descriptors),
+                      instance generation and admission (instance_suite.py), dataset helpers, Python API, shared records
 configs/paper.json    the paper's models and protocol (the 81 instances in data/)
 configs/small_scale.json   the small-scale track: all twenty families, 180 instances in outputs/small_scale_data
                       (built and checked by scripts/build_small_scale_data.py)

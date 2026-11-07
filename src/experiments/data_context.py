@@ -8,8 +8,10 @@ marked as a preview. The solver still reads the real, full data.json at run time
 are unchanged.
 
 The prompt protocol may instead carry `context_delivery` = CONTEXT_DELIVERY_MOUNTED (src.agent.prompts.mounted): the
-context files are mounted read-only in the agent workspace rather than pasted, so there is no preview rule; the two
-settings are exclusive.
+context files are mounted read-only in the agent workspace rather than pasted. The reviewed protocols keep the two
+settings exclusive (accepted_prompt_protocol). Representation and transport are independent parts of the runner's
+ContextSpec (src.experiments.context_spec), which can also mount the preview; DATA_CONTEXT_BOTH (the full data.json and,
+above the threshold, its preview as well) is such a representation, used by no config.
 """
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ import tempfile
 from src.agent.prompts.method import CONTRACTS
 from src.agent.prompts.mounted import CONTEXT_DELIVERY_MOUNTED
 from src.agent.prompts.snapshot import PROMPT_PROTOCOL
+from src.agent.specs import PREVIEW_ALONGSIDE_NAME, PREVIEW_NAME
 from src.experiments.xl_inputs import preview_json
 from src.utils.errors import ProtocolError
 
@@ -27,8 +30,9 @@ from src.utils.errors import ProtocolError
 DATA_CONTEXT_PREVIEW = "full-or-structural-preview-512KiB-v1"
 PREVIEW_THRESHOLD_BYTES = 512 * 1024
 PREVIEW_KEEP = 3
-PREVIEW_NAME = "data.json.structural-preview.txt"
+# The reviewed data-context settings of a prompt protocol.
 DATA_CONTEXT_POLICIES = (None, DATA_CONTEXT_PREVIEW)
+DATA_CONTEXT_BOTH = "full-and-structural-preview-512KiB-v1"
 
 
 def accepted_prompt_protocol(protocol) -> bool:
@@ -61,12 +65,33 @@ def context_delivery_policy(protocol) -> str | None:
     return protocol.get("context_delivery")
 
 
-def preview_text(data: Path) -> str:
+def preview_text(data: Path, *, with_full: bool = False) -> str:
     size = data.stat().st_size
-    header = (f"STRUCTURAL PREVIEW of data.json, not the data itself: the file has {size} bytes, more than the "
-              f"{PREVIEW_THRESHOLD_BYTES}-byte context limit. Every list shows only its first {PREVIEW_KEEP} items, followed by "
-              f"\"... (N items in total)\". solver.py must load the complete data.json at run time.")
+    if with_full:
+        header = (f"STRUCTURAL PREVIEW of data.json, not the data itself: the file has {size} bytes. Every list shows only its first {PREVIEW_KEEP} items, followed by "
+                  f"\"... (N items in total)\". The complete data.json is provided as well; solver.py must load the complete data.json at run time.")
+    else:
+        header = (f"STRUCTURAL PREVIEW of data.json, not the data itself: the file has {size} bytes, more than the "
+                  f"{PREVIEW_THRESHOLD_BYTES}-byte context limit. Every list shows only its first {PREVIEW_KEEP} items, followed by "
+                  f"\"... (N items in total)\". solver.py must load the complete data.json at run time.")
     return header + "\n" + preview_json(data, keep=PREVIEW_KEEP) + "\n"
+
+
+def publish_preview(instance: Path, text: str, name: str = PREVIEW_NAME) -> Path:
+    """The case's preview file `name` with exactly `text` (written once, atomically; a different saved preview is refused)."""
+    preview = instance / name
+    if preview.is_symlink() or (preview.exists() and preview.read_text() != text):
+        raise ProtocolError("Saved structural preview differs from data.json")
+    if not preview.exists():
+        # Atomic publication: an interrupted write leaves only a temporary file, never a partial preview.
+        handle, temporary = tempfile.mkstemp(dir=instance, prefix=f".{name}.", suffix=".tmp")
+        try:
+            with os.fdopen(handle, "w") as stream:
+                stream.write(text)
+            os.replace(temporary, preview)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    return preview
 
 
 def data_context_file(instance: Path, policy: str | None) -> tuple[Path, dict | None]:
@@ -79,17 +104,19 @@ def data_context_file(instance: Path, policy: str | None) -> tuple[Path, dict | 
     size = data.stat().st_size
     if size <= PREVIEW_THRESHOLD_BYTES:
         return data, {"policy": policy, "data_json_bytes": size, "delivered": "full"}
-    preview = instance / PREVIEW_NAME
-    text = preview_text(data)
-    if preview.is_symlink() or (preview.exists() and preview.read_text() != text):
-        raise ProtocolError("Saved structural preview differs from data.json")
-    if not preview.exists():
-        # Atomic publication: an interrupted write leaves only a temporary file, never a partial preview.
-        handle, temporary = tempfile.mkstemp(dir=instance, prefix=f".{PREVIEW_NAME}.", suffix=".tmp")
-        try:
-            with os.fdopen(handle, "w") as stream:
-                stream.write(text)
-            os.replace(temporary, preview)
-        finally:
-            Path(temporary).unlink(missing_ok=True)
+    preview = publish_preview(instance, preview_text(data))
     return preview, {"policy": policy, "data_json_bytes": size, "delivered": "structural_preview", "preview": PREVIEW_NAME, "keep": PREVIEW_KEEP}
+
+
+def data_context_files(instance: Path, policy: str | None) -> tuple[list[Path], dict | None]:
+    """The instance-data entries of a context under `policy` (data_context_file's one entry, or data.json plus its
+    preview under DATA_CONTEXT_BOTH) and the evidence record."""
+    if policy != DATA_CONTEXT_BOTH:
+        path, record = data_context_file(instance, policy)
+        return [path], record
+    data = instance / "data.json"
+    size = data.stat().st_size
+    if size <= PREVIEW_THRESHOLD_BYTES:
+        return [data], {"policy": policy, "data_json_bytes": size, "delivered": "full"}
+    preview = publish_preview(instance, preview_text(data, with_full=True), PREVIEW_ALONGSIDE_NAME)
+    return [data, preview], {"policy": policy, "data_json_bytes": size, "delivered": "full_and_structural_preview", "preview": PREVIEW_ALONGSIDE_NAME, "keep": PREVIEW_KEEP}

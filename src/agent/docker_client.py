@@ -16,9 +16,10 @@ from src.agent.cli_events import parse_events
 from src.agent.result import AgentResult, save_result
 from src.agent.container import DockerRuntime
 from src.agent import mounted_context
-from src.agent.prompts.mounted import CONTEXT_DELIVERIES, CONTEXT_DIRECTORIES, MOUNTED_WORKSPACE_POLICY, WORKSPACE, workspace_part
+from src.agent.prompts.mounted import CONTEXT_DELIVERIES, MOUNTED_CPP_WORKSPACE_POLICY, MOUNTED_WORKSPACE_POLICY, WORKSPACE, workspace_part
 from src.agent.prompts.policy import WORKSPACE_POLICY, record_workspace_prompt
 from src.agent.safe_artifacts import read_regular_text
+from src.agent.specs import DEFAULT_RUNTIME, MOUNT_LAYOUT, SINGLE_FILE_DELIVERY, MountLayout, RuntimeSpec
 from src.experiments.environment import RuntimeEnvironmentError
 
 
@@ -57,20 +58,28 @@ def credential_from_environment(backend):
 
 
 class DockerCliClient:
+    # The writable target of every call is the one requested file (src.agent.specs); multi-file delivery is MultiFileDockerCliClient.
+    delivery = SINGLE_FILE_DELIVERY
+
     def __init__(self, model, *, backend, image_id, runtime: DockerRuntime, evidence_root: Path, effort="medium", timeout=900, role="generation", credential_provider=credential_from_environment,
-                 context_delivery=None):
+                 context_delivery=None, context_layout: MountLayout | None = None, runtime_spec: RuntimeSpec | None = None):
         if backend not in CLI_VERSIONS or not image_id.startswith("sha256:"):
             raise ValueError("An approved backend and immutable image ID are required")
         if context_delivery not in CONTEXT_DELIVERIES:
             raise ValueError(f"Unknown context delivery: {context_delivery!r}")
+        if context_delivery is None and (context_layout is not None or runtime_spec is not None):
+            raise ValueError("A context layout and a runtime contract are part of the mounted-files prompt only")
         self.model, self.backend, self.image_id = model, backend, image_id
         self.runtime, self.evidence_root = runtime, evidence_root
         self.effort, self.timeout, self.role = effort, timeout, role
         self.credential_provider = credential_provider
         # The call-gate slot whose Codex auth volume this call uses (None: slot 0); see bind_auth_slot.
         self.auth_slot = None
-        # None: the paper's pasted context (compose_prompt). CONTEXT_DELIVERY_MOUNTED: read-only files in the workspace.
+        # None: the paper's pasted context (compose_prompt). CONTEXT_DELIVERY_MOUNTED: read-only files in the workspace,
+        # placed by `context_layout` and described with the run-time contract of `runtime_spec` (src.agent.specs).
         self.context_delivery = context_delivery
+        self.context_layout = context_layout or MOUNT_LAYOUT
+        self.runtime_spec = runtime_spec or DEFAULT_RUNTIME
 
     def protocol(self):
         value = {"backend": self.backend, "transport": "docker", "transport_policy": DOCKER_EDIT_POLICY, "model": self.model, "effort": self.effort, "role": self.role,
@@ -154,8 +163,21 @@ class DockerCliClient:
 
     def compose_mounted_prompt(self, target_name, prompt, files):
         """Part 1 (workspace and files) before the runner's structured task prompt; returns (prompt, workspace note)."""
-        workspace, note = workspace_part(target_name, files, self.backend)
+        workspace, note = workspace_part(target_name, files, self.backend, delivery=self.delivery, runtime=self.runtime_spec, layout=self.context_layout)
         return workspace + "\n\n" + prompt, note
+
+    def mounted_prompt(self, target, prompt, context, log_dir, step):
+        """The mounted-files part of a call (single- or multi-file): (effective prompt, DockerRuntime.run context
+        arguments). Records the workspace prompt and the context evidence ({step}_context.json)."""
+        files = mounted_context.mounted_files(context, self.context_layout)
+        composed, note = self.compose_mounted_prompt(target.name, prompt, files)
+        version = MOUNTED_CPP_WORKSPACE_POLICY if self.delivery.sources(target.name) else MOUNTED_WORKSPACE_POLICY
+        effective = record_workspace_prompt(Path(WORKSPACE), target.name, composed, log_dir, step, old_absolute_note=self.backend == "agy-cli", note=note, version=version)
+        (log_dir / f"{step}_context.json").write_text(json.dumps(mounted_context.evidence(files, target.name, self.delivery, self.context_layout), indent=2) + "\n")
+        run_context = {"context": mounted_context.volume_contents(files)}
+        if self.context_layout != MOUNT_LAYOUT:
+            run_context["context_directories"] = self.context_layout.directories
+        return effective, run_context
 
     def edit_file(self, target, prompt, *, context=None, log_dir=None, step="agent"):
         target = Path(target).absolute()
@@ -178,10 +200,7 @@ class DockerCliClient:
 
     def _edit_mounted(self, target, prompt, context, log_dir, step):
         """The mounted-files call: the same job and collection as the paper path, with the context files mounted read-only."""
-        files = mounted_context.mounted_files(context)
-        composed, note = self.compose_mounted_prompt(target.name, prompt, files)
-        effective = record_workspace_prompt(Path(WORKSPACE), target.name, composed, log_dir, step, old_absolute_note=self.backend == "agy-cli", note=note, version=MOUNTED_WORKSPACE_POLICY)
-        (log_dir / f"{step}_context.json").write_text(json.dumps(mounted_context.evidence(files, target.name), indent=2) + "\n")
+        effective, run_context = self.mounted_prompt(target, prompt, context, log_dir, step)
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
         forbid_job_credential(self.backend, credential)
@@ -191,7 +210,7 @@ class DockerCliClient:
             result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
                                       artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json"], public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role,
                                                                                                                                              "context_delivery": self.context_delivery},
-                                      context=mounted_context.volume_contents(files))
+                                      **run_context)
         return self._record(target, log_dir, step, result)
 
     def _ignore_context_copies(self, result, log_dir, step):
@@ -201,7 +220,7 @@ class DockerCliClient:
         if self.context_delivery is None or "delivery.json" not in result.artifacts:
             return result
         delivery = json.loads(result.artifacts["delivery.json"])
-        prefixes = tuple(directory[len(WORKSPACE) + 1:] + "/" for directory in CONTEXT_DIRECTORIES)
+        prefixes = tuple(directory[len(WORKSPACE) + 1:] + "/" for directory in self.context_layout.directories)
         misplaced = delivery.get("misplaced", {})
         ignored = sorted(path for path in misplaced if path.startswith(prefixes))
         if not ignored:

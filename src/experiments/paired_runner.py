@@ -1,11 +1,24 @@
-"""Resumable native paired retries with a single shared first evaluation."""
+"""Resumable native paired retries with a single shared first evaluation.
+
+The paired lifecycle (a shared first attempt, then plain and reflection retries with durable receipts) is independent
+of what the agent reads, writes and runs, and of how a candidate is scored:
+- ContextSpec (src.experiments.context_spec): the read-only files of each call (instance data representation, history
+  sets, transport and mount layout);
+- DeliverySpec and RuntimeSpec (src.agent.specs): the writable/collected targets and the run-time contract;
+- ExecutionPolicy (src.experiments.execution_policy): executes the delivered candidate and evaluates it; every stop
+  and feedback decision reads its Evaluation;
+- the Part 2 section adapter (src.agent.prompts.mounted, PROSE_SECTIONS by default) and the judge's audit extensions
+  (src.agent.prompts.judge).
+The defaults are the paper's and the small-scale protocol and keep every record of the earlier fixed implementation;
+spec_record() names any other spec in the case identity and in every request fingerprint.
+"""
 from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 import hashlib
-import math
 from pathlib import Path
+import re
 import shutil
 import threading
 import time
@@ -13,17 +26,18 @@ from typing import Any
 import uuid
 
 from src.agent.prompts.builder import PromptBuilder
-from src.agent.prompts.judge import algorithm_review_prompt, parse_verdict
+from src.agent.prompts.judge import PAPER_AUDIT_TARGET, algorithm_review_prompt, judge_policy, parse_verdict
 from src.agent.mounted_context import manifest as mounted_manifest, mounted_files
 from src.agent.prompts.method import DECOMPOSITION_POLICY, require_contract
-from src.agent.prompts.mounted import CONTEXT_DELIVERIES
+from src.agent.prompts.mounted import PROSE_SECTIONS
 from src.agent.prompts.policy import FEEDBACK_POLICY, WORKSPACE_POLICY, REFLECTION_POLICY, reflection_delivery_feedback
-from src.experiments.data_context import DATA_CONTEXT_POLICIES, data_context_file
+from src.agent.specs import DEFAULT_RUNTIME, MOUNT_LAYOUT, SINGLE_FILE_DELIVERY, RuntimeSpec
+from src.experiments.context_spec import LEGACY_CONTEXTS, PAPER_HISTORY, context_spec
+from src.experiments.data_context import DATA_CONTEXT_POLICIES
 from src.experiments.environment import require_runtime_environment
 from src.experiments.exec_log import ExecLogger
+from src.experiments.execution_policy import SMALL_SCALE_NATIVE_POLICY, AttemptCase, Evaluation, SmallScaleNativePolicy
 from src.experiments.locks import runtime_lock
-from src.experiments.sandbox import SolverLaunchError
-from src.experiments.verification import OutputVerifier
 from src.utils.errors import InfrastructureError, ProtocolError
 from src.utils.families import problems
 from src.utils.records import digest, identity, read, save
@@ -31,6 +45,7 @@ from src.utils.records import digest, identity, read, save
 
 # Without an explicit problem the runner keeps its historical default: the paper families of the suite, in this order.
 DEFAULT_PROBLEMS = {"bd": ["tsso", "fctp", "km", "lrp", "ufl"], "cg": ["bp", "csp", "gap", "shift"]}
+NESTED_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")  # a declared attempt subdirectory: one plain name
 
 
 @dataclass
@@ -57,12 +72,8 @@ class AttemptResult:
 
 
 def previous_attempt_files(attempts_root: Path, current_idx: int) -> list[Path]:
-    """Read-only files of earlier attempts given to a reflection-policy generation."""
-    files = []
-    for idx in range(1, current_idx):
-        directory = attempts_root / f"attempt_{idx:02d}"
-        files.extend((directory / name).resolve() for name in ("solver.py", "debug.md", "reflection_feedback.md") if (directory / name).exists())
-    return files
+    """Read-only files of earlier attempts given to a reflection-policy generation (the paper's history sets)."""
+    return PAPER_HISTORY.previous_attempts(attempts_root, current_idx)
 
 
 class PairedRunner:
@@ -70,26 +81,29 @@ class PairedRunner:
 
     def __init__(self, *, client, judge_client, solver_executor, reflection_client=None, protocol_id="native-qualitative-v2", on_stage=None, call_lock=None,
                  model=None, suite="bd", problem=None, max_attempts=10, solver_timeout=60, agent_timeout=900, solver_threads=1,
-                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY, context_delivery=None):
+                 solver_cooldown_seconds=0, tol=1e-6, gap_threshold=0.01, data_context=None, decomposition_contract=DECOMPOSITION_POLICY, context_delivery=None,
+                 context=None, delivery=None, runtime_spec=None, execution_policy=None, task_sections=None, audit_extensions=(), audit_target=None):
         if suite not in DEFAULT_PROBLEMS:
             raise ValueError("Choose suite bd or cg.")
         if max_attempts < 1 or solver_threads < 1 or min(solver_timeout, agent_timeout, tol) <= 0 or gap_threshold < 0 or solver_cooldown_seconds < 0:
             raise ValueError("Attempt/time/tolerance budgets must be positive; gap threshold must be nonnegative.")
         if data_context not in DATA_CONTEXT_POLICIES:
             raise ValueError(f"Unknown data-context policy: {data_context}")
-        # None keeps the paper rule (the full data.json in every context); see src.experiments.data_context.
-        self.data_context = data_context
         # The method judge applies the campaign's contract, the same one rendered into the instance prompt.txt.
         self.decomposition_contract = require_contract(decomposition_contract)
-        # None keeps the paper's pasted context; CONTEXT_DELIVERY_MOUNTED mounts the generation and reflection context
-        # read-only in the agent workspace and uses the structured prompt (src.agent.prompts.mounted). The judge's
-        # context (the solver.py under review) stays pasted in both.
-        if context_delivery not in CONTEXT_DELIVERIES:
-            raise ValueError(f"Unknown context delivery: {context_delivery}")
-        if context_delivery is not None and data_context is not None:
-            raise ValueError("The mounted-files protocol delivers the complete data.json; it has no data-context preview")
-        self.context_delivery = context_delivery
-        self.runtime_environment = require_runtime_environment()
+        # What each call reads (src.experiments.context_spec). The recorded settings select a reviewed spec: None/None
+        # keeps the paper's pasted full data.json, data_context the structural preview, context_delivery
+        # CONTEXT_DELIVERY_MOUNTED the read-only files in the agent workspace with the structured prompt
+        # (src.agent.prompts.mounted). Any other spec is given explicitly as `context`. The judge's context (the
+        # sources under review) stays pasted in every spec.
+        if context is None:
+            context = context_spec(data_context, context_delivery)
+        elif data_context is not None or context_delivery is not None:
+            raise ValueError("Give either a ContextSpec or the recorded data_context/context_delivery settings")
+        self.context = context
+        self.data_context, self.context_delivery = context.data_context, context.context_delivery
+        # The controller-side environment check (the local Python/Gurobi versions for the native policy), in its earlier place.
+        self.runtime_environment = require_runtime_environment() if execution_policy is None else execution_policy.runtime_environment()
         self.model, self.suite = model, suite
         self.problems = list(problem) if problem else list(DEFAULT_PROBLEMS[suite])
         if any(p not in problems(suite) for p in self.problems):
@@ -106,21 +120,69 @@ class PairedRunner:
         self.call_lock = call_lock
         self.run_solver = solver_executor
         self.mode = "plain"
+        # What the agent writes and the run-time contract it is told (src.agent.specs); the output readback policy is
+        # the executor's (NativeSandboxExecutor.output_policy).
+        self.delivery = delivery or SINGLE_FILE_DELIVERY
+        self.runtime_spec = runtime_spec or RuntimeSpec(solver_timeout, solver_threads, getattr(solver_executor, "output_policy", None))
+        if (self.runtime_spec.timeout, self.runtime_spec.threads) != (solver_timeout, solver_threads):
+            raise ValueError("The runtime contract's budget differs from the solver budget")
+        # How a candidate runs and is scored; the paper's native policy calls run_solver (also when a test replaces it).
+        self.policy = execution_policy or SmallScaleNativePolicy(executor=lambda *args: self.run_solver(*args), suite=suite, tol=tol, gap_threshold=gap_threshold,
+                                                                 cooldown_seconds=solver_cooldown_seconds)
+        self.policy.check(delivery=self.delivery, runtime=self.runtime_spec)
+        if any(not isinstance(name, str) or not NESTED_NAME.fullmatch(name) for name in (*self.delivery.nested, *self.policy.nested)):
+            raise ValueError("Declared attempt subdirectories must be plain names")
+        self.task_sections = task_sections or PROSE_SECTIONS
+        self.audit_extensions = tuple(audit_extensions)
+        self.audit_target = audit_target or PAPER_AUDIT_TARGET
+        # A pasted context is the paper's: its prompt.txt prose, the runtime note and no author-side audit rule. Other
+        # sections, runtime contracts and shared method rules need the structured (mounted) prompt.
+        if not self.context.mounted and (self.task_sections.id != PROSE_SECTIONS.id or self.runtime_spec.contract != DEFAULT_RUNTIME.contract or any(e.author for e in self.audit_extensions)):
+            raise ValueError("A pasted context renders the paper's prompt.txt and runtime note; this section adapter, runtime contract or method rule needs the mounted-files prompt")
+
+    def spec_record(self) -> dict:
+        """The ids of every non-default spec of this runner, recorded in the case identity and in each request (empty
+        for the paper and small-scale protocol, whose records therefore stay those of the earlier fixed code)."""
+        record = {}
+        if self.context not in LEGACY_CONTEXTS.values():
+            record["context"] = self.context.id
+        if self.delivery != SINGLE_FILE_DELIVERY:
+            record["delivery"] = self.delivery.id
+        if self.runtime_spec.contract != DEFAULT_RUNTIME.contract:
+            record["runtime"] = self.runtime_spec.id
+        if self.policy.id != SMALL_SCALE_NATIVE_POLICY:
+            record["execution_policy"] = self.policy.id
+        if self.task_sections.id != PROSE_SECTIONS.id:
+            record["task_sections"] = self.task_sections.id
+        if self.audit_extensions or self.audit_target != PAPER_AUDIT_TARGET:
+            record["algorithm_judge"] = judge_policy(self.audit_extensions, self.audit_target)
+        return record
+
+    def evaluation(self, result: AttemptResult) -> Evaluation:
+        """The Evaluation behind every stop and feedback decision: the policy's, restored from the durable record. A
+        generation that delivered no solver was never executed or evaluated: it solves nothing and gives no objective
+        feedback (the paper's rule gives the same for that record)."""
+        if result.status == "agent_failed":
+            return Evaluation(status=result.status, feasible=False, verified=False, objective=None, reference_objective=result.gold_objective, gap=None,
+                              termination="not_executed", success={}, headline="", issues=result.issues)
+        return self.policy.evaluation(result)
 
     def objective_quality_failed(self, result: AttemptResult) -> bool:
-        """Expose one qualitative check outcome, without passing the reference to the prompt."""
-        values = (result.objective, result.gold_objective, result.gap_to_gold)
-        return bool(result.exec_ok and result.feasibility_ok and not result.metrics.get("execution_timed_out")
-                    and all(isinstance(value, (int, float)) and math.isfinite(value) for value in values)
-                    and result.gap_to_gold > self.gap_threshold)
+        """Expose one qualitative check outcome, without passing the reference to the prompt (the policy's Evaluation)."""
+        return self.evaluation(result).objective_target_missed
 
     @staticmethod
     def can_early_stop(result: AttemptResult, gap_threshold: float) -> bool:
+        """The paper's stop rule on a record (SmallScaleNativePolicy applies it as Evaluation.solved)."""
         return result.status == "ok" and result.exec_ok and result.verify_ok and result.gap_to_gold is not None and result.gap_to_gold <= gap_threshold
 
-    def data_context_file(self, instance):
-        """The data.json entry of a generation or reflection context and its evidence record (None: legacy rule)."""
-        return data_context_file(instance, self.data_context)
+    def check_client(self, client, step):
+        """A generation or reflection client must place, describe and collect files as this runner's specs do."""
+        mounted = step in ("agent", "reflection") and self.context_delivery is not None
+        if mounted and (getattr(client, "context_layout", MOUNT_LAYOUT) != self.context.layout or getattr(client, "runtime_spec", DEFAULT_RUNTIME).contract != self.runtime_spec.contract):
+            raise ProtocolError(f"The {step} client's mounted layout or runtime contract differs from the campaign's")
+        if step == "agent" and getattr(client, "delivery", SINGLE_FILE_DELIVERY) != self.delivery:
+            raise ProtocolError(f"The {step} client's delivery differs from the campaign's")
 
     def edit(self, client, target, prompt, context, step, data_context=None):
         """Commit each physical call once; retain all failed-call evidence."""
@@ -132,9 +194,13 @@ class PairedRunner:
         delivery = self.context_delivery if step in ("agent", "reflection") else None
         if getattr(client, "context_delivery", None) != delivery:
             raise ProtocolError(f"The {step} client's context delivery differs from the campaign's")
+        self.check_client(client, step)
         if delivery is not None:
             # The mounted layout (path and sha256 of every mounted file) is part of the request fingerprint.
-            request["context_delivery"] = {"policy": delivery, "files": [{key: entry[key] for key in ("path", "sha256")} for entry in mounted_manifest(mounted_files(context))]}
+            request["context_delivery"] = {"policy": delivery, "files": [{key: entry[key] for key in ("path", "sha256")} for entry in mounted_manifest(mounted_files(context, self.context.layout))]}
+        specs = self.spec_record()
+        if specs:
+            request["specs"] = specs
         fingerprint = identity(request)
         receipt_path = directory / f"{step}_receipt.json"
         cached = read(receipt_path)
@@ -225,16 +291,23 @@ class PairedRunner:
             if source.is_file():
                 shutil.copyfile(source, directory / source.name)
 
+    def task_part_sections(self, instance):
+        """The Part 2 sections of a structured prompt from the runner's section adapter (the stored prompt.txt by default).
+        A method rule of the audit (AuditExtension.author) must be stated to the author as well."""
+        sections = self.task_sections(instance, suite=self.suite, problem=self.problems[0], contract=self.decomposition_contract)
+        missing = [extension.id for extension in self.audit_extensions if extension.author and not all(text in sections["Method requirements"] for text in extension.paragraphs)]
+        if missing:
+            raise ProtocolError(f"The author's Method requirements lack the audit's method rules: {missing}")
+        return sections
+
     def generation_prompt(self, instance):
         if getattr(self, "context_delivery", None) is not None:  # tests also call this with a bare namespace as self
-            return PromptBuilder.build_structured_generation_prompt((instance / "prompt.txt").read_text(), suite=self.suite, problem=self.problems[0], contract=self.decomposition_contract,
-                                                                    solver_timeout=self.solver_timeout, solver_threads=self.solver_threads)
+            return PromptBuilder.structured_generation(self.task_part_sections(instance), runtime=self.runtime_spec)
         return PromptBuilder.build_generation_prompt((instance / "prompt.txt").read_text(), solver_timeout=self.solver_timeout, solver_threads=self.solver_threads)
 
     def reflection_prompt(self, instance, objective_quality_failed):
         if self.context_delivery is not None:
-            return PromptBuilder.build_structured_reflection_prompt((instance / "prompt.txt").read_text(), suite=self.suite, problem=self.problems[0], contract=self.decomposition_contract,
-                                                                    solver_timeout=self.solver_timeout, solver_threads=self.solver_threads, objective_quality_failed=objective_quality_failed)
+            return PromptBuilder.structured_reflection(self.task_part_sections(instance), runtime=self.runtime_spec, objective_quality_failed=objective_quality_failed)
         return PromptBuilder.build_reflection_prompt(self.generation_prompt(instance), objective_quality_failed=objective_quality_failed)
 
     def run_attempt(self, idx, attempt_dir, problem, gold):
@@ -244,6 +317,8 @@ class PairedRunner:
             for name, expected in saved["artifact_sha256"].items():
                 if not (attempt_dir / name).exists() or digest(attempt_dir / name) != expected:
                     raise ProtocolError(f"Scored artifact changed: {name}")
+            if set(self.nested_artifacts(attempt_dir)) != {name for name in saved["artifact_sha256"] if "/" in name}:
+                raise ProtocolError("The scored attempt's declared nested artifacts changed")
             # The score receipt is committed before summary.json; restore the summary after an interruption between them.
             summary = read(attempt_dir / "summary.json")
             if summary is None:
@@ -257,85 +332,49 @@ class PairedRunner:
         canonical = Path(case_identity.get("canonical_source", instance)) / "data.json"
         if not canonical.is_file() or digest(canonical) != case_identity.get("inputs", {}).get("data.json"):
             raise ProtocolError("Canonical scoring input differs from the frozen case identity")
-        data_file, data_record = self.data_context_file(instance)
-        context = [data_file]
-        if self.mode == "reflection" and idx > 1:
-            context += previous_attempt_files(attempt_dir.parent, idx)
+        context, data_record = self.context.generation(instance, attempt_dir.parent, idx, self.mode)
+        if (self.mode != "reflection" or idx == 1) and any(Path(path).resolve().is_relative_to(attempt_dir.parent.resolve()) for path in context):
+            raise ProtocolError("A first attempt or a plain regeneration receives no file of an earlier attempt")
         generation = self.edit(self.client, attempt_dir / "solver.py", self.generation_prompt(instance), context, "agent", data_context=data_record)
         metrics = {"generation": generation}
         if not generation["ok"]:
-            result = AttemptResult(idx, "agent_failed", False, False, None, gold, None, [generation["error"] or "Model omitted the requested solver"], metrics=metrics)
+            result = AttemptResult(idx, "agent_failed", False, False, None, self.policy.reference_objective(gold), None, [generation["error"] or "Model omitted the requested solver"], metrics=metrics)
         else:
-            execution_path = attempt_dir / "execution.json"
-            execution = read(execution_path)
-            code_hash = digest(attempt_dir / "solver.py")
-            if execution:
-                if execution["solver_sha256"] != code_hash:
-                    raise ProtocolError("Executed solver changed")
-                if execution.get("output_sha256") and digest(attempt_dir / "output.json") != execution["output_sha256"]:
-                    raise ProtocolError("Saved solver output changed")
-            else:
-                self.on_stage(mode=self.mode, attempt=idx, phase="solver")
-                execution_started = time.perf_counter()
-                try:
-                    exec_ok, stdout, stderr, output = self.run_solver(attempt_dir, self.solver_timeout, self.solver_threads)
-                except SolverLaunchError as error:
-                    save(attempt_dir / f"solver_infrastructure_{uuid.uuid4().hex}.json", error.evidence | {"solver_sha256": code_hash})
-                    raise InfrastructureError("Solver launcher unavailable; see structured execution diagnostics") from error
-                elapsed = time.perf_counter() - execution_started
-                native_receipt = read(attempt_dir / "native_solver_receipt.json")
-                scored_seconds = native_receipt["result"]["execution_seconds"] if native_receipt else elapsed
-                if digest(canonical) != case_identity["inputs"]["data.json"]:
-                    raise ProtocolError("Canonical scoring input changed during execution")
-                runtime_input = instance / "data.json"
-                if not runtime_input.is_file() or runtime_input.is_symlink() or digest(runtime_input) != case_identity["inputs"]["data.json"]:
-                    save(attempt_dir / "input_integrity_failure.json", {"expected_sha256": case_identity["inputs"]["data.json"], "observed_sha256": digest(runtime_input) if runtime_input.is_file() and not runtime_input.is_symlink() else None})
-                    if runtime_input.exists() or runtime_input.is_symlink():
-                        runtime_input.rename(attempt_dir / f"altered_input_{uuid.uuid4().hex}")
-                    shutil.copyfile(canonical, runtime_input)
-                    exec_ok, output = False, None
-                    stderr += "\n[framework] execution input changed; the candidate failed and the canonical input was restored"
-                execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": scored_seconds, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
-                save(execution_path, execution)
-                if not (attempt_dir / "solver_invocation.json").exists():
-                    save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": self.solver_timeout, "threads": self.solver_threads, "solver_sha256": code_hash})
-                if elapsed >= 5 and self.solver_cooldown_seconds:
-                    self.on_stage(mode=self.mode, attempt=idx, phase="solver cooldown")
-                    time.sleep(self.solver_cooldown_seconds)
-            exec_ok, stdout, stderr, output = (execution[k] for k in ("exec_ok", "stdout", "stderr", "output"))
-            metrics["execution_seconds"] = execution["execution_seconds"]
-            metrics["execution_timed_out"] = "[framework] solver execution timed out" in stderr
-            metrics["cooldown_seconds"] = self.solver_cooldown_seconds if execution["execution_seconds"] >= 5 else 0
-            objective, issues, message = OutputVerifier.extract_objective(output)
-            verification = {"ok": False, "issues": []}
-            if exec_ok:
-                verification = OutputVerifier.verify_output(self.suite, problem, canonical, attempt_dir / "output.json", self.tol)
-                issues.extend(verification.get("issues", []))
-                if verification.get("objective_value") is not None:
-                    objective = float(verification["objective_value"])
-            else:
-                issues.append(stderr or "solver execution failed")
-            prompt = algorithm_review_prompt(self.suite, self.decomposition_contract)
-            judged = self.edit(self.judge_client, attempt_dir / "alg_verifier.md", prompt, [attempt_dir / "solver.py"], "llm_verifier")
-            notes = (attempt_dir / "alg_verifier.md").read_text().strip()
-            verdict = parse_verdict(notes)
-            if verdict is None:
-                save(attempt_dir / "calls" / judged["invocation_id"] / "rejected.json", {"reason": "malformed algorithm verdict"})
-                (attempt_dir / "llm_verifier_receipt.json").unlink()
-                raise InfrastructureError("Algorithm judge produced a malformed verdict")
-            metrics["algorithm_verification"] = judged
-            if verdict != "pass":
-                issues.append("algorithm_verifier_failed: " + verdict)
-            verify_ok = bool(verification["ok"]) and verdict == "pass"
-            status, gap = OutputVerifier.assess_status(exec_ok=exec_ok, output=output, verify_ok=verify_ok, objective=objective, gold_obj=gold, gap_threshold=self.gap_threshold, execution_timed_out=metrics["execution_timed_out"])
-            result = AttemptResult(idx, status, exec_ok, verify_ok, objective, gold, gap, issues, verdict, notes, stdout=stdout, stderr=stderr, feasibility_ok=bool(verification["ok"]), metrics=metrics)
-            lines = ExecLogger.build_exec_lines(stdout, stderr)
-            ExecLogger.append_output_message(lines, message)
-            ExecLogger.append_verification_issues(lines, issues)
-            ExecLogger.append_llm_verifier(lines, notes)
+            case = AttemptCase(attempt_dir, instance, canonical, case_identity["inputs"]["data.json"], problem)
+            execution = self.policy.execute(case, delivery=self.delivery, runtime=self.runtime_spec, stage=lambda phase: self.on_stage(mode=self.mode, attempt=idx, phase=phase))
+            metrics.update(execution.metrics)
+
+            def audit():
+                """The method judge (pasted source review of the delivered sources); the policy decides when it runs."""
+                reviewed = self.delivery.reviewed_sources(attempt_dir, attempt_dir / "calls" / generation["invocation_id"])
+                prompt = algorithm_review_prompt(self.suite, self.decomposition_contract, sources=[path.relative_to(attempt_dir).as_posix() for path in reviewed], extensions=self.audit_extensions,
+                                                 target=self.audit_target)
+                judged = self.edit(self.judge_client, attempt_dir / "alg_verifier.md", prompt, reviewed, "llm_verifier")
+                notes = (attempt_dir / "alg_verifier.md").read_text().strip()
+                verdict = parse_verdict(notes)
+                if verdict is None:
+                    save(attempt_dir / "calls" / judged["invocation_id"] / "rejected.json", {"reason": "malformed algorithm verdict"})
+                    (attempt_dir / "llm_verifier_receipt.json").unlink()
+                    raise InfrastructureError("Algorithm judge produced a malformed verdict")
+                metrics["algorithm_verification"] = judged
+                return verdict, notes
+
+            evaluation = self.policy.evaluate(execution, gold, case=case, audit=audit)
+            if evaluation.infrastructure:
+                # Never scored or charged to the agent: the attempt is evaluated again after repair.
+                raise InfrastructureError("Evaluation infrastructure failed: " + "; ".join(evaluation.infrastructure))
+            if evaluation.record:
+                metrics["evaluation"] = dict(evaluation.record)
+            result = AttemptResult(idx, evaluation.status, execution.ok, evaluation.verified, evaluation.objective, evaluation.reference_objective, evaluation.gap, evaluation.issues,
+                                   evaluation.method_verdict, evaluation.method_notes, stdout=execution.stdout, stderr=execution.stderr, feasibility_ok=evaluation.feasible, metrics=metrics)
+            lines = ExecLogger.build_exec_lines(execution.stdout, execution.stderr)
+            ExecLogger.append_output_message(lines, evaluation.message)
+            ExecLogger.append_verification_issues(lines, evaluation.issues)
+            ExecLogger.append_llm_verifier(lines, evaluation.method_notes)
             ExecLogger.write_exec_log(attempt_dir, lines)
         metrics["total_seconds"] = time.perf_counter() - started
         artifacts = {name: digest(attempt_dir / name) for name in ("solver.py", "output.json", "alg_verifier.md", "exec.log") if (attempt_dir / name).exists()}
+        artifacts.update(self.nested_artifacts(attempt_dir))  # declared nested sources and evidence (none in the paper layout)
         save(attempt_dir / "score_receipt.json", {"result": result.to_dict(), "artifact_sha256": artifacts})
         save(attempt_dir / "summary.json", result.to_dict())
         return result
@@ -392,9 +431,8 @@ class PairedRunner:
     def ensure_reflection(self, attempt_dir, result):
         self.ensure_generation_failure_log(attempt_dir, result)
         instance = attempt_dir.parent.parent
-        prompt = self.reflection_prompt(instance, self.objective_quality_failed(result))
-        data_file, data_record = self.data_context_file(instance)
-        context = [data_file] + [attempt_dir / name for name in ("solver.py", "exec.log", "alg_verifier.md", "output.json")]
+        prompt = self.reflection_prompt(instance, self.evaluation(result).objective_target_missed)
+        context, data_record = self.context.reflection(instance, attempt_dir)
         reflected = self.edit(self.reflection_client, attempt_dir / "debug.md", prompt, context, "reflection", data_context=data_record)
         if reflected.get("file_delivery_failure"):
             feedback = attempt_dir / "reflection_feedback.md"
@@ -408,7 +446,9 @@ class PairedRunner:
     def prepare(self, source, root, mode):
         destination = root / mode / self.suite / self.problems[0] / source.name
         destination.mkdir(parents=True, exist_ok=True)
-        expected = {"protocol_id": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in ("data.json", "prompt.txt")}, "references": {name: digest(source / name) for name in ("meta.json", "gold_monolithic.json") if (source / name).exists()}}
+        # The frozen inputs (data.json and what the section adapter reads) and the policy's reference files.
+        inputs = ("data.json", *self.task_sections.inputs)
+        expected = {"protocol_id": self.protocol_id, "reflection_policy": REFLECTION_POLICY, "prompt_policies": {"feedback": FEEDBACK_POLICY, "workspace": WORKSPACE_POLICY}, "model": self.model, "mode": mode, "max_attempts": self.max_attempts, "inputs": {name: digest(source / name) for name in inputs}, "references": {name: digest(source / name) for name in self.policy.reference_files if (source / name).exists()}}
         expected["canonical_source"] = str(source.resolve())
         if self.data_context is not None:
             expected["data_context"] = self.data_context
@@ -416,6 +456,9 @@ class PairedRunner:
             expected["decomposition_contract"] = self.decomposition_contract
         if self.context_delivery is not None:
             expected["context_delivery"] = self.context_delivery
+        specs = self.spec_record()
+        if specs:
+            expected["specs"] = specs
         prior = read(destination / "identity.json")
         if prior and prior != expected:
             raise ProtocolError("Case protocol changed")
@@ -428,6 +471,55 @@ class PairedRunner:
         save(destination / "identity.json", expected)
         (destination / "attempts").mkdir(exist_ok=True)
         return destination
+
+    SHARED_PROTECTED = frozenset({"solver.py", "output.json", "alg_verifier.md"})
+
+    def nested_artifacts(self, attempt_dir: Path) -> dict[str, str]:
+        """{relative path: sha256} of every file under the attempt subdirectories that the delivery and the policy
+        declare as part of the attempt (DeliverySpec.nested, ExecutionPolicy.nested; none in the paper layout). Only
+        real directories and regular files are allowed there."""
+        manifest = {}
+        for name in dict.fromkeys(tuple(self.delivery.nested) + tuple(self.policy.nested)):
+            root = attempt_dir / name
+            if root.is_symlink() or (root.exists() and not root.is_dir()):
+                raise ProtocolError(f"Attempt directory {name}/ is not a real directory")
+            for path in sorted(root.rglob("*")) if root.is_dir() else []:
+                if path.is_symlink() or not (path.is_file() or path.is_dir()):
+                    raise ProtocolError(f"Unsafe entry in the attempt directory {name}/: {path.relative_to(attempt_dir)}")
+                if path.is_file():
+                    manifest[path.relative_to(attempt_dir).as_posix()] = digest(path)
+        return manifest
+
+    def shared_artifacts(self, first_dir: Path) -> dict[str, str]:
+        """The manifest {relative path: sha256} of the shared first attempt's artifact set: its top-level files except
+        identity.json (in directory order), then the nested files committed in its score receipt, which must be
+        exactly the nested files present."""
+        manifest = {path.name: digest(path) for path in first_dir.iterdir() if path.is_file() and path.name not in {"identity.json"}}
+        committed = {name: sha for name, sha in ((read(first_dir / "score_receipt.json") or {}).get("artifact_sha256") or {}).items() if "/" in name}
+        if self.nested_artifacts(first_dir) != committed:
+            raise ProtocolError("The shared first attempt's nested artifacts differ from its score receipt")
+        manifest.update(committed)
+        return manifest
+
+    def copy_shared_first(self, first_dir: Path, reflection_first: Path):
+        """Project the shared first attempt into the reflection policy (copies, never links); a committed artifact
+        that already exists there must be identical, and the projection's declared nested files must end up exactly
+        the committed ones (no extra, linked or special entry)."""
+        manifest = self.shared_artifacts(first_dir)
+        committed = {name: sha for name, sha in manifest.items() if "/" in name}
+        if any(committed.get(name) != sha for name, sha in self.nested_artifacts(reflection_first).items()):
+            raise ProtocolError("Shared first-attempt projection differs")
+        for name, sha in manifest.items():
+            source, target = first_dir / name, reflection_first / name
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                if digest(target) != sha:
+                    raise ProtocolError("Shared first-attempt copy differs from its manifest")
+            elif (name in self.SHARED_PROTECTED or "/" in name) and sha != digest(target):
+                raise ProtocolError("Shared first-attempt projection differs")
+        if self.nested_artifacts(reflection_first) != committed:
+            raise ProtocolError("Shared first-attempt projection differs")
 
     def summary(self, source, destination, mode, results):
         value = {"instance": source.name, "suite": self.suite, "problem": self.problems[0], "source": str(source), "output_dir": str(destination), "backend": self.client.protocol().get("backend"), "model": self.model, "reflection": mode == "reflection", "solver_threads": self.solver_threads, "solver_timeout": self.solver_timeout, "solver_cooldown_seconds": self.solver_cooldown_seconds, "max_attempts": self.max_attempts, "gap_threshold": self.gap_threshold, "protocol_id": self.protocol_id, "shared_first_attempt": True, "complete": len(results) == self.max_attempts, "attempts": results}
@@ -448,7 +540,8 @@ class PairedRunner:
                 summaries = {mode: load_policy_summary(directory, campaign_root=campaign_root, approvals=approvals) for mode, directory in saved.items()}
                 # A closed pair is reused only under the contract it was judged with (an absent field is the paper's v2).
                 if any((read(directory / "identity.json") or {}).get("decomposition_contract", DECOMPOSITION_POLICY) != self.decomposition_contract
-                       or (read(directory / "identity.json") or {}).get("context_delivery") != self.context_delivery for directory in saved.values()):
+                       or (read(directory / "identity.json") or {}).get("context_delivery") != self.context_delivery
+                       or (read(directory / "identity.json") or {}).get("specs", {}) != self.spec_record() for directory in saved.values()):
                     raise ProtocolError("Case protocol changed")
                 if all(policy_is_complete(summary, self.max_attempts, self.protocol_id) for summary in summaries.values()):
                     return summaries
@@ -456,7 +549,7 @@ class PairedRunner:
             except TerminalCompletionError as error:
                 raise ProtocolError(str(error)) from error
         destinations = {mode: self.prepare(source, root, mode) for mode in ("plain", "reflection")}
-        gold = OutputVerifier.load_gold_objective(source, self.suite)
+        gold = self.policy.references(source)
         self.mode = "plain"
         first_dir = destinations["plain"] / "attempts/attempt_01"
         first = self.run_attempt(1, first_dir, self.problems[0], gold)
@@ -464,13 +557,7 @@ class PairedRunner:
         # Copies keep reflection notes out of the independent policy and make the old report layout usable.
         reflection_first = destinations["reflection"] / "attempts/attempt_01"
         reflection_first.mkdir(exist_ok=True)
-        for path in first_dir.iterdir():
-            if path.is_file() and path.name not in {"identity.json"}:
-                target = reflection_first / path.name
-                if not target.exists():
-                    shutil.copyfile(path, target)
-                elif path.name in {"solver.py", "output.json", "alg_verifier.md"} and digest(path) != digest(target):
-                    raise ProtocolError("Shared first-attempt projection differs")
+        self.copy_shared_first(first_dir, reflection_first)
         for destination in destinations.values():
             save(destination / "shared_first.json", {"id": shared_id, "canonical": str(first_dir), "generation_invocation_id": first.metrics["generation"].get("invocation_id"), "judge_invocation_id": first.metrics.get("algorithm_verification", {}).get("invocation_id")})
             if not (destination / "instance_summary.json").exists():
@@ -483,10 +570,13 @@ class PairedRunner:
                 self.on_stage(mode=mode, attempt=idx, phase="checkpoint")
                 directory = destination / "attempts" / f"attempt_{idx:02d}"
                 if successful is not None:
-                    result = AttemptResult(idx, "skipped_previous_solved", True, True, successful.objective, gold, successful.gap_to_gold, [], reused_from_previous=True, first_success_attempt=first_success, feasibility_ok=True)
+                    reused = self.policy.reused(successful)
+                    result = AttemptResult(idx, "skipped_previous_solved", reused["exec_ok"], reused["verify_ok"], reused["objective"], self.policy.reference_objective(gold), reused["gap_to_gold"], [],
+                                           reused_from_previous=True, first_success_attempt=first_success, feasibility_ok=reused["feasibility_ok"], metrics=reused["metrics"])
                 else:
                     result = deepcopy(first) if idx == 1 else self.run_attempt(idx, directory, self.problems[0], gold)
-                    if self.can_early_stop(result, self.gap_threshold):
+                    # The stop rule is the policy's: success of its headline target (the paper: within the gap of the gold).
+                    if self.evaluation(result).solved:
                         successful, first_success = result, idx
                     elif mode == "reflection" and idx < self.max_attempts:
                         # Scoring is already durable even when this separate stage fails.

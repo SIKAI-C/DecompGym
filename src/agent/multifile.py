@@ -14,6 +14,11 @@ manifest is exactly what `xl_executor.XLExecutor.execute((manifest, files), ...)
 it back verified. A delivery that violates the contract is a completed generation without a usable file, like an empty
 ``solver.py`` in the paper path.
 
+Context. The context is pasted (the paper's compose_prompt) or, with `context_delivery` = mounted-files-v1, mounted read-only
+exactly as for a single-file call (DockerCliClient.mounted_prompt): Part 1 then names solver.py and the cpp/ sources as
+the writable files (src.agent.specs.DeliverySpec). No config enables multi-file delivery; the worker lists the read-only
+mount directories among the manifest's rejected entries, which the host revalidates like any other.
+
 Image. The paper image is unchanged and has no multi-file entry. The multi-file image (`MULTIFILE_IMAGE_TAG`, built from
 ``docker/agents/Dockerfile.multifile``) is the paper image plus ``/opt/decompbench/multifile_worker.py``; its preflight reports
 the paper worker hashes and the extension hash, and both must match this checkout.
@@ -33,42 +38,24 @@ import threading
 from src.agent.container import DockerRuntime
 from src.agent.auth import forbid_job_credential
 from src.agent.docker_client import CLI_VERSIONS, DockerCliClient, worker_file_hashes
-from src.agent.prompts.policy import WORKSPACE_POLICY, edit_instruction, record_workspace_prompt
+from src.agent.prompts.policy import WORKSPACE_POLICY, record_workspace_prompt
 from src.agent.result import save_result
 from src.agent.safe_artifacts import UnsafeArtifact, read_regular, read_regular_text
+# The delivery specification is shared with the single-file path (src.agent.specs); these names are re-exported here.
+from src.agent.specs import CPP_NOTE, MULTI_FILE, SINGLE_FILE, SINGLE_FILE_DELIVERY, DeliverySpec  # noqa: F401
 from src.experiments.environment import RuntimeEnvironmentError
-from src.experiments.xl_build import MAX_FILE_BYTES, TRACKS, DeliveryError, manifest_for, verify_manifest
+from src.experiments.xl_build import MAX_FILE_BYTES, DeliveryError, manifest_for, verify_manifest
 
-SINGLE_FILE, MULTI_FILE = "single_file", "multi_file"
 MULTIFILE_POLICY = "fresh-docker-cli-multifile-v1"
 MULTIFILE_IMAGE_TAG = "decompgym-agents-multifile-v1:20261105"
 EXTENSION_ENTRY = "/opt/decompbench/multifile_worker.py"
 BUNDLE_NAME = "delivery_bundle.json"
 RECORD_VERSION = "decompgym-multifile-worker-v1"
 CPP_WORKSPACE_POLICY = "existing-target-cwd-cpp-v1"
-CPP_NOTE = ("You may also create C++17 source files as flat cpp/*.cpp and cpp/*.hpp files under the current working directory "
-            "(at most 64 C++ files, 2 MiB per file, 8 MiB in total including solver.py); create no other files or directories.")
 # (problem, scale) -> tracks that use multi-file delivery. Every other task is single-file only.
 MULTI_FILE_TASKS = {("pdptw", "xl"): ("python_only", "cpp_allowed")}
 _PREFLIGHT_LOCK = threading.Lock()
 _PREFLIGHTS = set()
-
-
-@dataclass(frozen=True)
-class DeliverySpec:
-    mode: str = SINGLE_FILE
-    track: str | None = None
-
-    def __post_init__(self):
-        if self.mode == SINGLE_FILE and self.track is not None:
-            raise ValueError("single-file delivery has no track")
-        if self.mode == MULTI_FILE and self.track not in TRACKS:
-            raise ValueError(f"multi-file delivery requires a track in {TRACKS}")
-        if self.mode not in (SINGLE_FILE, MULTI_FILE):
-            raise ValueError(f"unknown delivery mode {self.mode!r}")
-
-
-SINGLE_FILE_DELIVERY = DeliverySpec()
 
 
 def delivery_spec(problem: str, scale: str, track: str | None = None) -> DeliverySpec:
@@ -202,8 +189,6 @@ class MultiFileDockerCliClient(DockerCliClient):
             raise ValueError("MultiFileDockerCliClient requires a multi-file DeliverySpec; single-file tasks use DockerCliClient")
         if not isinstance(runtime, MultiFileDockerRuntime):
             raise ValueError("Multi-file delivery requires the multi-file runtime entry")
-        if kwargs.get("context_delivery") is not None:
-            raise ValueError("Multi-file delivery pastes its context; the mounted-files protocol is single-file only")
         super().__init__(model, runtime=runtime, **kwargs)
         self.delivery = delivery
 
@@ -236,9 +221,13 @@ class MultiFileDockerCliClient(DockerCliClient):
         log_dir.mkdir(parents=True, exist_ok=True)
         if target.is_symlink() or target.name != "solver.py":
             raise ValueError("Multi-file delivery edits solver.py only")
-        note = edit_instruction(target.name) + (" " + CPP_NOTE if self.delivery.track == "cpp_allowed" else "")
-        effective = record_workspace_prompt(Path("/work"), target.name, self.compose_prompt(target.name, prompt, context), log_dir, step,
-                                            old_absolute_note=self.backend == "agy-cli", note=note, version=self.workspace_policy())
+        run_context, metadata = {}, {}
+        if self.context_delivery is not None:
+            effective, run_context = self.mounted_prompt(target, prompt, context, log_dir, step)
+            metadata = {"context_delivery": self.context_delivery}
+        else:
+            effective = record_workspace_prompt(Path("/work"), target.name, self.compose_prompt(target.name, prompt, context), log_dir, step,
+                                                old_absolute_note=self.backend == "agy-cli", note=self.delivery.instruction(target.name), version=self.workspace_policy())
         mounts = self.prepare()
         credential = self.credential_provider(self.backend)
         forbid_job_credential(self.backend, credential)
@@ -248,7 +237,8 @@ class MultiFileDockerCliClient(DockerCliClient):
         with self.auth_lock(mounts, log_dir / f"{step}_container.json"):
             result = self.runtime.run(self.image_id, ["agent", self.backend], payload=job, state_path=log_dir / f"{step}_container.json", timeout=self.timeout, network="bridge", volumes=mounts,
                                       artifacts=[target.name, "events.jsonl", "stderr.log", "response.md", "worker.json", "delivery.json", BUNDLE_NAME],
-                                      public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role, "delivery_mode": MULTI_FILE, "delivery_track": self.delivery.track})
+                                      public_metadata={"backend": self.backend, "target": target.name, "model": self.model, "role": self.role, "delivery_mode": MULTI_FILE, "delivery_track": self.delivery.track,
+                                                       **metadata}, **run_context)
         return self._record(target, log_dir, step, result)
 
     def _record(self, target, log_dir, step, result):

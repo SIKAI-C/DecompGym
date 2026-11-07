@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 
-from src.agent.prompts.mounted import CONTEXT_DIRECTORIES
+from src.agent.specs import CONTEXT_DIRECTORIES, MOUNT_DIRECTORY
 from src.experiments.resources import CleanupError
 from src.utils.errors import InfrastructureError
 from src.experiments.environment import RuntimeEnvironmentError
@@ -132,9 +132,13 @@ def archive_manifest(data: bytes, root: str) -> dict[str, str]:
     return found
 
 
-def check_context(context) -> None:
-    """Context mounts: {directory in CONTEXT_DIRECTORIES: {normalized relative path: bytes}}, every directory non-empty."""
-    if not isinstance(context, dict) or not set(context) <= set(CONTEXT_DIRECTORIES) or not all(isinstance(files, dict) and files for files in context.values()):
+def check_context(context, directories=CONTEXT_DIRECTORIES) -> None:
+    """Context mounts: {declared directory: {normalized relative path: bytes}}, every directory non-empty. The declared
+    directories are the call's layout's (src.agent.specs.MountLayout.directories; by default CONTEXT_DIRECTORIES), each
+    one level below the workspace."""
+    if any(not isinstance(directory, str) or not MOUNT_DIRECTORY.fullmatch(directory) for directory in directories):
+        raise ValueError("Context directories must be /work/<name>")
+    if not isinstance(context, dict) or not set(context) <= set(directories) or not all(isinstance(files, dict) and files for files in context.values()):
         raise ValueError("Context mounts must map declared read-only directories to files")
     for files in context.values():
         for name, contents in files.items():
@@ -303,16 +307,18 @@ class DockerRuntime:
             if result.returncode and "no such volume" not in result.stderr.lower():
                 raise CleanupError(f"Could not remove owned temporary volume: {volume}")
 
-    def run(self, image, command, *, payload=None, state_path: Path, timeout=900, network="none", cpus=1, memory="1024m", volumes=None, artifacts=None, public_metadata=None, context=None):
+    def run(self, image, command, *, payload=None, state_path: Path, timeout=900, network="none", cpus=1, memory="1024m", volumes=None, artifacts=None, public_metadata=None, context=None,
+            context_directories=CONTEXT_DIRECTORIES):
         """`context` (mounted-files protocol only): {directory: {relative path: bytes}}, mounted read-only at each
-        directory of src.agent.prompts.mounted.CONTEXT_DIRECTORIES through a fresh volume; None keeps the paper run."""
+        directory through a fresh volume; the directories must be among `context_directories` (the call's layout,
+        src.agent.specs.MountLayout; by default instance/ and history/). None keeps the paper run."""
         self.validate_engine()
         if network not in {"none", "bridge"} or timeout <= 0 or cpus <= 0:
             raise ValueError("Invalid Docker execution settings")
         if any(Path(name).name != name or name in ("", ".", "..") for name in artifacts or []):
             raise ValueError("Artifact names must be basenames")
         if context is not None:
-            check_context(context)
+            check_context(context, context_directories)
         if state_path.exists():
             return self.recover(state_path)
         identifier = uuid.uuid4().hex

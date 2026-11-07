@@ -56,21 +56,36 @@ class PromptBuilder:
 
     @staticmethod
     def build_structured_generation_prompt(problem_prompt: str, *, suite: str, problem: str, contract: str, solver_timeout: int, solver_threads: int) -> str:
-        """Part 2 (the task) of a mounted-files generation prompt; the client adds Part 1 (src.agent.prompts.mounted)."""
-        from src.agent.prompts.mounted import task_part
+        """Part 2 (the task) of a mounted-files generation prompt from a stored prompt.txt; the client adds Part 1 (src.agent.prompts.mounted)."""
+        from src.agent.prompts.mounted import task_sections
+        from src.agent.specs import RuntimeSpec
 
-        return task_part(problem_prompt, suite=suite, problem=problem, contract=contract, harness_rules=STANDALONE_RULE + "\n" + budget_rule(solver_timeout, solver_threads))
+        return PromptBuilder.structured_generation(task_sections(problem_prompt, suite=suite, problem=problem, contract=contract), runtime=RuntimeSpec(solver_timeout, solver_threads))
 
     @staticmethod
     def build_structured_reflection_prompt(problem_prompt: str, *, suite: str, problem: str, contract: str, solver_timeout: int, solver_threads: int,
                                            objective_quality_failed: bool = False) -> str:
         """Part 2 (the task, opened as in the pasted reflection) and Part 3 (the reflection task) of a mounted-files reflection."""
-        from src.agent.prompts.mounted import reflection_part, task_part
+        from src.agent.prompts.mounted import task_sections
+        from src.agent.specs import RuntimeSpec
+
+        return PromptBuilder.structured_reflection(task_sections(problem_prompt, suite=suite, problem=problem, contract=contract), runtime=RuntimeSpec(solver_timeout, solver_threads),
+                                                   objective_quality_failed=objective_quality_failed)
+
+    @staticmethod
+    def structured_generation(sections: dict[str, list[str]], *, runtime) -> str:
+        """Part 2 of a mounted-files generation from explicit sections (any adapter) and the RuntimeSpec's harness rules."""
+        from src.agent.prompts.mounted import render_task_part
+
+        return render_task_part(sections, harness_rules=runtime.harness_rules())
+
+    @staticmethod
+    def structured_reflection(sections: dict[str, list[str]], *, runtime, objective_quality_failed: bool = False) -> str:
+        """Parts 2 and 3 of a mounted-files reflection from explicit sections."""
+        from src.agent.prompts.mounted import reflection_part, render_task_part
 
         instructions = reflection_instructions(objective_quality_failed)
-        task = task_part(problem_prompt, suite=suite, problem=problem, contract=contract, harness_rules=STANDALONE_RULE + "\n" + budget_rule(solver_timeout, solver_threads),
-                         opening=REFLECTION_OPENING)
-        return task + "\n\n" + reflection_part(instructions, REFLECTION_CLOSING)
+        return render_task_part(sections, harness_rules=runtime.harness_rules(), opening=REFLECTION_OPENING) + "\n\n" + reflection_part(instructions, REFLECTION_CLOSING)
 
     @staticmethod
     def ensure_location_prompt(base_prompt: str) -> str:
