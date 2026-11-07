@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "decompgym-litgen-small-all-20261106",
-  "description": "Literature-recipe families, small scale track (126 instances: UFL, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling), paper protocol except that a data.json above 512 KiB (only k-median) reaches the agent context as a structural preview, the twelve paper models from older to newer generations.",
+  "description": "Literature-recipe families, small scale track (126 instances: UFL, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling), paper protocol except that a data.json above 512 KiB (only k-median) reaches the agent context as a structural preview, the twelve paper models from older to newer generations; candidate solvers are also serialized host-side by the native solver lock (two workers, one solver at a time), added after paper-arxiv-v1.",
   "dataset_inventory_sha256": "8dc45d38799d29bed53ed427f47962d8bf8cfee06f725679bc334ff4d43398ef",
   "prompt_policies": {
     "feedback": "qualitative-objective-feedback-v1",

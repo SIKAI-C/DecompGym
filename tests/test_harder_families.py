@@ -181,7 +181,8 @@ def test_strict_suite_rejects_an_uncertified_reference(monkeypatch, tmp_path):
 
     data = {"n_customers": 1}
     gen = lambda seed, size, out: (out.mkdir(parents=True, exist_ok=True), (out / "data.json").write_text("{}"), data)[2]
-    results = {"monolithic": {"best_objective": 10.0, "output": {}}, "decomposition": {"best_objective": 10.0, "global_lb": 9.0, "global_ub": 10.0, "output": {}}}
+    # api.solve always records a measured total_time; the stub does too.
+    results = {"monolithic": {"best_objective": 10.0, "output": {}, "total_time": 1.0}, "decomposition": {"best_objective": 10.0, "global_lb": 9.0, "global_ub": 10.0, "output": {}, "total_time": 1.0}}
     monkeypatch.setattr(harder_suite, "solve", lambda suite, problem, path, method, **kw: dict(results[method]))
     monkeypatch.setattr(harder_suite, "verify", lambda *args: {"ok": True})
     with pytest.raises(RuntimeError, match="matching certified reference"):
@@ -189,6 +190,10 @@ def test_strict_suite_rejects_an_uncertified_reference(monkeypatch, tmp_path):
     results["decomposition"]["global_lb"] = 10.0
     metas = harder_suite.generate_suite("cg", "cvrp", gen=gen, render_prompt=lambda d: "p", sizes=["small"], num_instances=1, out_root=tmp_path, strict=True)
     assert metas[0]["ground_truth_source"] == "monolithic_mip" and metas[0]["reference_proved"]
+    # Codex full review finding 7: a certified reference over the 60 s budget is not admitted.
+    results["decomposition"]["total_time"] = 61.0
+    with pytest.raises(RuntimeError, match="reference time"):
+        harder_suite.generate_suite("cg", "cvrp", gen=gen, render_prompt=lambda d: "p", sizes=["small"], num_instances=1, out_root=tmp_path, strict=True)
 
 
 @pytest.mark.parametrize("module,cls", [("src.cg.cvrp.a_gold_cg", "CVRPColumnGeneration"), ("src.cg.clrp.a_gold_cg", "CLRPColumnGeneration")])

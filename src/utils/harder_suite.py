@@ -54,6 +54,8 @@ def generate_suite(suite: str, problem: str, *, gen: Callable, render_prompt: Ca
                                and abs(mono["best_objective"] - ref["best_objective"]) <= tol * max(1.0, abs(mono["best_objective"]))):
                 # Strict families admit an instance only with a proved MIP optimum and a matching reference certificate.
                 raise RuntimeError(f"{folder}: requires a proved, verified MIP optimum and a matching certified reference")
+            if strict and not 0.0 <= float(ref.get("total_time", math.inf)) <= ref_time_limit:
+                raise RuntimeError(f"{folder}: reference time {ref.get('total_time')} s outside [0, {ref_time_limit}] s")
             if mono is not None and ref is not None and _certified(ref, tol) and abs(mono["best_objective"] - ref["best_objective"]) > tol * max(1.0, abs(mono["best_objective"])):
                 raise RuntimeError(f"{folder}: certified reference {ref['best_objective']} differs from the MIP optimum {mono['best_objective']}")
             # The MIP wrapper raises unless its optimum is proved (each family's wrapper states its certificate).

@@ -37,8 +37,12 @@ same task set: 2 pairs among the 12 pilot seeds; the evaluation seeds 0, 1, 2 of
 The requested 16 h window is shorter than every parent day except s3_t172 (15.95 h), whose whole day exceeds the
 200 000-duty cap, so the window shrinks; provenance.json records the effective window, and the final instances were
 checked to keep a proper subset of the parent's tasks.
-Size calibration (round 2, 2026-11-05; development seeds 100-111 only; full-process exact column generation with the
-60 s budget, Threads = 1). The reference time is not monotone in the window: it is set by the hardness of the integer
+Size calibration (round 2, 2026-11-05; the size table was chosen on development parents, seeds 100-111; full-process
+exact column generation with the 60 s budget, Threads = 1). Disclosure: after the 16 h / 200 000 choice, a diagnostic
+ran six pilot seeds (100-105) on the EVALUATION parents (outputs/litgen_dev/rcsp/r2/pilots.jsonl, names containing
+"evalparents"); it did not change the table, but seeds 103 and 104 there produce the same task sets as the final
+rcsp_large_seed001 and rcsp_large_seed002, and its s2_t90 run (48.8 s) previewed rcsp_large_seed000. The evaluation
+instances are therefore not strictly unseen by the calibration process. The reference time is not monotone in the window: it is set by the hardness of the integer
 set-covering master over the duties within the LP gap, which spikes on single windows. Maximum over 12 pilot seeds:
 8 h / 8 000 duties 4.2 s; 10 h / 30 000 6.0 s; 16 h / 200 000 3.1 s. Rejected: 9.5 h / 20 000 (one seed unproved at
 60 s), 12 h / 80 000 (one seed unproved at 60 s; its MIP needed 208 s), the whole parent day (s2_t120, 232 000 and

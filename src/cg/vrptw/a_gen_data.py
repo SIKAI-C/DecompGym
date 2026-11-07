@@ -31,7 +31,7 @@ medium / large in every class (user decision 11-06: the size label is the custom
 The common table is the one calibrated for the hardest classes on pilot seeds 100+ (never the evaluation seeds 0-2):
 files with mostly wide windows and long routes (c103/c104 in C1; r204/r208, rc204/rc208 in R2/RC2) make exact
 elementary pricing hard (c104, r208 and rc204 time out at 16 customers; r208 takes 37 s at 14), so the
-table was selected from that pilot calibration (no pilot at 10 customers; R1, RC1 and C2 were piloted only at larger
+table was selected from that pilot calibration (no round-2 pilot at 10 customers, round 1 ran small n=10 pilots; R1, RC1 and C2 were piloted only at larger
 sizes); each final instance is still certified at generation (proved MIP, matching reference within the 60 s budget,
 one thread; the monolithic MIP only has to prove optimality, limit 1800 s). The easier classes (R1, RC1: up to 26 customers
 within budget) are deliberately not enlarged. n_customers() still accepts per-class tables.
@@ -53,7 +53,7 @@ SIZES = ("small", "medium", "large")
 # One customer count per label for every class (user decision 11-06). Pilot evidence (seeds 100+, reference
 # full-process seconds, approximate maxima): R1/RC1 at 26 customers about 19 s (14 pilots; RC1 MIP about 246 s) and at
 # 21 about 2.2 s; C1 at 14 about 7.7 s and at 15 about 29.4 s (c104; c104 times out at 16); C2 at 16 about 19.2 s;
-# R2/RC2 at 14 about 37.5 s (r208; r208 and rc204 time out at 16). No pilot ran at 10 customers.
+# R2/RC2 at 14 about 37.5 s (r208; r208 and rc204 time out at 16). No round-2 pilot ran at 10 customers (round 1 did, e.g. rc108).
 SIZE_CONFIG = {
     "small": {"n_customers": 10},
     "medium": {"n_customers": 12},
