@@ -124,8 +124,13 @@ def test_each_codex_slot_mounts_its_own_volume_under_its_lock(tmp_path):
     assert runtime.mounts == [{CODEX_SLOT_VOLUMES[0]: "/auth"}, {CODEX_SLOT_VOLUMES[1]: "/auth"}]
     assert runtime.held == [{CODEX_SLOT_VOLUMES[0]}, {CODEX_SLOT_VOLUMES[1]}]
     assert held_volumes() == set()
+    assert auth.auth_volume("codex-cli", 2) == CODEX_SLOT_VOLUMES[2] == "decompbench-v3-codex-auth-slot2"  # the lanes variant's third slot
     with pytest.raises(ValueError):
-        auth.auth_volume("codex-cli", 2)
+        auth.auth_volume("codex-cli", 3)
+    assert auth.auth_volume("claude-code-cli") == auth.auth_volume("claude-code-cli", 0) == auth.AUTH_VOLUMES["claude-code-cli"]
+    assert auth.auth_volume("claude-code-cli", 1) == "decompbench-v2-claude-auth-slot1"
+    with pytest.raises(ValueError):
+        auth.auth_volume("claude-code-cli", 2)
 
 
 @pytest.mark.parametrize("backend", ["claude-code-cli", "agy-cli"])
@@ -437,10 +442,10 @@ def test_helper_runs_under_the_volume_lock_until_its_container_is_gone(tmp_path,
         return subprocess.CompletedProcess(arguments, 0, "noise\n" + json.dumps({"status": "ok", "origin": "container-device-auth"}) + "\n", "")
 
     monkeypatch.setattr(agent_auth.subprocess, "run", run)
-    reports = agent_auth.check_backend(engine, "sha256:image", "codex-cli", models=["judge-model"])
-    assert [report["status"] for report in reports] == ["ok", "ok"] and [report["slot"] for report in reports] == [0, 1]
-    assert [held for _, held, _ in seen] == [{CODEX_SLOT_VOLUMES[0]}, {CODEX_SLOT_VOLUMES[1]}] and seen[0][2]["models"] == ["judge-model"]
-    assert [held for _, held in engine.removed] == [{CODEX_SLOT_VOLUMES[0]}, {CODEX_SLOT_VOLUMES[1]}] and held_volumes() == set()
+    reports = agent_auth.check_backend(engine, "sha256:image", "codex-cli", models=["judge-model"])  # every slot by default
+    assert [report["status"] for report in reports] == ["ok"] * 3 and [report["slot"] for report in reports] == [0, 1, 2]
+    assert [held for _, held, _ in seen] == [{volume} for volume in CODEX_SLOT_VOLUMES] and seen[0][2]["models"] == ["judge-model"]
+    assert [held for _, held in engine.removed] == [{volume} for volume in CODEX_SLOT_VOLUMES] and held_volumes() == set()
     arguments = seen[0][0]
     mounts = [arguments[index + 1] for index, item in enumerate(arguments) if item == "--mount"]
     assert mounts == [f"type=volume,src={CODEX_SLOT_VOLUMES[0]},dst=/auth", f"type=bind,src={agent_auth.HELPER},dst=/opt/login/auth_helper.py,readonly"]

@@ -18,10 +18,10 @@ import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
-from src.experiments.plan import model_queue
+from src.experiments.plan import expected_specs, model_queue
 from src.utils.families import FAMILIES as REGISTRY
 from src.results.policy import default_models, reported
-from src.experiments.completion import is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
+from src.experiments.completion import case_settings, is_terminal_failure, TerminalCompletionError, approved_receipts, load_policy_summary, policy_is_complete
 
 
 APP_ID = "decompbench-dashboard-v1"
@@ -285,7 +285,7 @@ class Dashboard:
                     model_state = "complete"
                 elif any(item["model"] == model for item in active):
                     model_state = "running" if effective_state == "running" else effective_state
-                elif model == status.get("active_model") and effective_state not in {"running", "cooling"}:
+                elif (model == status.get("active_model") or model in (status.get("active_models") or {}).values()) and effective_state not in {"running", "cooling"}:
                     model_state = effective_state
                 elif backend == "AGY" and status.get("agy_state") == "pending_production_adapter":
                     model_state = "awaiting_setup"
@@ -314,6 +314,8 @@ class Dashboard:
                     terminal_approvals = {}
                     alerts.append({"kind": "error", "text": redact(str(error))})
                 result_index = {(row["model"], row["instance"]): row for row in results}
+                # A finished policy counts only under the campaign's settings (completion.case_settings, as the controller).
+                settings = case_settings(manifest.get("prompt_protocol") or {}, expected_specs(manifest))
                 consumed = set()
                 totals_usage = {role: {key: 0 for key in ("input_tokens", "output_tokens", "cached_input_tokens")} for role in ("generation", "judge", "reflection")}
                 saved_calls = []
@@ -329,6 +331,8 @@ class Dashboard:
                             try:
                                 summary = load_policy_summary(directory, summary, campaign_root=self.root, approvals=terminal_approvals)
                                 finished = policy_is_complete(summary, manifest["max_attempts"], manifest.get("protocol_id"))
+                                if finished and case_settings(self.cache.read(directory / "identity.json", {}) or {}) != settings:
+                                    raise TerminalCompletionError("Completed pair has an incompatible protocol")
                             except TerminalCompletionError as error:
                                 finished = False
                                 alerts.append({"kind": "error", "text": redact(f"{model['id']} {case['instance']}: {error}")})
@@ -373,8 +377,25 @@ class Dashboard:
                 snapshot["usage"] = totals_usage
                 snapshot["recent_calls"] = sorted(saved_calls, key=lambda item: item["recorded_timestamp"], reverse=True)[:20]
                 snapshot["usage_note"] = "Committed attempt metrics, deduplicated by physical invocation ID; uncommitted and failed infrastructure calls are excluded."
-                snapshot["protocol"].update(backend="native", shared_first_attempt=True, stop_after_success=True, wls_reservations=0, sample_interval=5, memory_scope="entire experiment", max_cpu_percent=250, max_rss_mib=2048)
+                guard = manifest.get("resource_guard") or {}
+                snapshot["protocol"].update(backend="native", shared_first_attempt=True, stop_after_success=True, wls_reservations=0, sample_interval=guard.get("sample_interval", 5), memory_scope="entire experiment",
+                                            max_cpu_percent=guard.get("max_cpu_percent", 250), max_rss_mib=guard.get("max_rss_mib", 2048))
                 snapshot["protocol"]["codex_concurrency"] = status.get("active_codex_invocation_limit", snapshot["protocol"]["codex_concurrency"])
+                if "lanes" in manifest:
+                    # The lanes variant: each lane's workers (lane-qualified IDs), models and current model; the per-backend
+                    # call limits and the per-solver memory budget.
+                    from src.experiments.sandbox import MEMORY_POLICIES
+                    running = status.get("lanes") or {}
+                    snapshot["protocol"].update(claude_concurrency=status.get("active_claude_invocation_limit", manifest.get("active_claude_invocation_limit")), agy_concurrency=manifest.get("active_agy_invocation_limit", 1),
+                                                solver_memory_limit_mib=(MEMORY_POLICIES.get(manifest.get("solver_memory_policy")) or {}).get("limit_mib"))
+                    snapshot["lanes"] = [{"name": lane["name"], "workers": lane["workers"], "worker_ids": [f"experiment-{lane['name']}_{index}" for index in range(lane["workers"])],
+                                          "models": lane["models"], "active_model": (running.get(lane["name"]) or {}).get("active_model"),
+                                          **{key: (running.get(lane["name"]) or {}).get(key) for key in ("state", "reason", "retry_at", "consecutive_failures")},
+                                          "completed_pairs": sum(model.get("completed_pairs", 0) for model in models if model["id"] in lane["models"]),
+                                          "planned_pairs": sum(model["expected"] for model in models if model["id"] in lane["models"])} for lane in manifest["lanes"]]
+                    for lane in snapshot["lanes"]:
+                        if lane["state"] == "backing_off":  # a retryable failure: only this lane waits, the others continue
+                            alerts.append({"kind": "warning", "text": redact(f"Lane {lane['name']} is backing off until {lane['retry_at']} after {lane.get('consecutive_failures')} failure(s): {lane['reason']}")})
                 snapshot["protocol"]["execution_phase_id"] = status.get("execution_phase_id")
                 if effective_state in {"recovering", "draining_for_recovery"}:
                     alerts.append({"kind": "warning", "text": redact(status.get("error", "Waiting to resume the saved stage after a recovery pause."))})

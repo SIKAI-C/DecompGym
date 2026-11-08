@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "decompgym-small-scale-20261107",
-  "description": "Small-scale track: all twenty registered families as one cohort (180 instances from outputs/small_scale_data: bd ufl, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, two-stage stochastic production planning, location routing, assignment and tardiness scheduling; cg bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling, shift scheduling, graph coloring, nurse rostering), the twelve paper models, run by backend: Codex (GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, GPT-6 Astra, GPT-6.1 Sol), then Claude Code (Claude Sonnet 5, Claude Opus 5, Claude Haiku 5.5, Claude Sonnet 5.5, Claude Opus 5.5, Claude Fable 5 last), then Antigravity (Gemini 3.8 Flash), older to newer within each backend except Fable 5. Paper protocol except, added after paper-arxiv-v1: the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2) for author, reflection and judge; the generation and reflection context is mounted read-only in the agent workspace with a structured prompt (context_delivery mounted-files-v1) instead of being pasted, and the method judge reads the sources under review (only those) as read-only mounted files with the unchanged review text (judge_context_delivery mounted-review-sources-v1); the solver output.json readback limit is 32 MiB (solver_output_policy output-json-readback-32MiB-v1); candidate solvers are serialized host-side by the native solver lock (two workers, one solver at a time).",
+  "description": "Small-scale track: all twenty registered families as one cohort (180 instances from outputs/small_scale_data: bd ufl, k-median, FCTP, stochastic capacitated facility location, planning and cumulative scheduling, two-stage stochastic production planning, location routing, assignment and tardiness scheduling; cg bin packing, cutting stock, GAP, BPPC, capacitated location-routing, CVRP, VRPTW, PDPTW, railway crew scheduling, shift scheduling, graph coloring, nurse rostering), the twelve paper models, run by backend: Codex (GPT-6 Astra first, then GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, GPT-6.1 Sol), then Claude Code (Claude Sonnet 5, Claude Opus 5, Claude Haiku 5.5, Claude Sonnet 5.5, Claude Opus 5.5, Claude Fable 5 last), then Antigravity (Gemini 3.8 Flash), older to newer within each backend except GPT-6 Astra and Fable 5. Paper protocol except, added after paper-arxiv-v1: the Benders method contract is strict-decomposition-20261106-v3 (recourse-cost estimates in the master only when applicable; otherwise identical to the paper's v2) for author, reflection and judge; the generation and reflection context is mounted read-only in the agent workspace with a structured prompt (context_delivery mounted-files-v1) instead of being pasted (a reflection-policy regeneration is told that its history files are its earlier, unsuccessful attempts at the same task and may contain useful insights; every agent call is told that nothing can be run or tested in its workspace and which file it has to write, and Antigravity to read and write with its file tools), and the method judge reads the sources under review (only those) as read-only mounted files with the unchanged review text (judge_context_delivery mounted-review-sources-v1); the solver output.json readback limit is 32 MiB (solver_output_policy output-json-readback-32MiB-v1); the campaign runs three model lanes side by side in one controller (execution_policy native-final-output-gap-to-gold-lanes-v1): the Codex models with three workers, the Claude Code models with two and Gemini with one, each lane in queue order, with at most three Codex calls (the judge included), two Claude Code calls and one AGY call at a time whatever the lane; candidate solvers stay serialized host-side by the native solver lock (one solver at a time), and each solver and its child processes have a sampled 2 GiB resident-memory budget (solver_memory_policy sampled-process-group-rss-2048MiB-v1, stated in the generation and reflection prompts; a run above it is stopped and is an execution failure).",
   "dataset_inventory_sha256": "0f48abf0d51063b091e558649bd7c11af7e49b4706e60b3caa0a1864a5b47869",
   "prompt_policies": {
     "feedback": "qualitative-objective-feedback-v1",
@@ -22,6 +22,11 @@
   "reference_policy": "strict-calibrated-references-20261013-v2",
   "model_queue": [
     {
+      "model": "gpt-6-astra",
+      "backend": "codex-cli",
+      "effort": "medium"
+    },
+    {
       "model": "gpt-5.6-luna",
       "backend": "codex-cli",
       "effort": "medium"
@@ -33,11 +38,6 @@
     },
     {
       "model": "gpt-6-sol",
-      "backend": "codex-cli",
-      "effort": "medium"
-    },
-    {
-      "model": "gpt-6-astra",
       "backend": "codex-cli",
       "effort": "medium"
     },
@@ -82,16 +82,57 @@
       "effort": "catalog-slug"
     }
   ],
+  "execution_policy": "native-final-output-gap-to-gold-lanes-v1",
   "execution": {
-    "workers": 2,
+    "workers": 6,
+    "lanes": [
+      {
+        "name": "codex",
+        "models": [
+          "gpt-6-astra",
+          "gpt-5.6-luna",
+          "gpt-6-luna",
+          "gpt-6-sol",
+          "gpt-6.1-sol"
+        ],
+        "workers": 3
+      },
+      {
+        "name": "claude",
+        "models": [
+          "claude-sonnet-5",
+          "claude-opus-5",
+          "claude-haiku-5-5",
+          "claude-sonnet-5-5",
+          "claude-opus-5-5",
+          "claude-fable-5"
+        ],
+        "workers": 2
+      },
+      {
+        "name": "gemini",
+        "models": [
+          "gemini-3.8-flash-medium"
+        ],
+        "workers": 1
+      }
+    ],
     "max_attempts": 10,
     "solver_timeout": 60,
     "solver_threads": 1,
     "solver_cooldown_seconds": 10,
     "agent_timeout": 900,
-    "active_codex_invocation_limit": 2,
+    "active_codex_invocation_limit": 3,
     "active_agy_invocation_limit": 1,
-    "active_claude_invocation_limit": 1,
+    "active_claude_invocation_limit": 2,
+    "solver_memory_policy": "sampled-process-group-rss-2048MiB-v1",
+    "resource_guard": {
+      "sample_interval": 5,
+      "max_cpu_percent": 500,
+      "max_rss_mib": 5120,
+      "min_free_percent": 10,
+      "sustained_samples": 3
+    },
     "shared_first_attempt": true,
     "stop_after_success": true,
     "gap_threshold": 0.01,

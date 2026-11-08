@@ -25,6 +25,15 @@ output.json is verified by the family verifier and scored against the gold objec
 (OutputVerifier.assess_status); a timeout, crash or invalid output is never a success. Its records are exactly those of
 the earlier fixed implementation. A large-scale policy (supervisor publications, eligible incumbents, certified bounds,
 per-target success; src.experiments.xl_scoring) implements the same four methods.
+
+SmallScaleLanesPolicy (SMALL_SCALE_LANES_POLICY) is the same execution and scoring under the small-scale lanes variant
+(LANES_EXECUTION, selected by configs/small_scale.json): the campaign runs its model lanes side by side in one
+controller (src.experiments.campaign), candidate solvers stay serialized by the native solver lock, and each candidate
+and its child processes have a sampled 2 GiB resident-memory budget (sandbox.MEMORY_POLICY_2GIB): a run above it is an
+execution failure, exactly as a crash. Its differences are in the records only: the cooldown is applied by one rule
+(scored execution time of at least 5 s) and recorded as applied, the solver-lock queue time is recorded separately
+(solver_queue_seconds) and left out of the attempt's total_seconds, and the memory outcome is recorded. Its id is
+recorded in every case identity and request (PairedRunner.spec_record).
 """
 from __future__ import annotations
 
@@ -41,7 +50,7 @@ import uuid
 from src.agent.specs import DEFAULT_RUNTIME, SINGLE_FILE_DELIVERY
 from src.experiments.environment import require_runtime_environment
 from src.agent.safe_artifacts import MAX_ARTIFACT_BYTES, UnsafeArtifact, read_regular
-from src.experiments.sandbox import OUTPUT_BY_REFERENCE, SolverLaunchError
+from src.experiments.sandbox import MEMORY_POLICY_2GIB, OUTPUT_BY_REFERENCE, SolverLaunchError
 from src.experiments.verification import OutputVerifier
 from src.utils.errors import InfrastructureError, ProtocolError
 from src.utils.records import digest, read, save
@@ -56,6 +65,16 @@ PAIRED_EXECUTION = {"workers": 2, "max_attempts": 10, "solver_timeout": 60, "sol
                     "active_agy_invocation_limit": 1, "active_claude_invocation_limit": 1,
                     "shared_first_attempt": True, "stop_after_success": True, "gap_threshold": 0.01,
                     "judge_model": "gpt-6-astra", "judge_effort": "high"}
+SMALL_SCALE_LANES_POLICY = "native-final-output-gap-to-gold-lanes-v1"
+# The reviewed settings of the lanes variant: the paired protocol with three Codex and two Claude Code calls at a time
+# (one auth volume per slot; the judge shares the Codex slots), one AGY call, the 2 GiB per-solver memory budget and the
+# aggregate resource guard of the controller tree and its Docker workers. The config adds its LANE_FIELDS: "lanes", a
+# list of {"name", "models", "workers"} that partitions the model queue (src.experiments.plan.lane_partition), and
+# "workers", their total. The call limits hold per backend whatever the lanes, through one gate per backend.
+LANES_EXECUTION = {key: value for key, value in PAIRED_EXECUTION.items() if key != "workers"} | {
+    "active_codex_invocation_limit": 3, "active_claude_invocation_limit": 2, "solver_memory_policy": MEMORY_POLICY_2GIB,
+    "resource_guard": {"sample_interval": 5, "max_cpu_percent": 500, "max_rss_mib": 5120, "min_free_percent": 10, "sustained_samples": 3}}
+LANE_FIELDS = ("lanes", "workers")
 
 
 @dataclass(frozen=True)
@@ -78,6 +97,7 @@ class ExecutionResult:
     termination: str  # completed | failed | timeout (a policy may add its own, e.g. crashed, preempted)
     metrics: Mapping[str, Any] = field(default_factory=dict)  # merged into the attempt metrics, in this order
     evidence: Mapping[str, Any] = field(default_factory=dict)  # policy-specific (e.g. a supervisor record)
+    queue_seconds: float = 0.0  # time this run waited for the solver lock, left out of the attempt's total_seconds
 
 
 @dataclass(frozen=True)
@@ -203,6 +223,9 @@ class SmallScaleNativePolicy(ExecutionPolicy):
         attempt_dir = case.directory
         execution_path = attempt_dir / "execution.json"
         execution = read(execution_path)
+        # Where this execution comes from: "resumed" (a committed execution.json), "receipt" (the executor re-reads its
+        # committed native receipt: the controller stopped between the two records) or "ran" (the solver runs now).
+        source = "resumed" if execution else "receipt" if (attempt_dir / "native_solver_receipt.json").exists() else "ran"
         code_hash = digest(attempt_dir / "solver.py")
         if execution:
             if execution["solver_sha256"] != code_hash:
@@ -245,16 +268,35 @@ class SmallScaleNativePolicy(ExecutionPolicy):
                 exec_ok, output = False, None
                 stderr += "\n[framework] execution input changed; the candidate failed and the canonical input was restored"
             execution = {"exec_ok": exec_ok, "stdout": stdout, "stderr": stderr, "output": output, "execution_seconds": scored_seconds, "solver_sha256": code_hash, "output_sha256": digest(attempt_dir / "output.json") if (attempt_dir / "output.json").exists() else None}
-            save(execution_path, self.stored_execution(attempt_dir, execution))
+            cooldown = self.cooldown_seconds if self.cooldown_seconds and self.cooldown_due(elapsed, execution, source == "ran") else 0
+            save(execution_path, self.stored_execution(attempt_dir, execution) | self.cooldown_record(source, cooldown))
             if not (attempt_dir / "solver_invocation.json").exists():
                 save(attempt_dir / "solver_invocation.json", {"backend": "host-python", "timeout": runtime.timeout, "threads": runtime.threads, "solver_sha256": code_hash})
-            if elapsed >= 5 and self.cooldown_seconds:
+            if cooldown:
                 stage("solver cooldown")
-                time.sleep(self.cooldown_seconds)
+                time.sleep(cooldown)
+                self.cooldown_done(execution_path, cooldown)
         exec_ok, stdout, stderr, output = (execution[k] for k in ("exec_ok", "stdout", "stderr", "output"))
         timed_out = TIMEOUT_MARKER in stderr
         metrics = {"execution_seconds": execution["execution_seconds"], "execution_timed_out": timed_out, "cooldown_seconds": self.cooldown_seconds if execution["execution_seconds"] >= 5 else 0}
-        return ExecutionResult(exec_ok, stdout, stderr, output, execution["execution_seconds"], "timeout" if timed_out else ("completed" if exec_ok else "failed"), metrics)
+        return self.result(attempt_dir, execution, metrics, "timeout" if timed_out else ("completed" if exec_ok else "failed"), source)
+
+    @staticmethod
+    def cooldown_due(elapsed, execution, ran) -> bool:
+        """The paper's rule: the wall time around the executor (with any solver-lock wait) was at least 5 s. The recorded
+        cooldown_seconds instead follows the scored execution time."""
+        return elapsed >= 5
+
+    def cooldown_record(self, source, cooldown) -> dict:
+        """Fields execution.json adds about the execution's source and cooldown (none for the paper's record)."""
+        return {}
+
+    def cooldown_done(self, execution_path, cooldown) -> None:
+        """Called once the cooldown after an execution has been completed (the paper records nothing)."""
+
+    def result(self, attempt_dir, execution, metrics, termination, source) -> ExecutionResult:
+        exec_ok, stdout, stderr, output = (execution[k] for k in ("exec_ok", "stdout", "stderr", "output"))
+        return ExecutionResult(exec_ok, stdout, stderr, output, execution["execution_seconds"], termination, metrics)
 
     def evaluate(self, result, references, *, case, audit):
         """Verify the final output (only after a completed run), then the method audit, then the gap rule."""
@@ -293,4 +335,46 @@ class SmallScaleNativePolicy(ExecutionPolicy):
                           issues=issues, message=message, method_verdict=verdict, method_notes=notes, objective_target_missed=missed)
 
 
-EXECUTION_POLICIES = {SMALL_SCALE_NATIVE_POLICY: SmallScaleNativePolicy}
+class SmallScaleLanesPolicy(SmallScaleNativePolicy):
+    """SmallScaleNativePolicy under the lanes variant (module docstring): the same execution, evaluation and stop rule;
+    the executor (NativeSandboxExecutor with memory_policy, ownership and record_queue_seconds) adds the memory
+    budget, and this policy's records name it and leave the solver-lock queue out of the attempt time."""
+    id = SMALL_SCALE_LANES_POLICY
+    settings = LANES_EXECUTION
+
+    def check(self, *, delivery, runtime):
+        super().check(delivery=delivery, runtime=runtime)
+        if runtime.memory_mib != getattr(self.executor, "memory_limit_mib", None) or runtime.memory_mib is None:
+            raise ValueError("The lanes policy states the executor's memory budget in the runtime contract")
+
+    @staticmethod
+    def cooldown_due(elapsed, execution, ran) -> bool:
+        """One rule for applying and recording the cooldown: the solver ran in this call and its scored execution time
+        (never the solver-lock wait) was at least 5 s."""
+        return ran and execution["execution_seconds"] >= 5
+
+    def cooldown_record(self, source, cooldown):
+        """The durable evidence a resumed attempt reads instead of reconstructing it: where the execution came from ("ran"
+        or "receipt", a re-read native receipt), the cooldown decided for it and the cooldown applied (set once the
+        cooldown has been completed; 0 while it has not, also when the controller stopped during it)."""
+        return {"execution_source": source, "cooldown_decided_seconds": cooldown, "cooldown_applied_seconds": 0}
+
+    def cooldown_done(self, execution_path, cooldown):
+        save(execution_path, read(execution_path) | {"cooldown_applied_seconds": cooldown})
+
+    def result(self, attempt_dir, execution, metrics, termination, source):
+        """The receipt's structured memory verdict decides the memory outcome (the stderr marker is feedback only: a
+        candidate may print it). Its queue time is historical evidence; only a solver that ran in this call adds queue
+        time to this attempt. The cooldown recorded is the one execution.json records as completed, in every call (a
+        re-read native receipt and an interrupted cooldown record none)."""
+        receipt = (read(attempt_dir / "native_solver_receipt.json") or {}).get("result", {})
+        queue, exceeded = receipt.get("solver_queue_seconds"), receipt.get("memory_limit_exceeded") is True
+        metrics = dict(metrics, solver_queue_seconds=queue, solver_memory_limit_mib=receipt.get("memory_limit_mib"), solver_memory_peak_mib=receipt.get("memory_peak_mib"),
+                       solver_memory_limit_exceeded=exceeded, cooldown_seconds=(read(attempt_dir / "execution.json") or {}).get("cooldown_applied_seconds", 0))
+        exec_ok, stdout, stderr, output = (execution[k] for k in ("exec_ok", "stdout", "stderr", "output"))
+        if exceeded:
+            termination = "memory_limit_exceeded"  # an execution failure of the candidate, scored as any crash
+        return ExecutionResult(exec_ok, stdout, stderr, output, execution["execution_seconds"], termination, metrics, queue_seconds=(queue or 0.0) if source == "ran" else 0.0)
+
+
+EXECUTION_POLICIES = {SMALL_SCALE_NATIVE_POLICY: SmallScaleNativePolicy, SMALL_SCALE_LANES_POLICY: SmallScaleLanesPolicy}

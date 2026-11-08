@@ -34,6 +34,16 @@ function badge(text, state) {
   return node("span", text, `badge ${color}`);
 }
 function cell(text, className = "") { return node("td", text, className); }
+const gib = (mib) => mib % 1024 === 0 ? `${mib / 1024} GiB` : `${num(mib, 0)} MiB`;
+// Worker IDs: experiment_<n> in a sequential run; experiment-<lane>_<n> in the lanes variant (data.lanes).
+const workerIds = (data) => data.lanes ? data.lanes.flatMap((lane) => lane.worker_ids) : Array.from({length: data.protocol.workers}, (_, index) => `experiment_${index}`);
+function workerLabel(id) {
+  const lane = /^experiment-([a-z0-9-]+)_(\d+)$/.exec(id);
+  return lane ? `${lane[1]} · Worker ${Number(lane[2]) + 1}` : id.replace(/experiment_(\d+)/, (_, value) => `Worker ${Number(value) + 1}`);
+}
+function guardText(protocol) {
+  return `${num(protocol.max_cpu_percent ?? 250, 0)}% CPU and ${gib(protocol.max_rss_mib ?? 2048)} total experiment guard`;
+}
 function progressCell(completed, expected, suffix = "") {
   const td = cell(null, "model-progress");
   const label = node("div", null, "progress-label");
@@ -75,19 +85,21 @@ function renderWorkers(data) {
   for (const worker of data.active_workers) {
     const card = node("article", null, "worker-card");
     const top = node("div", null, "worker-top");
-    top.append(node("strong", worker.worker.replace(/experiment_(\d+)/, (_, value) => `Worker ${Number(value) + 1}`)), node("span", duration(worker.elapsed_seconds)));
+    top.append(node("strong", workerLabel(worker.worker)), node("span", duration(worker.elapsed_seconds)));
     card.append(top, node("h3", worker.model_name), node("div", worker.instance, "worker-instance"), node("div", worker.supervisor_active ? worker.phase : `Last checkpoint: ${worker.phase}`, "worker-phase"));
     fragment.append(card);
   }
-  for (let index = 0; index < data.protocol.workers; index++) {
-    if (data.active_workers.some((worker) => worker.worker === `experiment_${index}`)) continue;
+  for (const id of workerIds(data)) {
+    if (data.active_workers.some((worker) => worker.worker === id)) continue;
     const card = node("article", null, "worker-card idle");
-    card.append(node("div", `WORKER ${index + 1}`, "worker-top"), node("p", data.state === "running" ? "Ready for the next case" : "No active case"));
+    card.append(node("div", workerLabel(id).toUpperCase(), "worker-top"), node("p", data.state === "running" ? "Ready for the next case" : "No active case"));
     fragment.append(card);
   }
   $("workers").replaceChildren(fragment);
   $("worker-live").className = `live-dot${data.totals.active ? " live" : ""}`;
-  $("worker-note").textContent = `${data.protocol.workers} workers · up to ${data.protocol.codex_concurrency} simultaneous Codex calls. Case elapsed time includes earlier rounds and waits.`;
+  const lanes = data.lanes ? ` in ${data.lanes.length} lanes (${data.lanes.map((lane) => `${lane.name}: ${lane.workers}${lane.active_model ? `, ${lane.active_model}` : ""}`).join("; ")})` : "";
+  const others = data.protocol.claude_concurrency ? `, ${data.protocol.claude_concurrency} Claude Code and ${data.protocol.agy_concurrency} AGY` : "";
+  $("worker-note").textContent = `${data.protocol.workers} workers${lanes} · up to ${data.protocol.codex_concurrency} simultaneous Codex calls${others}. Case elapsed time includes earlier rounds and waits.`;
 }
 
 function renderHealth(data) {
@@ -102,13 +114,14 @@ function renderHealth(data) {
   const warnings = monitor.thermal_warnings || [];
   $("thermal").textContent = data.heartbeat_age_seconds === null ? "Unknown" : warnings.length ? warnings.join(", ") : "None reported";
   $("wls-limit").textContent = "Local academic license";
-  $("experiment-memory").textContent = monitor.rss_mib == null ? "—" : `${num(monitor.rss_mib, 0)} MiB / 2,048 MiB`;
+  $("experiment-memory").textContent = monitor.rss_mib == null ? "—" : `${num(monitor.rss_mib, 0)} MiB / ${num(data.protocol.max_rss_mib ?? 2048, 0)} MiB`;
   $("resource-age").textContent = monitor.sampled_at ? `Sampled ${localTime(monitor.sampled_at)} · ${paused ? "monitoring paused" : "every ~5s"}` : "Waiting for a monitor sample";
   const stale = data.heartbeat_age_seconds === null || data.heartbeat_age_seconds > 90;
   const state = paused ? "paused" : stale ? "warning" : monitor.state === "running" ? "success" : "warning";
   const value = paused ? "Paused" : stale ? "Stale / unavailable" : monitor.state === "running" ? "Healthy" : labels[monitor.state] || monitor.state;
   $("health-badge").replaceWith(Object.assign(badge(value, state), {id: "health-badge"}));
-  $("resource-note").textContent = paused ? "The experiment is paused. Resource values are the last saved sample; execution resumes only after an explicit request." : monitor.reason || "One solver thread per worker; 250% CPU and 2 GiB total experiment guard. Heat or resource pressure stops computation, then the watchdog waits for recovery.";
+  const solverMemory = data.protocol.solver_memory_limit_mib ? ` Each solver with its child processes: ${gib(data.protocol.solver_memory_limit_mib)} resident memory (sampled every 0.5 s).` : "";
+  $("resource-note").textContent = paused ? "The experiment is paused. Resource values are the last saved sample; execution resumes only after an explicit request." : monitor.reason || `One solver thread per worker; ${guardText(data.protocol)}.${solverMemory} Heat or resource pressure stops computation, then the watchdog waits for recovery.`;
 }
 
 function initializeFilters(data) {
@@ -149,7 +162,13 @@ function renderRunDetails(data) {
   fragment.append(group("Protocol", [`${data.protocol.instances} fixed instances · ${data.protocol.families} problem families · up to 10 attempts per policy, stopping after success. Plain and reflection share the first attempt.`, `Judge: ${data.protocol.judge} ${data.protocol.judge_effort}. Solver deadline: ${data.protocol.solver_timeout}s.`, `Elapsed since campaign creation: ${duration(elapsed)} (includes pauses).`, `Campaign: ${data.campaign}`]));
   const usage = data.usage;
   fragment.append(group("Recorded token usage", [`Generation: ${shortNum(usage.generation.input_tokens)} input · ${shortNum(usage.generation.output_tokens)} output.`, `Judge: ${shortNum(usage.judge.input_tokens)} input · ${shortNum(usage.judge.output_tokens)} output.`, `Reflection: ${shortNum(usage.reflection?.input_tokens)} input · ${shortNum(usage.reflection?.output_tokens)} output.`, "Raw input/output fields are shown here. See the audited report for provider-specific cache and reasoning fields.", data.usage_note || "Committed calls only. In-flight and failed infrastructure calls are excluded."]));
-  fragment.append(group("Scheduling & recovery", [`${data.protocol.workers} experiment workers · at most ${data.protocol.codex_concurrency} active Codex invocation for the shared login.`, "Native Gurobi uses the existing local license. Durable stages resume after infrastructure backoff.", `Resource revision ${data.protocol.resource_revision} · controller revision ${data.protocol.controller_revision}.`, `${data.protocol.recovery_generation_allowance} recorded infrastructure-recovery generation allowance. Earlier completed results are preserved.`]));
+  const scheduling = [`${data.protocol.workers} experiment workers · at most ${data.protocol.codex_concurrency} active Codex invocation for the shared login.`, "Native Gurobi uses the existing local license. Durable stages resume after infrastructure backoff.", `Resource revision ${data.protocol.resource_revision} · controller revision ${data.protocol.controller_revision}.`, `${data.protocol.recovery_generation_allowance} recorded infrastructure-recovery generation allowance. Earlier completed results are preserved.`];
+  if (data.lanes) {
+    scheduling[0] = `${data.protocol.workers} experiment workers in ${data.lanes.length} lanes · at most ${data.protocol.codex_concurrency} Codex (judge included), ${data.protocol.claude_concurrency} Claude Code and ${data.protocol.agy_concurrency} AGY calls at a time, one candidate solver at a time.`;
+    const laneState = (lane) => lane.state === "backing_off" ? `backing off until ${localTime(lane.retry_at)} (${lane.reason})` : lane.active_model ? `now ${lane.active_model}` : (lane.state || "idle");
+    scheduling.splice(1, 0, ...data.lanes.map((lane) => `Lane ${lane.name}: ${lane.workers} worker(s) · ${num(lane.completed_pairs)} / ${num(lane.planned_pairs)} pairs · ${laneState(lane)} · ${lane.models.join(", ")}.`));
+  }
+  fragment.append(group("Scheduling & recovery", scheduling));
   $("run-details").replaceChildren(fragment);
 }
 
@@ -177,7 +196,7 @@ function render(data) {
   $("remaining").textContent = num(scope.remaining); $("pass-rate").textContent = pct(data.totals.pass_rate);
   $("pass-caption").textContent = `${num(data.totals.passed)} passed · ${num(data.totals.failed)} not passed, on the shared first attempt`;
   $("active-count").textContent = data.totals.active; $("worker-limit").textContent = `/ ${data.protocol.workers}`;
-  $("worker-caption").textContent = `1 solver thread per worker · 2 GiB total guard`;
+  $("worker-caption").textContent = `1 solver thread per worker · ${gib(data.protocol.max_rss_mib ?? 2048)} total guard` + (data.protocol.solver_memory_limit_mib ? ` · ${gib(data.protocol.solver_memory_limit_mib)} per solver` : "");
   $("total-progress").max = scope.planned; $("total-progress").value = scope.completed;
   const codex = data.models.filter((model) => model.backend === "Codex").reduce((sum, model) => sum + (model.remaining_pairs ?? model.remaining), 0);
   const agy = data.models.filter((model) => model.backend === "AGY").reduce((sum, model) => sum + (model.remaining_pairs ?? model.remaining), 0);

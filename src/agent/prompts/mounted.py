@@ -96,6 +96,11 @@ DATA_START = {
     "nrp": "This instance has ",
 }
 TASK_HEADINGS = ("Problem", "Data", "Output", "Method requirements", "Rules")
+# Closes "Files from previous attempts" of a generation that receives history (a reflection-policy regeneration; user
+# decision 11-08, requirements item 25). Every listed attempt is by construction an earlier, unsuccessful attempt of the
+# same model on the same instance. The reflection call, which reviews one attempt, has no such sentence.
+HISTORY_USE = ("These files are from your earlier attempts at this same task, none of which met all success criteria: the solver.py and "
+               "the reflection notes (debug.md) of each attempt. You may use them; they may contain useful insights for this attempt.")
 
 
 def mount_location(path: Path) -> tuple[str, str]:
@@ -193,6 +198,20 @@ def reflection_part(instructions: list[str], closing: str) -> str:
     return "# Part 3: Reflection\n" + "\n".join(instructions) + "\n" + closing
 
 
+def what_to_do(writable: str, *, review: bool = False) -> str:
+    """The same statement for every backend (user decision 11-08, requirements item 28): solver.py cannot be run or
+    tested in the workspace (true for every backend, including Codex, whose shell reads files), and what the call has
+    to do instead. The agent image has no Gurobi or NumPy; headless Antigravity
+    ends a run whose command tool is denied (AGY_FILE_TOOLS). The judge reviews sources only, so it is not told about
+    the later run."""
+    later = "" if review else "; the harness runs it later in its own environment, where gurobipy and NumPy are available"
+    return f"This workspace has no gurobipy, NumPy or other solver packages, so solver.py cannot be run or tested here{later}. Here you only need to read the files listed above and write {writable}."
+
+
+# Antigravity only: its command tool is denied in headless accept-edits mode, which ends the run with no output.
+AGY_FILE_TOOLS = "Read and write files with your file tools; this workspace does not allow command execution."
+
+
 def workspace_note(target: str, instruction: str | None = None) -> str:
     """The note that opens Part 1 of a mounted-files call (record_workspace_prompt `note`): the Part 1 heading, the
     File to modify heading and the edit instruction (the paper's, unless the delivery adds to it)."""
@@ -235,9 +254,12 @@ def workspace_part(target: str, files: list, backend: str, *, delivery=SINGLE_FI
             raise ProtocolError(f"History file outside an attempt directory: {items[0].path}")
         lines.append(f"- Attempt {int(match[1])}{' (the attempt under review)' if review else ''}, mounted read-only in {root}/{directory}/:")
         lines += [f"  - {item.path} ({item.size} bytes): {item.description}." for item in items]
+    if attempts and not review:
+        lines.append(HISTORY_USE)
     nothing = ("## No other task files\n"
-               f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations."
-               + (" Do not use memory, skills, subagents or prior conversations." if agy else ""))
+               f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations. "
+               + what_to_do(delivery.writable_text(target, WORKSPACE))
+               + (" Do not use memory, skills, subagents or prior conversations. " + AGY_FILE_TOOLS if agy else ""))
     return "\n\n".join([modify, input_data, output, "\n".join(lines), nothing]), note
 
 
@@ -284,6 +306,7 @@ def review_workspace_part(target: str, files: list, backend: str, *, delivery=SI
     lines += [f"  - {item.path} ({item.size} bytes): {item.description}." for item in files]
     lines.append(f"Read every file listed above completely before writing {target}.")
     nothing = ("## No other task files\n"
-               f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations."
-               + (" Do not use memory, skills, subagents or prior conversations." if agy else ""))
+               f"No other task files are provided: apart from the files listed above and {delivery.writable_text(target, WORKSPACE)}, the workspace contains no data, references or results of this or any other instance; do not inspect other directories, use external tools or services, or search for reference implementations. "
+               + what_to_do(delivery.writable_text(target, WORKSPACE), review=True)
+               + (" Do not use memory, skills, subagents or prior conversations. " + AGY_FILE_TOOLS if agy else ""))
     return "\n\n".join([modify, "\n".join(lines), nothing]), note

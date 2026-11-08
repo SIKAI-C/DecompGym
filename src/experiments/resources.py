@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import json
 import os
 from pathlib import Path
+import errno
 import re
+import select
 import signal
 import subprocess
 import time
@@ -86,6 +89,18 @@ def read_processes() -> dict[int, ProcessSample]:
     return processes
 
 
+def read_commands() -> dict[int, str]:
+    """{pid: full command line} of every process (ps -ww: never truncated), to find a process by an argument it was given."""
+    commands = {}
+    for line in command_output(["/bin/ps", "-axww", "-o", "pid=,command="]).splitlines():
+        values = line.strip().split(None, 1)
+        if len(values) == 2 and values[0].isdigit():
+            commands[int(values[0])] = values[1]
+    if not commands:
+        raise CleanupError("Cannot verify native computation: process query returned no entries")
+    return commands
+
+
 def atomic_json(path: Path, value: dict) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, indent=2))
@@ -120,18 +135,71 @@ class CleanupError(RuntimeError):
     """The framework cannot prove that its owned computation stopped."""
 
 
+class ChildExit:
+    """Observes the exit of a child without reaping it (kqueue EVFILT_PROC/NOTE_EXIT). Until the caller reaps it (a
+    Popen wait or poll), an exited child stays a zombie, so its PID, and the number of the process group it leads,
+    cannot be reused: signals to that group reach only its own members."""
+    def __init__(self, process: subprocess.Popen):
+        self.process, self.kqueue, self.exited = process, select.kqueue(), False
+        try:
+            try:
+                events = self.kqueue.control([select.kevent(process.pid, filter=select.KQ_FILTER_PROC, flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT, fflags=select.KQ_NOTE_EXIT)], 1, 0)
+            except ProcessLookupError:
+                events = [SimpleNamespace(flags=select.KQ_EV_ERROR, data=errno.ESRCH, fflags=0)]
+            except OSError as error:
+                raise CleanupError(f"Cannot observe the exit of owned process {process.pid}: {error}") from error
+            self.note(events)
+        except BaseException:
+            self.kqueue.close()  # a failed construction leaves no descriptor behind (also on an interruption)
+            raise
+
+    def note(self, events):
+        for event in events:
+            if event.flags & select.KQ_EV_ERROR and event.data:
+                # macOS refuses to watch a zombie (ESRCH). Only this parent reaps the child, so an unreaped child that
+                # cannot be watched has exited and is that zombie.
+                if event.data == errno.ESRCH and self.process.returncode is None:
+                    self.exited = True
+                    continue
+                raise CleanupError(f"Cannot observe the exit of owned process {self.process.pid}: errno {event.data}")
+            self.exited = self.exited or bool(event.fflags & select.KQ_NOTE_EXIT)
+
+    def wait(self, timeout: float) -> bool:
+        """Whether the child has exited, waiting at most `timeout` seconds; it is never reaped here."""
+        if not self.exited:
+            self.note(self.kqueue.control([], 1, max(0.0, timeout)))
+        return self.exited
+
+    def close(self):
+        """Release the kqueue; never raises, so a failed close cannot mask the cleanup outcome it follows."""
+        try:
+            self.kqueue.close()
+        except OSError:
+            pass
+
+
 def stop_owned_tree(process: subprocess.Popen, known: dict[int, ProcessSample] | None = None, *, grace: float = 0.5) -> None:
+    """Stop every owned process and prove it stopped; the root process is reaped only after that proof.
+
+    Popen created a new session, so the root leads a process group. While the root is unreaped (alive or a zombie) its
+    PID, and so the group number, cannot be reused, and every census, through the final verification, includes the
+    whole group: a child forked during the stop is reparented but keeps the group. A root reaped before this call (by
+    an earlier Popen wait or poll) no longer anchors the group number: a group member that is not a known owned process
+    (PID and start time) is then refused, never signalled (CleanupError)."""
     known = dict(known or {})
     errors = []
-    def survivors(initial: bool = False) -> dict[int, ProcessSample]:
+    anchored = getattr(process, "returncode", None) is None  # not reaped: the group number is still the root's
+    def survivors() -> dict[int, ProcessSample]:
         try:
             current = read_processes()
         except RuntimeError as error:
             raise CleanupError(str(error)) from error
         owned = {pid for pid, item in known.items() if pid in current and current[pid].started == item.started}
-        if initial:
-            # Popen created this new session. Its group may outlive an already-exited parent.
-            owned |= {pid for pid, item in current.items() if item.group == process.pid}
+        group = {pid for pid, item in current.items() if item.group == process.pid}
+        if not anchored and group - owned:
+            raise CleanupError(f"Process group {process.pid} has members {sorted(group - owned)} that are not known owned processes, and its root was already reaped; "
+                               "its identity cannot be established, so nothing is signalled")
+        owned |= group
         while True:
             children = {pid for pid, item in current.items() if item.parent in owned}
             if children <= owned:
@@ -147,26 +215,23 @@ def stop_owned_tree(process: subprocess.Popen, known: dict[int, ProcessSample] |
             except ProcessLookupError:
                 pass
             except PermissionError as error:
-                process.poll()
                 if any(item.group == group for item in survivors().values()):
                     errors.append(f"Cannot signal live owned group {group}: {error}")
-    live = survivors(initial=True)
+    live = survivors()
     send(live, signal.SIGTERM)
     if live:
         time.sleep(grace)
-    process.poll()
     send(survivors(), signal.SIGKILL)
     deadline = time.monotonic() + 3
     while True:
-        process.poll()
-        remaining = survivors()
+        remaining = survivors()  # an exited root stays an unreaped zombie (not live) until the end
         if not remaining:
             break
         if time.monotonic() >= deadline:
             raise CleanupError(f"Owned processes remain alive: {sorted(remaining)}; {errors}")
         time.sleep(0.05)
     try:
-        process.wait(timeout=1)
+        process.wait(timeout=1)  # reaped only now, after the final verification
     except subprocess.TimeoutExpired as error:
         raise CleanupError(f"Owned root process {process.pid} did not exit") from error
 

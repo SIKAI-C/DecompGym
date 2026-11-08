@@ -2,10 +2,10 @@
 
 `prepare` and `auth` record the evidence once per machine; campaigns verify it before any model call.
 
-    docker auth --backend codex --slot 0 --login [--replace]   # Codex device sign-in into one call-gate slot's volume (repeat for --slot 1)
-    docker auth --backend claude --login [--replace]           # store a `claude setup-token` token from a hidden prompt
+    docker auth --backend codex --slot 0 --login [--replace]   # Codex device sign-in into one call-gate slot's volume (repeat for --slot 1, 2)
+    docker auth --backend claude [--slot 1] --login [--replace]  # store a `claude setup-token` token from a hidden prompt (slot 0 by default)
     docker agy-login | agy-models                              # Antigravity sign-in / saved-login check
-    docker auth --backend X --check                            # no-inference credential check (Codex: every slot)
+    docker auth --backend X --check                            # no-inference credential check (Codex, Claude: every slot)
     docker auth --backend X --verify                           # one unscored edit plus the native sandbox handoff (readiness)
 
 The auth volume is the only credential source of Codex and Claude Code (src/agent/auth.py); a credential is never
@@ -23,7 +23,7 @@ import subprocess
 import time
 
 from src.agent.container import DockerRuntime
-from src.agent.auth import AUTH_POLICY, CODEX_SLOT_VOLUMES, HELPER_LABEL, backend_volumes, require_exclusive_volume, volume_lock
+from src.agent.auth import AUTH_POLICY, CLAUDE_SLOT_VOLUMES, CODEX_SLOT_VOLUMES, HELPER_LABEL, SLOT_VOLUMES, backend_volumes, require_exclusive_volume, volume_lock
 from src.agent.docker_client import AUTH_VOLUMES, CLI_VERSIONS, DOCKER_EDIT_POLICY, DockerCliClient, IMAGE_TAG, credential_from_environment, worker_file_hashes
 from src.experiments import agent_auth
 from src.experiments.environment import RuntimeEnvironmentError
@@ -67,7 +67,7 @@ def prepare(evidence_root, *, image=IMAGE_TAG):
                 "docker_client_version": docker_version["Client"]["Version"], "docker_server_version": docker_version["Server"]["Version"],
                 "docker_engine_id": engine_id.stdout.strip(), "docker_context": context.stdout.strip(), "docker_endpoint": endpoint.stdout.strip(),
                 "native_environment": native.environment, "license_file": str(native.license_file), "auth_volumes": AUTH_VOLUMES,
-                "auth_policy": AUTH_POLICY, "codex_slot_volumes": list(CODEX_SLOT_VOLUMES),
+                "auth_policy": AUTH_POLICY, "codex_slot_volumes": list(CODEX_SLOT_VOLUMES), "claude_slot_volumes": list(CLAUDE_SLOT_VOLUMES),
                 "authentication_validation": "separate; image preflight does not prove authenticated inference", "campaign_started": False}
     evidence_root.mkdir(parents=True, exist_ok=True)
     path = evidence_root / "runtime.json"
@@ -86,10 +86,34 @@ def load_execution_environment(path):
     return value | {"evidence_root": str(path.parent), "manifest_sha256": digest(path)}
 
 
+# Runtime evidence written before a backend had its current slots lists fewer: two Codex slots and no Claude Code list
+# (its one volume, slot 0). Such evidence stays valid; a campaign that uses more slots than the evidence declares is
+# refused (require_slot_volumes), so a three-Codex/two-Claude campaign needs a fresh `docker prepare`.
+MINIMUM_SLOTS = {"codex-cli": 2, "claude-code-cli": 1}
+SLOT_EVIDENCE = {"codex-cli": "codex_slot_volumes", "claude-code-cli": "claude_slot_volumes"}
+
+
+def slot_volumes(value, backend):
+    """The auth volumes of `backend`'s call-gate slots that the runtime evidence declares (a prefix of the current slots)."""
+    declared = value.get(SLOT_EVIDENCE[backend], list(SLOT_VOLUMES[backend][:1]) if backend == "claude-code-cli" else None)
+    if not isinstance(declared, list) or len(declared) < MINIMUM_SLOTS[backend] or declared != list(SLOT_VOLUMES[backend][:len(declared)]):
+        return None
+    return declared
+
+
+def require_slot_volumes(value, slots):
+    """Refuse a campaign whose call gates use more slots ({backend: count}) than its frozen runtime evidence declares."""
+    for backend, count in slots.items():
+        declared = slot_volumes(value, backend) or []
+        if count > len(declared):
+            raise RuntimeEnvironmentError(f"The prepared runtime evidence declares {len(declared)} {backend} auth slot(s); this campaign uses {count}. "
+                                          "Rerun `python src/02_experiment.py docker prepare` before initializing the campaign")
+
+
 def validate_execution_environment(value):
     if value.get("agent_policy") != DOCKER_EDIT_POLICY or value.get("cli_versions") != CLI_VERSIONS or value.get("worker_files_sha256") != worker_file_hashes():
         raise RuntimeEnvironmentError("Docker worker sources or CLI declarations differ from the prepared environment")
-    if value.get("auth_volumes") != AUTH_VOLUMES or value.get("codex_slot_volumes") != list(CODEX_SLOT_VOLUMES):
+    if value.get("auth_volumes") != AUTH_VOLUMES or any(slot_volumes(value, backend) is None for backend in SLOT_EVIDENCE):
         raise RuntimeEnvironmentError("Prepared runtime evidence names other authentication volumes; rerun `docker prepare` and `docker auth`")
     if value.get("auth_policy") != AUTH_POLICY:
         raise RuntimeEnvironmentError(f"Prepared runtime evidence predates the authentication policy {AUTH_POLICY}; rerun `docker prepare`, then `docker auth --check` and `--verify`")
@@ -110,7 +134,7 @@ def require_backend_readiness(value, backends):
             raise RuntimeEnvironmentError("Backend readiness evidence changed")
         report = json.loads(path.read_text())
         native_hash = hashlib.sha256(json.dumps(value["native_environment"], sort_keys=True).encode()).hexdigest()
-        allowed = (value.get("codex_slot_volumes") or []) if backend == "codex-cli" else []
+        allowed = (slot_volumes(value, backend) or []) if backend in SLOT_EVIDENCE else []
         if report.get("auth_volume") not in [value.get("auth_volumes", {}).get(backend), *allowed]:
             raise RuntimeEnvironmentError(f"Readiness for {backend} was proved with another authentication volume; rerun `docker auth --verify`")
         if report.get("auth_policy") != value.get("auth_policy"):
@@ -160,7 +184,7 @@ def authenticate(backend, evidence_root, *, image=IMAGE_TAG, verify=False, slots
     engine, image_id = prepared_engine(evidence_root, image)
     credential = interactive_credential(backend)
     import uuid
-    for slot in (slots if backend == "codex-cli" and slots is not None else [None]):
+    for slot in (slots if backend in SLOT_VOLUMES and slots is not None else [None]):
         client = DockerCliClient("auth-check", backend=backend, image_id=image_id, runtime=engine, evidence_root=evidence_root)
         client.auth_slot = slot
         mounts = client.prepare()
@@ -170,7 +194,7 @@ def authenticate(backend, evidence_root, *, image=IMAGE_TAG, verify=False, slots
             raise RuntimeError(f"The saved {backend} credential in {next(iter(mounts))} could not be loaded; no inference was submitted. Store one with `docker auth --backend ... --login`")
         print(json.dumps({"backend": backend, "auth_volume": next(iter(mounts)), "credential_loaded": True, "inference_submitted": False}, indent=2))
     if verify:
-        verify_backend(backend, evidence_root, engine=engine, image_id=image_id, credential=credential, slot=(slots or [0])[0] if backend == "codex-cli" else None)
+        verify_backend(backend, evidence_root, engine=engine, image_id=image_id, credential=credential, slot=(slots or [0])[0] if backend in SLOT_VOLUMES else None)
 
 
 def check(backend, evidence_root, *, image=IMAGE_TAG, slots=None, models=None):
@@ -205,7 +229,7 @@ def verify_backend(backend, evidence_root, *, engine, image_id, credential, slot
     client = DockerCliClient(READINESS_MODELS[backend], backend=backend, image_id=image_id, runtime=engine, evidence_root=evidence_root, role="readiness", effort="high" if backend == "claude-code-cli" else "medium", credential_provider=lambda _: credential)
     client.auth_slot = slot
     # The no-inference check first: a broken credential stops here, before the unscored model call.
-    checked = agent_auth.check_backend(engine, image_id, backend, slots=[slot or 0] if backend == "codex-cli" else None, models=[client.model] if backend != "claude-code-cli" else [],
+    checked = agent_auth.check_backend(engine, image_id, backend, slots=[slot or 0] if backend in SLOT_VOLUMES else None, models=[client.model] if backend != "claude-code-cli" else [],
                                        passphrase=(credential or {}).get("keyring_passphrase"))
     agent_auth.raise_for(checked)
     result = client.edit_file(target, prompt, context=[case / "data.json"], log_dir=directory / "call", step="agent")
@@ -262,7 +286,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["prepare", "auth", "agy-login", "agy-models"], help="agy-login: one-time Antigravity sign-in; agy-models: check the saved login")
     parser.add_argument("--backend", choices=BACKENDS)
-    parser.add_argument("--slot", type=int, choices=range(len(CODEX_SLOT_VOLUMES)), help="codex only: the call-gate slot (auth volume); --login needs it, --check defaults to every slot, --verify to slot 0")
+    parser.add_argument("--slot", type=int, choices=range(len(CODEX_SLOT_VOLUMES)), help="codex (0-2) and claude (0-1): the call-gate slot (auth volume); codex --login needs it, claude --login defaults to slot 0, --check to every slot, --verify to slot 0")
     parser.add_argument("--login", action="store_true", help="store a credential: codex device sign-in in a helper container, claude setup token at a hidden prompt (agy: use agy-login)")
     parser.add_argument("--replace", action="store_true", help="with --login: replace a saved credential; the old one is kept as <file>.replaced-<UTC> and never used automatically")
     parser.add_argument("--import-host", action="store_true", help="codex --login, emergency only: copy the host ~/.codex/auth.json (shares the host's OAuth refresh lineage)")
@@ -283,8 +307,8 @@ def main(argv=None):
     if not args.backend:
         parser.error("auth requires --backend")
     backend = BACKENDS[args.backend]
-    if args.slot is not None and backend != "codex-cli":
-        parser.error("--slot applies to codex only")
+    if args.slot is not None and (backend not in SLOT_VOLUMES or args.slot >= len(SLOT_VOLUMES[backend])):
+        parser.error("--slot applies to codex (0-2) and claude (0-1) only")
     if (args.replace or args.import_host or args.from_env) and not args.login:
         parser.error("--replace, --import-host and --from-env apply to --login")
     if (args.import_host and backend != "codex-cli") or (args.from_env and backend != "claude-code-cli"):
@@ -294,14 +318,14 @@ def main(argv=None):
         if backend == "agy-cli":
             parser.error("AGY signs in with `python src/02_experiment.py docker agy-login` (and checks with agy-models)")
         if backend == "codex-cli" and args.slot is None:
-            parser.error("codex --login needs --slot 0 or --slot 1 (one device sign-in per call-gate slot)")
+            parser.error("codex --login needs --slot 0, 1 or 2 (one device sign-in per call-gate slot)")
         engine, image_id = prepared_engine(evidence_root, args.image, bind=False)
         if args.import_host:
             agent_auth.import_host_codex(engine, image_id, args.slot, replace=args.replace)
         elif backend == "codex-cli":
             agent_auth.login_codex(engine, image_id, args.slot, replace=args.replace)
         else:
-            agent_auth.login_claude(engine, image_id, replace=args.replace, from_env=args.from_env)
+            agent_auth.login_claude(engine, image_id, replace=args.replace, from_env=args.from_env, slot=args.slot)
     slots = [args.slot] if args.slot is not None else None
     if args.check:
         reports = check(backend, evidence_root, image=args.image, slots=slots, models=args.models)
@@ -311,7 +335,7 @@ def main(argv=None):
         authenticate(backend, evidence_root, image=args.image, verify=True, slots=slots)
     elif not (args.login or args.check):
         # The plain `docker auth --backend X`: load each saved credential in the worker, without inference.
-        authenticate(backend, evidence_root, image=args.image, slots=slots if slots is not None else (list(range(len(backend_volumes(backend)))) if backend == "codex-cli" else None))
+        authenticate(backend, evidence_root, image=args.image, slots=slots if slots is not None else (list(range(len(backend_volumes(backend)))) if backend in SLOT_VOLUMES else None))
 
 
 if __name__ == "__main__":

@@ -431,7 +431,9 @@ def test_clone_or_copy_falls_back_to_a_copy_and_never_replaces_a_file(tmp_path, 
 
 def test_campaign_records_and_checks_the_evidence_schema(tmp_path, monkeypatch):
     monkeypatch.setattr(campaign, "require_runtime_environment", lambda *args, **kwargs: {"fixture": "environment"})
-    monkeypatch.setattr(campaign, "load_execution_environment", lambda path: {"fixture": "execution-environment"})
+    from src.agent.auth import CLAUDE_SLOT_VOLUMES, CODEX_SLOT_VOLUMES
+    # Runtime evidence of the current `docker prepare`: the lanes variant's three Codex and two Claude Code slots.
+    monkeypatch.setattr(campaign, "load_execution_environment", lambda path: {"fixture": "execution-environment", "codex_slot_volumes": list(CODEX_SLOT_VOLUMES), "claude_slot_volumes": list(CLAUDE_SLOT_VOLUMES)})
     manifests = {}
     for config, data in (("small_scale.json", "outputs/small_scale_data"), ("harder_small_all.json", "data_harder")):
         if not (ROOT / data).is_dir():
@@ -441,6 +443,16 @@ def test_campaign_records_and_checks_the_evidence_schema(tmp_path, monkeypatch):
         manifests[config] = read(tmp_path / config / "campaign.json")
     small = manifests["small_scale.json"]
     assert small["solver_output_policy"] == OUTPUT_POLICY_32MIB and small["solver_evidence_schema"] == OUTPUT_BY_REFERENCE
+    # The lanes variant reaches the manifest (its guard replaces the paper's); the harder manifest keeps the paper's settings.
+    assert [lane["name"] for lane in small["lanes"]] == ["codex", "claude", "gemini"] and small["workers"] == 6 and small["resource_guard"]["max_rss_mib"] == 5120
+    assert campaign.validate(tmp_path / "small_scale.json")["protocol_id"] == small["protocol_id"]
+    harder = manifests["harder_small_all.json"]
+    assert harder["workers"] == 2 and harder["resource_guard"] == {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3}
+    assert not {"lanes", "solver_memory_policy"} & set(harder)
+    monkeypatch.setattr(campaign, "load_execution_environment", lambda path: {"fixture": "execution-environment", "codex_slot_volumes": list(CODEX_SLOT_VOLUMES[:2])})
+    with pytest.raises(RuntimeEnvironmentError, match="docker prepare"):  # evidence prepared before the third Codex and second Claude slot
+        campaign.initialize(tmp_path / "legacy-evidence", (ROOT / "outputs/small_scale_data").resolve(), ROOT / "configs/small_scale.json", None)
+    assert not (tmp_path / "legacy-evidence").exists()
     assert "solver_evidence_schema" not in manifests["harder_small_all.json"] and "solver_output_policy" not in manifests["harder_small_all.json"]
     root = tmp_path / "admission"
     root.mkdir()

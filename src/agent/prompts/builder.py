@@ -14,8 +14,14 @@ REFLECTION_OPENING = "You are making an attempt to solve the following problem."
 REFLECTION_CLOSING = "Keep the reflection concise and actionable."
 
 
-def budget_rule(solver_timeout: int, solver_threads: int) -> str:
-    return f"The harness limits the entire solver.py execution to {solver_timeout} seconds and numerical solvers to {solver_threads} thread(s). Design your algorithm and termination handling within this budget."
+def memory_budget(memory_mib: int) -> str:
+    return f"{memory_mib // 1024} GiB" if memory_mib % 1024 == 0 else f"{memory_mib} MiB"
+
+
+def budget_rule(solver_timeout: int, solver_threads: int, memory_mib: int | None = None) -> str:
+    """The solver budget sentence; with a memory budget (only the lanes variant's RuntimeSpec has one) one more clause."""
+    memory = "" if memory_mib is None else f" The solver.py process and its child processes share a resident-memory budget of {memory_budget(memory_mib)}; a run that exceeds it is stopped."
+    return f"The harness limits the entire solver.py execution to {solver_timeout} seconds and numerical solvers to {solver_threads} thread(s).{memory} Design your algorithm and termination handling within this budget."
 
 
 def reflection_instructions(objective_quality_failed: bool) -> list[str]:

@@ -104,6 +104,9 @@ def test_initialization_freezes_exact_inputs_and_stays_paused(tmp_path):
     queue = model_queue(manifest)
     assert [item["model"] for item in queue] == list(PAPER_MODELS)
     assert manifest["fresh_execution_pairs"] == 81 * len(queue)
+    # The paper config keeps the sequential two-worker run, its guard and no memory budget.
+    assert manifest["workers"] == 2 and manifest["resource_guard"] == {"sample_interval": 5, "max_cpu_percent": 250, "max_rss_mib": 2048, "min_free_percent": 10, "sustained_samples": 3}
+    assert not {"lanes", "solver_memory_policy"} & set(manifest) and "execution_policy" not in manifest["experiment_plan"]
     assert manifest["maximum_unique_generated_candidates"] == 81 * len(queue) * 19
     assert not (root / "runs").exists()
     assert (root / "controller/src/experiments/campaign.py").exists()

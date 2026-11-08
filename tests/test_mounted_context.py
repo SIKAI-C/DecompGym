@@ -28,7 +28,7 @@ from src.agent.docker_client import CLI_VERSIONS, DockerCliClient
 from src.agent.mounted_context import MAX_OUTPUT_JSON_BYTES, mounted_files, volume_contents
 from src.agent.prompts.builder import LOCATION_NOTE, PromptBuilder
 from src.agent.prompts.method import COMMON_REQUIREMENTS, DECOMPOSITION_POLICY, DECOMPOSITION_POLICY_V3, method_requirements
-from src.agent.prompts.mounted import (CONTEXT_DELIVERY_MOUNTED, DATA_START, HISTORY_DIR, INSTANCE_DIR, JUDGE_CONTEXT_DELIVERY, MOUNTED_WORKSPACE_POLICY, TASK_HEADINGS, TASK_LEAD,
+from src.agent.prompts.mounted import (CONTEXT_DELIVERY_MOUNTED, DATA_START, HISTORY_DIR, HISTORY_USE, INSTANCE_DIR, JUDGE_CONTEXT_DELIVERY, MOUNTED_WORKSPACE_POLICY, TASK_HEADINGS, TASK_LEAD,
                                        TASK_RULES, mount_location, task_sections)
 from src.agent.specs import MOUNT_LAYOUT, REVIEW_LAYOUT
 from src.agent.prompts.policy import record_workspace_prompt
@@ -187,6 +187,13 @@ def test_part_one_states_the_one_writable_target_and_the_runtime_paths(tmp_path,
             assert f"  - {item.path} ({item.size} bytes): " in text
         assert ("No files from previous attempts are provided." in text) == (len(context) == 1)
         assert ("(the attempt under review)" in text) == (target == "debug.md")
+        # Only a regeneration with history is told what the history is (requirements item 25).
+        assert (HISTORY_USE in text) == (target == "solver.py" and len(context) > 1)
+        # Every backend and call is told that nothing can be run here and what it has to write (requirements item 28);
+        # only Antigravity, whose denied command tool ends its run, is told to use its file tools.
+        assert ("This workspace has no gurobipy, NumPy or other solver packages, so solver.py cannot be run or tested here; the harness runs it later in its own "
+                f"environment, where gurobipy and NumPy are available. Here you only need to read the files listed above and write /work/{target}.") in text
+        assert ("Read and write files with your file tools; this workspace does not allow command execution." in text) == (backend == "agy-cli")
         assert ("Do not use memory, skills, subagents or prior conversations." in text) == (backend == "agy-cli")
         # The boundary sentence names task files only: the container also holds the OS and the agent CLI's installation.
         assert (f"No other task files are provided: apart from the files listed above and /work/{target}, the workspace contains no data, "

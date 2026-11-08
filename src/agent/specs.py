@@ -247,10 +247,14 @@ RUNTIME_LOCATION = "separate-edit-runtime-v1"  # src.agent.prompts.snapshot.PROM
 class RuntimeSpec:
     """The paired protocol's run-time contract: solver.py runs later in its own attempt directory (its cwd), reads
     ../../data.json and writes output.json there, within `timeout` seconds and `threads` solver threads; the harness
-    reads output.json under `output_policy` (src.experiments.sandbox.OUTPUT_LIMITS: None = 4 MiB). No publication API."""
+    reads output.json under `output_policy` (src.experiments.sandbox.OUTPUT_LIMITS: None = 4 MiB). No publication API.
+    `memory_mib`, a budget like the time and threads, is the resident-memory limit of the solver and its child
+    processes that the harness enforces (src.experiments.sandbox.MEMORY_POLICIES); None, the paper's and every config's
+    but the lanes variant's, states none and renders exactly the earlier sentences."""
     timeout: int = 60
     threads: int = 1
     output_policy: str | None = None
+    memory_mib: int | None = None
     id: ClassVar[str] = RUNTIME_LOCATION
     input_path: ClassVar[str] = "../../data.json"  # relative to the run's working directory
     output_name: ClassVar[str] = "output.json"  # in the run's working directory
@@ -259,8 +263,8 @@ class RuntimeSpec:
     def __post_init__(self):
         from src.experiments.sandbox import OUTPUT_LIMITS
 
-        if self.timeout <= 0 or self.threads < 1 or self.output_policy not in OUTPUT_LIMITS:
-            raise ValueError(f"Invalid runtime: timeout {self.timeout}, threads {self.threads}, output policy {self.output_policy!r}")
+        if self.timeout <= 0 or self.threads < 1 or self.output_policy not in OUTPUT_LIMITS or not (self.memory_mib is None or (type(self.memory_mib) is int and self.memory_mib > 0)):
+            raise ValueError(f"Invalid runtime: timeout {self.timeout}, threads {self.threads}, output policy {self.output_policy!r}, memory {self.memory_mib!r}")
 
     @property
     def contract(self) -> tuple:
@@ -288,7 +292,7 @@ class RuntimeSpec:
         """The harness rules closing Part 2 "Rules" (also appended to the pasted generation prompt)."""
         from src.agent.prompts.builder import STANDALONE_RULE, budget_rule
 
-        return STANDALONE_RULE + "\n" + budget_rule(self.timeout, self.threads) + ("\n" + self.publication if self.publication else "")
+        return STANDALONE_RULE + "\n" + budget_rule(self.timeout, self.threads, self.memory_mib) + ("\n" + self.publication if self.publication else "")
 
 
 DEFAULT_RUNTIME = RuntimeSpec()

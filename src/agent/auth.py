@@ -9,7 +9,9 @@ Codex tokens back when the CLI exits. Everything else is fixed here, on the host
   `docker auth --login` (src/experiments/agent_auth.py). AGY receives only its keyring passphrase.
 - Volumes. Codex has one auth volume per call-gate slot (CODEX_SLOT_VOLUMES), each with its own device sign-in, so two
   running Codex containers never share one OAuth refresh lineage. Slot 0 is the single-volume mode: the call gate's
-  limit-1 fallback and every call outside a campaign use it.
+  limit-1 fallback and every call outside a campaign use it. Claude Code has one volume per slot as well
+  (CLAUDE_SLOT_VOLUMES; the same `claude setup-token` token may be stored in each): only an execution variant with two
+  Claude calls at a time (src.experiments.execution_policy.LANES_EXECUTION) uses slot 1.
 - Locks. `volume_lock(volume)` is one exclusive host lock per auth volume (a file in the private runtime state
   directory shared by all worktrees). It is held for every agent call, recovery, login, check and verify that mounts
   the volume, and released on exception, timeout and cancel. Acquiring it again in the thread that holds it raises
@@ -37,9 +39,14 @@ from src.experiments.locks import state_root
 
 
 AUTH_POLICY = "volume-only-host-locked-v1"
-# Slot 0 keeps the established Codex volume name (so the single-file paper path's records are unchanged); slot 1 is new.
-CODEX_SLOT_VOLUMES = ("decompbench-v3-codex-auth", "decompbench-v3-codex-auth-slot1")
-AUTH_VOLUMES = {"codex-cli": CODEX_SLOT_VOLUMES[0], "claude-code-cli": "decompbench-v2-claude-auth", "agy-cli": "decompbench-agy-native-keyring-v1"}
+# Slot 0 keeps the established Codex volume name (so the single-file paper path's records are unchanged); slots 1 and 2
+# are later (slot 2 only for the three Codex calls of the lanes variant).
+CODEX_SLOT_VOLUMES = ("decompbench-v3-codex-auth", "decompbench-v3-codex-auth-slot1", "decompbench-v3-codex-auth-slot2")
+# Slot 0 is the established Claude Code volume; slot 1 is used only by the lanes variant's second Claude call.
+CLAUDE_SLOT_VOLUMES = ("decompbench-v2-claude-auth", "decompbench-v2-claude-auth-slot1")
+AUTH_VOLUMES = {"codex-cli": CODEX_SLOT_VOLUMES[0], "claude-code-cli": CLAUDE_SLOT_VOLUMES[0], "agy-cli": "decompbench-agy-native-keyring-v1"}
+# The backends whose calls are bound to call-gate slots, each slot with its own auth volume.
+SLOT_VOLUMES = {"codex-cli": CODEX_SLOT_VOLUMES, "claude-code-cli": CLAUDE_SLOT_VOLUMES}
 MOUNT_POINTS = {"codex-cli": "/auth", "claude-code-cli": "/auth", "agy-cli": "/auth/keyrings"}
 VOLUME_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 HELPER_LABEL = "v2-auth-helper"  # io.decompbench.runtime label of the one-off login/check containers
@@ -55,25 +62,33 @@ REPAIR = {"codex-cli": "python src/02_experiment.py docker auth --backend codex 
 
 
 def auth_volume(backend: str, slot: int | None = None) -> str:
-    """The auth volume of a backend; for Codex, the volume of call-gate slot `slot` (None: slot 0)."""
-    if backend != "codex-cli":
+    """The auth volume of a backend; for Codex and Claude Code, the volume of call-gate slot `slot` (None: slot 0)."""
+    if backend not in SLOT_VOLUMES:
         return AUTH_VOLUMES[backend]
-    index = 0 if slot is None else slot
-    if not isinstance(index, int) or not 0 <= index < len(CODEX_SLOT_VOLUMES):
-        raise ValueError(f"Unknown Codex auth slot: {slot!r}")
-    return CODEX_SLOT_VOLUMES[index]
+    volumes, index = SLOT_VOLUMES[backend], 0 if slot is None else slot
+    if not isinstance(index, int) or not 0 <= index < len(volumes):
+        raise ValueError(f"Unknown {backend} auth slot: {slot!r}")
+    return volumes[index]
 
 
 def backend_volumes(backend: str) -> tuple[str, ...]:
-    return CODEX_SLOT_VOLUMES if backend == "codex-cli" else (AUTH_VOLUMES[backend],)
+    return SLOT_VOLUMES.get(backend, (AUTH_VOLUMES[backend],))
 
 
 def volume_slot(backend: str, volume: str) -> int | None:
-    return CODEX_SLOT_VOLUMES.index(volume) if backend == "codex-cli" and volume in CODEX_SLOT_VOLUMES else None
+    """The call-gate slot of an auth volume (None outside the backend's slots). Claude Code's slot 0 is its single
+    established volume and stays None, as in every record written before Claude Code had a second slot."""
+    volumes = SLOT_VOLUMES.get(backend, ())
+    if volume not in volumes:
+        return None
+    index = volumes.index(volume)
+    return None if backend == "claude-code-cli" and index == 0 else index
 
 
 def repair_command(backend: str, volume: str | None = None) -> str:
     slot = volume_slot(backend, volume) if volume else None
+    if backend == "claude-code-cli" and slot is not None:
+        return REPAIR[backend].replace("--backend claude", f"--backend claude --slot {slot}")
     return REPAIR[backend].format(slot=0 if slot is None else slot)
 
 

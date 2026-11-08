@@ -145,12 +145,15 @@ class PairedRunner:
         self.call_lock = call_lock
         self.run_solver = solver_executor
         self.mode = "plain"
-        # What the agent writes and the run-time contract it is told (src.agent.specs); the output readback policy is
-        # the executor's (NativeSandboxExecutor.output_policy).
+        # What the agent writes and the run-time contract it is told (src.agent.specs); the output readback policy and
+        # the memory budget are the executor's (NativeSandboxExecutor.output_policy, .memory_limit_mib; None for the paper).
         self.delivery = delivery or SINGLE_FILE_DELIVERY
-        self.runtime_spec = runtime_spec or RuntimeSpec(solver_timeout, solver_threads, getattr(solver_executor, "output_policy", None))
+        memory = getattr(solver_executor, "memory_limit_mib", None)
+        self.runtime_spec = runtime_spec or RuntimeSpec(solver_timeout, solver_threads, getattr(solver_executor, "output_policy", None), memory)
         if (self.runtime_spec.timeout, self.runtime_spec.threads) != (solver_timeout, solver_threads):
             raise ValueError("The runtime contract's budget differs from the solver budget")
+        if self.runtime_spec.memory_mib != memory:
+            raise ValueError("The runtime contract's memory budget differs from the executor's")
         # How a candidate runs and is scored; the paper's native policy calls run_solver (also when a test replaces it).
         # The executor's evidence schema (sandbox.EVIDENCE_SCHEMAS; None for the paper and for plain callables) decides
         # how execution.json stores the output and whether the shared first attempt's output.json is cloned.
@@ -159,6 +162,8 @@ class PairedRunner:
                                                                  cooldown_seconds=solver_cooldown_seconds,
                                                                  **({"evidence_schema": self.evidence_schema, "output_limit": solver_executor.output_limit} if self.evidence_schema else {}))
         self.policy.check(delivery=self.delivery, runtime=self.runtime_spec)
+        if memory is not None and self.policy.id == SMALL_SCALE_NATIVE_POLICY:
+            raise ValueError("The paper's execution policy has no memory budget; a budgeted executor needs its reviewed variant policy")
         if any(not isinstance(name, str) or not NESTED_NAME.fullmatch(name) for name in (*self.delivery.nested, *self.policy.nested)):
             raise ValueError("Declared attempt subdirectories must be plain names")
         self.task_sections = task_sections or PROSE_SECTIONS
@@ -166,8 +171,9 @@ class PairedRunner:
         self.audit_target = audit_target or PAPER_AUDIT_TARGET
         # A pasted context is the paper's: its prompt.txt prose, the runtime note and no author-side audit rule. Other
         # sections, runtime contracts and shared method rules need the structured (mounted) prompt.
-        if not self.context.mounted and (self.task_sections.id != PROSE_SECTIONS.id or self.runtime_spec.contract != DEFAULT_RUNTIME.contract or any(e.author for e in self.audit_extensions)):
-            raise ValueError("A pasted context renders the paper's prompt.txt and runtime note; this section adapter, runtime contract or method rule needs the mounted-files prompt")
+        if not self.context.mounted and (self.task_sections.id != PROSE_SECTIONS.id or self.runtime_spec.contract != DEFAULT_RUNTIME.contract or any(e.author for e in self.audit_extensions)
+                                         or self.runtime_spec.memory_mib is not None):
+            raise ValueError("A pasted context renders the paper's prompt.txt and runtime note; this section adapter, runtime contract, memory budget or method rule needs the mounted-files prompt")
 
     def spec_record(self) -> dict:
         """The ids of every non-default spec of this runner, recorded in the case identity and in each request (empty
@@ -211,7 +217,8 @@ class PairedRunner:
         if step == "llm_verifier" and self.judge_transport is not None and getattr(client, "context_layout", None) != self.judge_layout:
             raise ProtocolError("The judge client's mounted layout differs from the campaign's")
         mounted = step in ("agent", "reflection") and self.context_delivery is not None
-        if mounted and (getattr(client, "context_layout", MOUNT_LAYOUT) != self.context.layout or getattr(client, "runtime_spec", DEFAULT_RUNTIME).contract != self.runtime_spec.contract):
+        runtime = getattr(client, "runtime_spec", DEFAULT_RUNTIME)
+        if mounted and (getattr(client, "context_layout", MOUNT_LAYOUT) != self.context.layout or runtime.contract != self.runtime_spec.contract or runtime.memory_mib != self.runtime_spec.memory_mib):
             raise ProtocolError(f"The {step} client's mounted layout or runtime contract differs from the campaign's")
         if step == "agent" and getattr(client, "delivery", SINGLE_FILE_DELIVERY) != self.delivery:
             raise ProtocolError(f"The {step} client's delivery differs from the campaign's")
@@ -375,13 +382,14 @@ class PairedRunner:
         if (self.mode != "reflection" or idx == 1) and any(Path(path).resolve().is_relative_to(attempt_dir.parent.resolve()) for path in context):
             raise ProtocolError("A first attempt or a plain regeneration receives no file of an earlier attempt")
         generation = self.edit(self.client, attempt_dir / "solver.py", self.generation_prompt(instance), context, "agent", data_context=data_record)
-        metrics = {"generation": generation}
+        metrics, queued = {"generation": generation}, 0.0
         if not generation["ok"]:
             result = AttemptResult(idx, "agent_failed", False, False, None, self.policy.reference_objective(gold), None, [generation["error"] or "Model omitted the requested solver"], metrics=metrics)
         else:
             case = AttemptCase(attempt_dir, instance, canonical, case_identity["inputs"]["data.json"], problem)
             execution = self.policy.execute(case, delivery=self.delivery, runtime=self.runtime_spec, stage=lambda phase: self.on_stage(mode=self.mode, attempt=idx, phase=phase))
             metrics.update(execution.metrics)
+            queued = execution.queue_seconds
 
             def audit():
                 """The method judge (pasted source review of the delivered sources); the policy decides when it runs."""
@@ -412,6 +420,8 @@ class PairedRunner:
             ExecLogger.append_llm_verifier(lines, evaluation.method_notes)
             ExecLogger.write_exec_log(attempt_dir, lines)
         metrics["total_seconds"] = time.perf_counter() - started
+        if queued:  # this call's solver-lock queue time is not attempt time (the lanes policy records it as solver_queue_seconds)
+            metrics["total_seconds"] = max(0.0, metrics["total_seconds"] - queued)
         artifacts = {name: digest(attempt_dir / name) for name in ("solver.py", "output.json", "alg_verifier.md", "exec.log") if (attempt_dir / name).exists()}
         artifacts.update(self.nested_artifacts(attempt_dir))  # declared nested sources and evidence (none in the paper layout)
         save(attempt_dir / "score_receipt.json", {"result": result.to_dict(), "artifact_sha256": artifacts})
@@ -572,7 +582,7 @@ class PairedRunner:
 
     def run_pair(self, source, root):
         """The caller owns this (model, case) pair; policies never run concurrently."""
-        from src.experiments.completion import TERMINAL_RECEIPT, TerminalCompletionError, approved_receipts, has_terminal_receipt, load_policy_summary, policy_is_complete
+        from src.experiments.completion import TERMINAL_RECEIPT, TerminalCompletionError, approved_receipts, case_settings, has_terminal_receipt, load_policy_summary, policy_is_complete
         saved = {mode: root / mode / self.suite / self.problems[0] / source.name for mode in ("plain", "reflection")}
         campaign_root = root.parent.parent if root.parent.name == "runs" and (root.parent.parent / "campaign.json").exists() else None
         try:
@@ -582,11 +592,11 @@ class PairedRunner:
         if any(has_terminal_receipt(directory) or (campaign_root and str((directory / TERMINAL_RECEIPT).relative_to(campaign_root)) in approvals) for directory in saved.values()):
             try:
                 summaries = {mode: load_policy_summary(directory, campaign_root=campaign_root, approvals=approvals) for mode, directory in saved.items()}
-                # A closed pair is reused only under the contract it was judged with (an absent field is the paper's v2).
-                if any((read(directory / "identity.json") or {}).get("decomposition_contract", DECOMPOSITION_POLICY) != self.decomposition_contract
-                       or (read(directory / "identity.json") or {}).get("context_delivery") != self.context_delivery
-                       or (read(directory / "identity.json") or {}).get("judge_context_delivery") != self.judge_context_delivery
-                       or (read(directory / "identity.json") or {}).get("specs", {}) != self.spec_record() for directory in saved.values()):
+                # A closed pair is reused only under the contract, deliveries and specs it was judged with (an absent
+                # field is the paper's), the predicate of the campaign's own completion checks.
+                expected = case_settings({"decomposition_contract": self.decomposition_contract, "context_delivery": self.context_delivery,
+                                          "judge_context_delivery": self.judge_context_delivery}, self.spec_record())
+                if any(case_settings(read(directory / "identity.json") or {}) != expected for directory in saved.values()):
                     raise ProtocolError("Case protocol changed")
                 if all(policy_is_complete(summary, self.max_attempts, self.protocol_id) for summary in summaries.values()):
                     return summaries

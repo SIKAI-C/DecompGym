@@ -8,7 +8,7 @@ the container is gone. No operation submits a model prompt. Credentials enter a 
   so the container never shares the host's OAuth refresh lineage. `--import-host` copies ~/.codex/auth.json instead, as
   an explicitly requested emergency path recorded with origin host-copy.
 - Claude Code: `--login` stores a `claude setup-token` token from a hidden prompt (or, with `--from-env`, from
-  CLAUDE_CODE_OAUTH_TOKEN of this shell).
+  CLAUDE_CODE_OAUTH_TOKEN of this shell), in slot 0's volume or, with `--slot 1`, in the second slot's volume.
 - AGY keeps `docker agy-login` / `docker agy-models`.
 
 A check reports one status per auth volume:
@@ -33,7 +33,7 @@ import sys
 import time
 import uuid
 
-from src.agent.auth import AUTH_POLICY, HELPER_LABEL, MOUNT_POINTS, auth_volume, backend_volumes, repair_command, require_exclusive_volume, volume_lock, volume_slot
+from src.agent.auth import AUTH_POLICY, HELPER_LABEL, MOUNT_POINTS, SLOT_VOLUMES, auth_volume, backend_volumes, repair_command, require_exclusive_volume, volume_lock, volume_slot
 from src.agent.safe_artifacts import read_regular_text
 from src.experiments.environment import RuntimeEnvironmentError
 from src.utils.errors import InfrastructureError
@@ -144,8 +144,8 @@ def classify(backend, report):
 
 
 def check_backend(engine, image_id, backend, *, slots=None, models=(), passphrase=None, timeout=60):
-    """One classified report per auth volume of `backend` (Codex: the given slots, default all)."""
-    if backend == "codex-cli":
+    """One classified report per auth volume of `backend` (Codex and Claude Code: the given slots, default all)."""
+    if backend in SLOT_VOLUMES:
         volumes = [auth_volume(backend, slot) for slot in (range(len(backend_volumes(backend))) if slots is None else slots)]
     else:
         volumes = list(backend_volumes(backend))
@@ -186,14 +186,16 @@ def raise_for(reports):
     raise InfrastructureError(f"Authentication check could not reach the provider: {lines}")
 
 
-def require_backend_authentication(engine, image_id, backends, *, models, codex_slots, agy_passphrase, record_dir):
-    """Campaign admission: check every queued backend and the Codex judge; refuse to start unless all pass."""
+def require_backend_authentication(engine, image_id, backends, *, models, codex_slots, agy_passphrase, record_dir, claude_slots=None):
+    """Campaign admission: check every queued backend and the Codex judge; refuse to start unless all pass. Claude Code
+    is checked in its first `claude_slots` slots (None: its single slot-0 volume, recorded as before)."""
     reports = []
     for backend in sorted(set(backends)):
-        slots = range(codex_slots) if backend == "codex-cli" else None
+        slots = range(codex_slots) if backend == "codex-cli" else range(claude_slots or 1) if backend == "claude-code-cli" else None
         reports += check_backend(engine, image_id, backend, slots=slots, models=models.get(backend, ()), passphrase=agy_passphrase)
     record_dir.mkdir(parents=True, exist_ok=True)
-    (record_dir / f"{time.time_ns()}.json").write_text(json.dumps({"auth_policy": AUTH_POLICY, "codex_slots_checked": codex_slots, "reports": reports}, indent=2) + "\n")
+    checked = {"auth_policy": AUTH_POLICY, "codex_slots_checked": codex_slots} | ({"claude_slots_checked": claude_slots} if claude_slots is not None else {})
+    (record_dir / f"{time.time_ns()}.json").write_text(json.dumps(checked | {"reports": reports}, indent=2) + "\n")
     raise_for(reports)
     return {report["volume"]: {key: report.get(key) for key in ("backend", "slot", "status", "origin", "generation", "warnings", "checked_at")}
             | {"created_at": report.get("created_at") or report.get("stored_at")} for report in reports}
@@ -249,8 +251,9 @@ def import_host_codex(engine, image_id, slot, *, replace=False):
     print(json.dumps({key: value.get(key) for key in ("backend", "origin", "created_at", "replaced_file")} | {"slot": slot, "volume": volume}, indent=2))
 
 
-def login_claude(engine, image_id, *, replace=False, from_env=False):
-    """Store a Claude Code setup token (hidden prompt, or CLAUDE_CODE_OAUTH_TOKEN with --from-env)."""
+def login_claude(engine, image_id, *, replace=False, from_env=False, slot=None):
+    """Store a Claude Code setup token (hidden prompt, or CLAUDE_CODE_OAUTH_TOKEN with --from-env) in the volume of call-gate
+    slot `slot` (None: slot 0, the single-volume mode)."""
     if from_env:
         token, origin = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", ""), "launch-environment-import"
         if not token:
@@ -260,10 +263,11 @@ def login_claude(engine, image_id, *, replace=False, from_env=False):
             raise RuntimeError("Run this in your own terminal for the hidden token prompt")
         print("Create a long-lived token on the host with `claude setup-token` (a separate token; your own Claude login is unchanged), then paste it here.", flush=True)
         token, origin = getpass.getpass("Claude setup token (hidden): ").strip(), "setup-token-prompt"
-    volume = auth_volume("claude-code-cli")
+    volume = auth_volume("claude-code-cli", slot)
     ensure_auth_volume(engine, "claude-code-cli", volume, create=True)
     value = run_helper(engine, image_id, backend="claude-code-cli", volume=volume, mode="claude-store", network="none",
                        request={"token": token, "replace": replace, "origin": origin, "volume": volume, "policy": AUTH_POLICY})
+    selected = f" --slot {slot}" if slot else ""
     if not value.get("stored"):
-        raise RuntimeError(not_stored("The Claude token", value, "docker auth --backend claude --check"))
-    print(json.dumps({key: value.get(key) for key in ("backend", "origin", "created_at", "replaced_file")} | {"volume": volume}, indent=2))
+        raise RuntimeError(not_stored("The Claude token", value, f"docker auth --backend claude{selected} --check"))
+    print(json.dumps({key: value.get(key) for key in ("backend", "origin", "created_at", "replaced_file")} | ({"slot": slot} if slot else {}) | {"volume": volume}, indent=2))

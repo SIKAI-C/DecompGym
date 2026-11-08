@@ -72,6 +72,8 @@ def test_the_mounted_judge_reads_only_the_sources_under_review_with_the_unchange
     assert "physical line" not in prompt
     assert "  - /work/review/attempt_01/solver.py (18 bytes): the solver.py delivered by attempt 1 (under review)." in prompt
     assert "Read every file listed above completely before writing alg_verifier.md." in prompt
+    assert ("This workspace has no gurobipy, NumPy or other solver packages, so solver.py cannot be run or tested here. Here you only need to read the files "
+            "listed above and write /work/alg_verifier.md.") in prompt and "runs it later" not in prompt.split(REVIEW_HEADING)[0]
     assert "CONTENT-" not in prompt and "BEGIN CONTEXT" not in prompt and "/work/instance" not in prompt and "data.json" not in prompt.split(REVIEW_HEADING)[0]
     evidence = read(tmp_path / "call/llm_verifier_context.json")
     assert evidence["writable_target"] == "/work/alg_verifier.md" and evidence["read_only_mounts"] == [REVIEW_DIR] and evidence["layout"] == REVIEW_LAYOUT.id

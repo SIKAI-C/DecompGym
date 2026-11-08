@@ -88,6 +88,16 @@ def approved_receipts(root: Path) -> dict:
     return approvals
 
 
+def case_settings(record: dict, specs: dict | None = None) -> dict:
+    """The settings under which a closed policy is reused, from a case identity.json or, with the expected `specs`, from
+    a campaign's prompt protocol: the method contract (absent: the paper's), the context deliveries of the author and the
+    judge, and the ids of the runner's non-default specs (PairedRunner.spec_record; absent: none). One predicate for
+    the campaign's scheduling and final scan, its CLI status, the dashboard and the runner's reuse of a closed pair."""
+    from src.agent.prompts.method import DECOMPOSITION_POLICY
+    return {"decomposition_contract": record.get("decomposition_contract", DECOMPOSITION_POLICY), "context_delivery": record.get("context_delivery"),
+            "judge_context_delivery": record.get("judge_context_delivery"), "specs": record.get("specs", {}) if specs is None else specs}
+
+
 def policy_is_complete(summary: dict, max_attempts: int, protocol: str | None = None) -> bool:
     if not summary or not summary.get("complete"):
         return False

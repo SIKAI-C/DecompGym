@@ -74,7 +74,7 @@ class DockerCliClient:
         self.runtime, self.evidence_root = runtime, evidence_root
         self.effort, self.timeout, self.role = effort, timeout, role
         self.credential_provider = credential_provider
-        # The call-gate slot whose Codex auth volume this call uses (None: slot 0); see bind_auth_slot.
+        # The call-gate slot whose Codex or Claude Code auth volume this call uses (None: slot 0); see bind_auth_slot.
         self.auth_slot = None
         # None: the paper's pasted context (compose_prompt). CONTEXT_DELIVERY_MOUNTED: read-only files in the workspace,
         # placed by `context_layout` and described with the run-time contract of `runtime_spec` (src.agent.specs).
@@ -107,7 +107,7 @@ class DockerCliClient:
 
     @contextmanager
     def bind_auth_slot(self, slot):
-        """Use the Codex auth volume of call-gate slot `slot` while the gate holds that slot."""
+        """Use the auth volume of call-gate slot `slot` (Codex; Claude Code in the lanes variant) while the gate holds that slot."""
         previous, self.auth_slot = self.auth_slot, slot
         try:
             yield
