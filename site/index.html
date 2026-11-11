@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DecompGym</title>
+<meta name="description" content="DecompGym: benchmarking LLM agents on designing decomposition algorithms (Benders decomposition and column generation).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="data.js"></script>
+<style>
+:root{
+  --ink:#10201f; --muted:#4f605e; --faint:#5f706e; --line:#e2e9e8; --grid:#dcefed;
+  --teal:#0fa3a3; --teal-dark:#0b7f80; --mint:#6ff0cf; --mint-soft:#e6fbf5;
+  --bg:#ffffff; --panel:#f7faf9; --chip:#eef3f2; --dark:#1d2b2a;
+  --radius:14px; --stick:120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 Inter,system-ui,-apple-system,Segoe UI,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--teal-dark)}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:6px}
+.wrap{max-width:1280px;margin:0 auto;padding:0 32px}
+/* nav */
+nav.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav.top .wrap{display:flex;align-items:center;gap:28px;height:58px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;font-size:17px;color:var(--ink);text-decoration:none}
+nav.top .links{display:flex;gap:22px;font-size:14px}
+nav.top .links a{color:var(--muted);text-decoration:none}
+nav.top .links a:hover{color:var(--ink)}
+nav.top .right{margin-left:auto;display:flex;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:8px 16px;font-weight:600;font-size:14px;text-decoration:none;border:1px solid transparent;cursor:pointer;font-family:inherit;background:none;color:var(--ink);white-space:nowrap}
+.btn.sm{padding:5px 12px;font-size:13px}
+.btn.mint{background:var(--mint);color:#08302b}
+.btn.mint:hover{filter:brightness(.96)}
+.btn.ghost{border-color:var(--line)}
+.btn.ghost:hover{background:var(--chip)}
+.btn.soft{background:var(--chip)}
+.btn.soft:hover{background:#e3ebea}
+.btn.link{padding:4px 6px;color:var(--teal-dark);font-weight:600}
+/* hero */
+header.hero{padding:60px 0 28px}
+.eyebrow{font-size:13px;font-weight:600;color:var(--teal-dark);letter-spacing:.06em;text-transform:uppercase}
+h1{font-size:46px;line-height:1.08;letter-spacing:-.025em;margin:10px 0 14px;max-width:900px}
+.lede{font-size:18px;color:var(--muted);max-width:780px;margin:0 0 24px}
+.hero .actions{display:flex;flex-wrap:wrap;gap:10px}
+.statlab{margin-top:36px;font-size:12px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:8px}
+.stat{border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+.stat .v{font-size:30px;font-weight:700;letter-spacing:-.02em}
+.stat .v small{font-size:15px;font-weight:600;color:var(--muted);margin-left:4px}
+.stat .k{color:var(--muted);font-size:13.5px}
+/* focus bar */
+.focus{position:sticky;top:58px;z-index:25;background:rgba(255,255,255,.97);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.focus .wrap{display:flex;flex-direction:column;gap:8px;padding-top:10px;padding-bottom:10px}
+.focus .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
+.focus .grp{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lab{font-size:12px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.summary{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.summary b{color:var(--ink)}
+.ftoggle{display:none}
+.seg{display:inline-flex;background:var(--chip);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;font:inherit;font-size:13px;font-weight:500;padding:5px 12px;border-radius:999px;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--dark);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:500;cursor:pointer;color:var(--muted);font-family:inherit}
+.chip[aria-pressed=true]{border-color:var(--teal);background:var(--mint-soft);color:#075e5e}
+.chip .m{font-size:10px;opacity:.75;margin-right:3px}
+.search{border:1px solid #cfd8d7;border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;width:170px}
+select.sel{border:1px solid #cfd8d7;border-radius:999px;padding:5px 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink)}
+.pop{position:relative}
+.popbox{display:none;position:absolute;top:calc(100% + 8px);left:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(16,32,31,.12);padding:14px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;z-index:40}
+.pop.open .popbox{display:block}
+.popbox h5{margin:10px 0 4px;font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.popbox label{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:3px 0;cursor:pointer}
+.popbox .quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.sw{width:11px;height:11px;border-radius:3px;flex:none;display:inline-block}
+/* sections */
+section{padding:56px 0 8px;scroll-margin-top:var(--stick)}
+section h2{font-size:30px;letter-spacing:-.02em;margin:0 0 6px}
+section .sub{color:var(--muted);max-width:840px;margin:0 0 24px}
+/* figure card */
+.fig{display:grid;grid-template-columns:minmax(0,1fr) 224px;gap:18px;margin-bottom:24px}
+.fig.closed{grid-template-columns:minmax(0,1fr)}
+.fig.closed .settings{display:none}
+.plotcard{min-width:0}
+.plothead{display:flex;align-items:flex-start;gap:12px}
+.plothead h3{font-size:20px;margin:0;letter-spacing:-.01em;flex:1}
+.iconbtn{border:1px solid var(--line);background:#fff;border-radius:8px;min-width:30px;height:30px;display:inline-grid;place-items:center;cursor:pointer;color:var(--muted);font:inherit;font-size:13px;padding:0 8px}
+.iconbtn:hover{background:var(--chip)}
+.plotmeta{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:10px 0 0;font-size:13.5px}
+.plotmeta .yname{font-weight:600}
+.plotmeta .count{color:var(--faint)}
+.plotbody{display:grid;grid-template-columns:minmax(0,1fr) 172px;gap:8px}
+.chartbox{position:relative;min-width:0}
+.chart{height:470px;min-width:0}
+.emptyov{position:absolute;inset:0;display:none;place-items:center;text-align:center;background:rgba(255,255,255,.92);color:var(--muted);font-size:14px;z-index:2}
+.emptyov.on{display:grid}
+.efftip{position:absolute;z-index:3;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(16,32,31,.12);padding:8px 10px;font-size:12.5px;display:none;max-width:280px}
+.legend{font-size:13px;padding-top:2px;max-height:470px;overflow:auto}
+.legend .lt{font-weight:600;margin-bottom:4px}
+.legend .row{display:flex;align-items:center;border-radius:6px}
+.legend .row:hover{background:var(--chip)}
+.legend .it{display:flex;align-items:center;gap:7px;padding:3px 4px;cursor:pointer;user-select:none;line-height:1.3;border:0;background:none;font:inherit;color:inherit;text-align:left;flex:1;min-width:0}
+.legend .it[aria-pressed=false]{opacity:.38}
+.legend .it.nomatch{opacity:.2}
+.legend .only{border:0;background:none;font:inherit;font-size:11px;color:var(--teal-dark);font-weight:600;cursor:pointer;padding:2px 6px;visibility:hidden}
+.legend .row:hover .only,.legend .row:focus-within .only{visibility:visible}
+.legend .hint{color:var(--faint);font-size:11.5px;margin-top:8px}
+.plotfoot{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.plotfoot .credit{font-size:12px;color:var(--faint);font-weight:600;letter-spacing:.04em;margin-right:auto}
+.note{font-size:12.5px;color:var(--faint);margin-top:6px}
+.settings{border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;align-self:start;position:sticky;top:calc(var(--stick) + 12px)}
+.settings .sh{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:6px}
+.settings .sh b{font-size:15px}
+.settings h4{font-size:13.5px;margin:12px 0 5px}
+.settings label{display:flex;align-items:center;gap:9px;font-size:14px;padding:2px 0;cursor:pointer}
+.settings input[type=radio]{accent-color:var(--teal);width:16px;height:16px;margin:0}
+.toggle{position:relative;width:34px;height:20px;flex:none}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle span{position:absolute;inset:0;background:#cfd8d7;border-radius:20px;transition:.2s}
+.toggle span:before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+span{background:var(--teal)}
+.toggle input:checked+span:before{transform:translateX(14px)}
+.toggle input:focus-visible+span{outline:2px solid var(--teal);outline-offset:2px}
+.settings .def{font-size:12.5px;color:var(--muted);background:var(--panel);border-radius:8px;padding:10px 12px;margin-top:12px}
+/* compare */
+.cards2{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.cards2 .card.span2{grid-column:span 2}
+@media (max-width:1080px){.cards2{grid-template-columns:1fr 1fr}.cards2 .card.span2{grid-column:1/-1}}
+.card{border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px 8px;min-width:0}
+.card.wide{grid-column:1/-1}
+.card h4{margin:0;font-size:17px}
+.card .ch{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.card .cs{color:var(--faint);font-size:12.5px;margin-bottom:2px}
+.card .bars{height:330px}
+.better{font-size:11.5px;color:var(--teal-dark);font-weight:600}
+.ktabs{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+/* table */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(90deg,#fff 30%,rgba(255,255,255,0)) left/40px 100% no-repeat local,linear-gradient(270deg,#fff 30%,rgba(255,255,255,0)) right/40px 100% no-repeat local,radial-gradient(farthest-side at 100% 50%,rgba(16,32,31,.14),transparent) right/14px 100% no-repeat scroll}
+table.lb td:nth-child(2),table.lb th:nth-child(2){position:sticky;left:0;background:#fff;z-index:1}
+table.lb th:nth-child(2){background:var(--panel)}
+.mname button{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.mname button:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
+table.lb{width:100%;border-collapse:collapse;font-size:14px;min-width:820px}
+table.lb th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);text-align:right;padding:0;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel)}
+table.lb th button{all:unset;cursor:pointer;display:block;padding:12px 14px;width:100%;box-sizing:border-box}
+table.lb th button:focus-visible{outline:2px solid var(--teal)}
+table.lb th:nth-child(-n+3){text-align:left}
+table.lb th[aria-sort=ascending],table.lb th[aria-sort=descending]{color:var(--ink)}
+table.lb td{padding:9px 14px;border-bottom:1px solid #eef2f1;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.lb td:nth-child(-n+3){text-align:left}
+table.lb tr:last-child td{border-bottom:0}
+table.lb tr.off td{opacity:.38}
+table.lb tbody tr{cursor:pointer}
+table.lb tbody tr:hover{background:#fafcfc}
+table.lb tbody tr:focus-visible{outline:2px solid var(--teal);outline-offset:-2px}
+.cellbar{position:relative;display:inline-block;min-width:92px}
+.cellbar i{position:absolute;right:0;top:50%;height:18px;transform:translateY(-50%);border-radius:4px;opacity:.16}
+.cellbar span{position:relative}
+.rank{color:var(--faint);width:30px}
+.mname{display:flex;align-items:center;gap:8px;font-weight:600}
+.sub2{font-weight:500;color:var(--faint);font-size:11px;text-transform:none;letter-spacing:0;display:block}
+details.method{border:1px solid var(--line);border-radius:var(--radius);padding:12px 18px;margin-top:16px;background:var(--panel)}
+details.method summary{cursor:pointer;font-weight:600}
+details.method dl{display:grid;grid-template-columns:200px 1fr;gap:6px 18px;font-size:13.5px;margin:12px 0 4px}
+details.method dt{color:var(--muted);font-weight:600}
+details.method dd{margin:0}
+/* heat + drill */
+.heatgrid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px}
+.heatscroll{overflow-x:auto}
+.heatscroll>div{min-width:560px}
+.drill .pick{display:flex;gap:6px;margin-bottom:12px}
+.drill .pick select{flex:1;min-width:0}
+.drill{border:1px solid var(--line);border-radius:var(--radius);padding:18px;align-self:start}
+.drill h4{margin:0 0 2px;font-size:16px;display:flex;align-items:center;gap:7px}
+.drill .ds{color:var(--muted);font-size:13px;margin-bottom:6px}
+.drill .sum{font-size:13.5px;margin-bottom:12px}
+.dgrid{display:grid;grid-template-columns:62px repeat(3,1fr);gap:6px;font-size:12.5px}
+.dgrid .h{color:var(--faint);font-weight:600;text-align:center}
+.dgrid .rh{color:var(--muted);font-weight:600;align-self:center}
+.dcell{border-radius:8px;padding:7px 6px;text-align:center;line-height:1.25;border:2px solid transparent}
+.dcell b{font-size:16px;display:block}
+.dcell.later{background:#fff!important;color:var(--muted)!important;border:2px dashed #b9c6c4}
+.dcell.outside{opacity:.35}
+.dlegend{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted)}
+.dlegend span{display:inline-flex;align-items:center;gap:4px}
+/* about */
+.pipeline{display:grid;grid-template-columns:repeat(5,1fr);margin:8px 0 0}
+.step{padding:18px 16px;border:1px solid var(--line);background:#fff;min-height:150px;transition:background .4s,border-color .4s}
+.step:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+.step:last-child{border-radius:0 var(--radius) var(--radius) 0}
+.step+.step{border-left:0}
+.step .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--teal-dark);font-weight:500}
+.step b{display:block;margin:4px 0;font-size:15px}
+.step p{margin:0;font-size:13px;color:var(--muted)}
+.step.lit{background:var(--mint-soft);border-color:#bfeee2}
+.flow{height:4px;background:var(--chip);border-radius:4px;position:relative;overflow:hidden;margin:10px 0 24px}
+.flow.paused i{animation-play-state:paused}
+.flow i{position:absolute;top:0;left:-20%;height:100%;width:20%;background:linear-gradient(90deg,transparent,var(--teal),transparent);animation:flow 3.2s linear infinite}
+@keyframes flow{from{left:-20%}to{left:100%}}
+@media (prefers-reduced-motion:reduce){.flow i{animation:none}.step{transition:none}}
+.fams{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fams ul{margin:8px 0 6px;padding-left:18px;font-size:14px}
+.overview{border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-top:20px;background:#fff}
+.overview img{width:100%;display:block}
+pre.bib{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;font:12.5px/1.6 "JetBrains Mono",monospace;overflow-x:auto;margin:0}
+footer{border-top:1px solid var(--line);margin-top:56px;padding:24px 0 40px;color:var(--faint);font-size:13px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--dark);color:#fff;padding:9px 16px;border-radius:999px;font-size:13.5px;opacity:0;transition:.25s;pointer-events:none;z-index:50;max-width:90vw}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.draft{background:#fff6d6;color:#6b5300;font-size:12.5px;text-align:center;padding:5px 12px}
+.nolib{display:none;background:#fde8e8;color:#7a1f1f;padding:10px 14px;border-radius:10px;margin:16px 0;font-size:14px}
+@media (max-width:1080px){
+  .fig,.heatgrid{grid-template-columns:1fr}
+  .settings{position:static}
+  .pipeline{grid-template-columns:1fr 1fr}
+  .step,.step:first-child,.step:last-child{border-radius:0;border-left:1px solid var(--line)}
+}
+@media (max-width:720px){
+  .wrap{padding:0 16px}
+  h1{font-size:31px}
+  .lede{font-size:16px}
+  .stats{grid-template-columns:1fr 1fr;gap:10px}
+  .stat{padding:12px 14px}.stat .v{font-size:24px}
+  nav.top .links{display:none}
+  .plotbody{grid-template-columns:1fr}
+  .legend{display:flex;flex-wrap:wrap;gap:0 4px;max-height:none}
+  .legend .lt,.legend .hint{width:100%}
+  .legend .row{flex:0 0 auto}
+  .legend .only{visibility:visible;padding:2px 4px}
+  .chart{height:360px}
+  .cards2,.fams{grid-template-columns:1fr}
+  .card .bars{height:380px}
+  .pipeline{grid-template-columns:1fr}
+  .ftoggle{display:inline-flex}
+  section{padding:38px 0 6px}
+  .focus .ctrl{display:none}
+  .focus.open .ctrl{display:flex}
+  .focus .row:first-child{justify-content:space-between;flex-wrap:nowrap}
+  .search{width:100%}
+  details.method dl{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav class="top" id="nav"><div class="wrap">
+  <a class="brand" href="#top">
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="11" height="11" rx="3" fill="#0fa3a3"/><rect x="14" y="1" width="11" height="11" rx="3" fill="#6ff0cf"/><rect x="1" y="14" width="11" height="11" rx="3" fill="#6ff0cf"/><rect x="14" y="14" width="11" height="11" rx="3" fill="#1d2b2a"/></svg>
+    DecompGym
+  </a>
+  <div class="links"><a href="#leaderboard">Leaderboard</a><a href="#efficiency">Efficiency</a><a href="#compare">Compare models</a><a href="#families">Problem families</a><a href="#about">About</a><a href="#cite">Cite</a></div>
+  <div class="right"><a class="btn ghost" href="https://arxiv.org/abs/2610.38175">Paper</a><a class="btn mint" href="https://github.com/SIKAI-C/DecompGym">Code</a></div>
+</div></nav>
+
+<header class="hero" id="top"><div class="wrap">
+  <div class="eyebrow">Benchmark · coding agents · optimization</div>
+  <h1>Can coding agents design decomposition algorithms?</h1>
+  <p class="lede">DecompGym asks an agent to write a standalone solver that uses <b>Benders decomposition</b> or <b>column generation</b>. Each attempt must run, pass a feasibility check and a method audit, and come within 1% of the reference objective.</p>
+  <div class="actions">
+    <a class="btn mint" href="#leaderboard">Explore results</a>
+    <a class="btn ghost" href="https://arxiv.org/abs/2610.38175">Read the paper</a>
+    <a class="btn ghost" href="https://github.com/SIKAI-C/DecompGym">Run the benchmark</a>
+  </div>
+  <div class="statlab">Full benchmark</div>
+  <div class="stats" id="stats"></div>
+</div></header>
+
+<div class="focus" id="focus"><div class="wrap">
+  <div class="row">
+    <span class="summary" id="summary"></span>
+    <button class="btn soft sm ftoggle" id="ftoggle" aria-expanded="false">Filters</button>
+  </div>
+  <div class="row ctrl">
+    <div class="grp"><span class="lab">Problems</span>
+      <div class="seg" id="famPreset" role="group" aria-label="Problem set"><button data-v="all">All</button><button data-v="bd">Benders</button><button data-v="cg">Column gen.</button></div>
+      <div class="chips" id="famChips" role="group" aria-label="Problem families"></div>
+    </div>
+    <div class="grp"><span class="lab">Sizes</span><div class="chips" id="sizeChips" role="group" aria-label="Instance sizes"></div></div>
+  </div>
+  <div class="row ctrl">
+    <div class="grp"><span class="lab">Models</span>
+      <div class="pop" id="modelPop"><button class="btn soft sm" id="modelBtn" aria-haspopup="true" aria-expanded="false"></button><div class="popbox" id="modelBox"></div></div>
+      <input class="search" id="search" type="search" placeholder="Search models" aria-label="Search models">
+    </div>
+    <div class="grp"><span class="lab">Retries</span>
+      <div class="seg" id="policySeg" role="group" aria-label="Retry policy"><button data-v="plain">Plain regeneration</button><button data-v="reflection">Reflection</button></div>
+    </div>
+    <div class="grp"><span class="lab">Colors</span>
+      <select class="sel" id="paletteSel" aria-label="Color scheme"><option value="vivid">Vivid</option><option value="paper">Paper</option><option value="provider">By lab</option></select>
+    </div>
+    <button class="btn link" id="resetAll">Reset filters</button>
+  </div>
+</div></div>
+
+<main class="wrap">
+<div class="nolib" id="nolib">The charts need the ECharts library, which loads from the internet. The table and headline numbers below still work.</div>
+
+<section id="leaderboard">
+  <h2>Leaderboard</h2>
+  <p class="sub">Quality success Q@k is the share of instances solved by at least one of the first k attempts. Attempt 1 is shared. After a failure, the agent either regenerates from the task (plain) or first reflects on the failure (reflection). The bar above sets the problems, sizes, models and retry policy for every chart on this page.</p>
+
+  <div class="fig" id="fig1">
+    <div class="plotcard">
+      <div class="plothead"><h3 id="c1title">Quality success by attempt budget</h3>
+        <button class="iconbtn" data-panel="fig1" aria-label="Show or hide settings" aria-expanded="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="12" rx="2"/><path d="M10 2v12"/></svg></button></div>
+      <div class="plotmeta"><span class="count" id="c1count"></span><span class="yname" id="c1y"></span></div>
+      <div class="plotbody"><div class="chartbox"><div class="chart" id="chart1"></div><div class="emptyov" data-for="chart1"></div></div><div class="legend" data-chart="chart1"></div></div>
+      <div class="plotfoot"><span class="credit">DECOMPGYM&nbsp;|&nbsp;CC-BY</span><button class="btn soft sm share">Share view</button><button class="btn soft sm dl" data-chart="chart1">Download PNG</button></div>
+      <p class="note">Scroll or pinch on the plot to zoom the attempt axis, drag to pan; the sliders below and at the right set the ranges.</p>
+    </div>
+    <aside class="settings" aria-label="Settings for the success chart">
+      <div class="sh"><b>Settings</b><button class="iconbtn reset" data-fig="fig1" title="Reset this chart">Reset</button></div>
+      <h4>Criterion</h4>
+      <label><input type="radio" name="crit" value="execution"> Executable (E)</label>
+      <label><input type="radio" name="crit" value="verification"> Verified (V)</label>
+      <label><input type="radio" name="crit" value="quality"> Quality (Q)</label>
+      <h4>Retry policy</h4>
+      <label><input type="radio" name="view" value="policy"> Policy from the bar above</label>
+      <label><input type="radio" name="view" value="both"> Both (plain dashed)</label>
+      <label><input type="radio" name="view" value="gain"> Gain from reflection</label>
+      <h4>Line labels</h4>
+      <label><input type="radio" name="labels" value="auto"> Auto (4 models or fewer)</label>
+      <label><input type="radio" name="labels" value="on"> Always</label>
+      <label><input type="radio" name="labels" value="off"> Never</label>
+      <h4>Axis</h4>
+      <label><span class="toggle"><input type="checkbox" id="ztop"><span></span></span> Zoom to the top</label>
+      <div class="def"><b>E</b> runs within 60 s and writes a parseable output. <b>V</b> also passes the feasibility checker and the method judge. <b>Q</b> is verified and within 1% of the reference objective.</div>
+    </aside>
+  </div>
+
+  <div class="plothead" style="margin:6px 0 10px"><h3 style="font-size:18px">Results table</h3><button class="btn soft sm" id="csv" title="Visible configurations, current filters">Download CSV</button></div>
+  <div class="tablewrap"><table class="lb" id="lb"></table></div>
+  <p class="note">Each row is a model–agent configuration. Ranks follow the sorted column; equal values share a rank. Click a configuration name to show or hide it in every chart. Agent time is the elapsed time of the agent's generation and reflection calls (including CLI and network overhead; judge and solver time excluded), averaged per selected instance over the full run (until success, at most 10 attempts). Tokens are provider-accounted usage, not a price or an equal unit of computation; Gemini 3.8 Flash does not report comparable counts.</p>
+
+  <details class="method"><summary>About these results</summary>
+    <dl>
+      <dt>Snapshot</dt><dd id="snap"></dd>
+      <dt>Configurations</dt><dd>12, all at medium effort: five GPT models through Codex 0.162.1, six Claude models through Claude Code 2.1.296, Gemini 3.8 Flash through Antigravity 1.3.1.</dd>
+      <dt>Instances</dt><dd>81 fixed instances: 9 families × 3 sizes × 3 seeds. Benders decomposition: UFL, FCTP, KM, LRP, TSSO (45). Column generation: BP, CSP, GAP, SHIFT (36).</dd>
+      <dt>Protocol</dt><dd>Every agent call runs in a fresh Docker container with an empty workspace. Each solver runs natively in a sandbox for at most 60 s on one configured thread (Gurobi 11.0.3, Apple silicon). Up to 10 attempts per policy; the first attempt is shared.</dd>
+      <dt>Method judge</dt><dd>GPT-6 Astra at high effort reads the solver source and decides whether the requested decomposition is genuinely used.</dd>
+      <dt>Agent time</dt><dd>Seconds spent in generation and reflection calls; judge and solver time are reported separately. Pauses from the resource monitor are excluded.</dd>
+      <dt>Tokens</dt><dd>Context + output tokens summed over agent calls (Codex: input + output; Claude: input + cache creation + cache read + output). Not a price.</dd>
+    </dl>
+  </details>
+</section>
+
+<section id="efficiency">
+  <h2>Efficiency</h2>
+  <p class="sub">How much agent time (or how many tokens) each configuration needs per instance. A point at (t, y) means y% of the selected instances reached a quality solution within an agent budget of t per instance.</p>
+  <div class="fig" id="fig2">
+    <div class="plotcard">
+      <div class="plothead"><h3 id="c2title"></h3>
+        <button class="iconbtn" data-panel="fig2" aria-label="Show or hide settings" aria-expanded="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2" width="13" height="12" rx="2"/><path d="M10 2v12"/></svg></button></div>
+      <div class="plotmeta"><span class="yname">Quality success</span><span class="count" id="c2count"></span></div>
+      <div class="plotbody"><div class="chartbox"><div class="chart" id="chart2"></div><div class="efftip" id="efftip" role="status"></div><div class="emptyov" data-for="chart2"></div></div><div class="legend" data-chart="chart2"></div></div>
+      <div class="plotfoot"><span class="credit">DECOMPGYM&nbsp;|&nbsp;CC-BY</span><button class="btn soft sm share">Share view</button><button class="btn soft sm dl" data-chart="chart2">Download PNG</button></div>
+    </div>
+    <aside class="settings" aria-label="Settings for the efficiency chart">
+      <div class="sh"><b>Settings</b><button class="iconbtn reset" data-fig="fig2" title="Reset this chart">Reset</button></div>
+      <h4>Resource</h4>
+      <label><input type="radio" name="x" value="time"> Agent time</label>
+      <label><input type="radio" name="x" value="tokens"> Context + output tokens</label>
+      <div class="def">Cumulative per instance, through the attempt that first reaches Q. Unsolved instances stay in the denominator. Logarithmic x-axis. Line labels follow the setting of the chart above.</div>
+    </aside>
+  </div>
+</section>
+
+<section id="compare">
+  <h2>Compare models</h2>
+  <p class="sub">Success, time and tokens at the same attempt budget k, for the problems, sizes and retry policy selected above. At k = 1 the two policies coincide.</p>
+  <div class="ktabs"><span class="lab">Attempt budget</span>
+    <div class="seg" id="kSeg" role="group" aria-label="Attempt budget"><button data-v="1">k = 1</button><button data-v="2">k = 2</button><button data-v="3">k = 3</button><button data-v="5">k = 5</button><button data-v="10">k = 10</button></div></div>
+  <div class="cards2">
+    <div class="card"><h4 id="b1t"></h4><div class="cs"><span class="better">Higher is better</span> · share of selected instances</div><div class="bars" id="bars1"></div></div>
+    <div class="card"><h4 id="b2t"></h4><div class="cs"><span class="better">Lower is better</span> · mean seconds per instance</div><div class="bars" id="bars2"></div></div>
+    <div class="card"><h4 id="b3t"></h4><div class="cs"><span class="better">Lower is better</span> · mean thousands of tokens per instance</div><div class="bars" id="bars3"></div></div>
+    <div class="card"><h4 id="stt"></h4><div class="cs">Mean active seconds per instance by stage</div><div class="bars" id="stages" style="height:400px"></div></div>
+    <div class="card span2"><div class="ch"><div><h4 id="sct"></h4><div class="cs">Dashed: best Q@k reachable within each mean cost, among the selected configurations. Labeled points are on that Pareto frontier.</div></div>
+      <div class="seg" id="sxSeg" role="group" aria-label="Scatter x-axis"><button data-v="time">Time</button><button data-v="tokens">Tokens</button></div></div>
+      <div class="bars" id="scatter" style="height:400px"></div></div>
+  </div>
+</section>
+
+<section id="families">
+  <h2>Problem families</h2>
+  <p class="sub">Successes per family among the selected sizes. Click a cell to see each instance: the attempt at which it first passed the criterion, and whether that falls within the budget shown.</p>
+  <div class="ktabs"><span class="lab">Attempt budget</span>
+    <div class="seg" id="hkSeg" role="group" aria-label="Heatmap budget"><button data-v="1">k = 1</button><button data-v="2">k = 2</button><button data-v="3">k = 3</button><button data-v="10">k = 10</button></div>
+    <span class="lab" style="margin-left:10px">Criterion</span>
+    <div class="seg" id="hcSeg" role="group" aria-label="Heatmap criterion"><button data-v="execution">E</button><button data-v="verification">V</button><button data-v="quality">Q</button></div></div>
+  <div class="heatgrid">
+    <div class="card" style="padding:10px 10px 4px"><div class="heatscroll"><div class="chartbox"><div id="heat" style="height:520px"></div><div class="emptyov" data-for="heat"></div></div></div></div>
+    <div class="drill" id="drill" aria-live="polite"></div>
+  </div>
+</section>
+
+<section id="about">
+  <h2>About DecompGym</h2>
+  <p class="sub">81 fixed instances from nine problem families. Every agent call runs in a fresh Docker container; every solver runs in a sandbox for at most 60 seconds on one thread.</p>
+  <div class="pipeline" id="pipeline">
+    <div class="step"><span class="n">01</span><b>Task</b><p>Instance data, the output contract and a method contract: use the named decomposition, no monolithic model, claim optimality only with a proof.</p></div>
+    <div class="step"><span class="n">02</span><b>Agent writes solver.py</b><p>A Codex, Claude Code or Antigravity agent edits a single file in an empty workspace.</p></div>
+    <div class="step"><span class="n">03</span><b>E · Executable</b><p>The solver finishes within 60 s and writes a parseable output.json.</p></div>
+    <div class="step"><span class="n">04</span><b>V · Verified</b><p>An independent checker confirms feasibility; a method judge confirms the decomposition is really used.</p></div>
+    <div class="step"><span class="n">05</span><b>Q · Quality</b><p>Verified and within 1% of the reference objective. Otherwise, retry: plain or with reflection.</p></div>
+  </div>
+  <div class="flow" aria-hidden="true"><i></i></div>
+  <div class="fams" id="famCards"></div>
+  <div class="overview"><img src="benchmark_overview.png" alt="Overview of DecompGym: nine problem families, a task specification, a coding agent writing solver.py, and the three evaluation criteria"></div>
+</section>
+
+<section id="cite">
+  <h2>Cite</h2>
+  <p class="sub">If you use DecompGym, please cite the paper.</p>
+  <pre class="bib" id="bib">@misc{cheng2026decompgymbenchmarkingllmagents,
+      title={DecompGym: Benchmarking LLM Agents on Designing Decomposition Algorithms},
+      author={Sikai Cheng and Tinghan Ye and Arnaud Deza and Xiaonan Qi and Miao Li and Litong Liu and Changkun Guan},
+      year={2026},
+      eprint={2610.38175},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2610.38175},
+}</pre>
+  <div style="margin-top:10px"><button class="btn soft" id="copyBib">Copy BibTeX</button></div>
+</section>
+</main>
+
+<footer><div class="wrap" id="foot"></div></footer>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+'use strict';
+const D = window.DECOMPGYM, EC = window.echarts;
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const MODELS = D.models.slice().sort((a, b) => a.order - b.order);
+const BYID = Object.fromEntries(MODELS.map(m => [m.id, m]));
+const FAMS = D.families.map(f => f.id), FAMNAME = Object.fromEntries(D.families.map(f => [f.id, f.name]));
+const SIZES = ['small', 'medium', 'large'], SIZE1 = {small:'S', medium:'M', large:'L'};
+const CASES = D.cases, MODES = ['plain', 'reflection'];
+const CRIT = {execution:['E', 'Executable', 0], verification:['V', 'Verified', 1], quality:['Q', 'Quality', 2]};
+const FLD = {agent:3, refl:4, judge:5, solver:6, tok:7};
+const short = f => f.split('/')[1].toUpperCase();
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
+
+// ---------- colors and markers ----------
+const VIVID = {'gpt-6-astra':'#e5468f','gpt-6-sol':'#f28dbd','gpt-6.1-sol':'#a3195b','gpt-6-luna':'#ff6f3c','gpt-5.6-luna':'#f2a20c',
+  'claude-opus-5-5':'#7a3fe0','claude-sonnet-5-5':'#0b57e3','claude-haiku-5-5':'#b58cf2','claude-opus-5':'#3d1f8c','claude-sonnet-5':'#66a3ff','claude-fable-5':'#2da02c',
+  'gemini-3.8-flash-medium':'#11a3a3'};
+const PROVIDER = {OpenAI:'#e5468f', Anthropic:'#7a3fe0', Google:'#11a3a3'};
+const PATHS = {D:'M5,0L10,5L5,10L0,5Z', '^':'M5,0L10,10L0,10Z', v:'M0,0L10,0L5,10Z', '<':'M10,0L10,10L0,5Z', '>':'M0,0L0,10L10,5Z',
+  p:'M5,0L10,3.8L8.1,10L1.9,10L0,3.8Z', h:'M5,0L9.33,2.5L9.33,7.5L5,10L0.67,7.5L0.67,2.5Z',
+  '*':'M5,0L6.2,3.6L10,3.6L6.9,5.9L8.1,9.5L5,7.3L1.9,9.5L3.1,5.9L0,3.6L3.8,3.6Z', P:'M3.5,0H6.5V3.5H10V6.5H6.5V10H3.5V6.5H0V3.5H3.5Z',
+  X:'M1.5,0L5,3.5L8.5,0L10,1.5L6.5,5L10,8.5L8.5,10L5,6.5L1.5,10L0,8.5L3.5,5L0,1.5Z'};
+const sym = m => m.marker === 'o' ? 'circle' : m.marker === 's' ? 'rect' : PATHS[m.marker] ? 'path://' + PATHS[m.marker] : 'circle';
+const DASH = {'-':'solid', '--':[6, 4], '-.':[7, 3, 2, 3], ':':[2, 3]};
+const SVGDASH = {'-':'', '--':'5 3', '-.':'6 2 1.5 2', ':':'1.5 2.5'};
+const HEAT = {vivid:['#f3fbfa','#cdf1ea','#93ded2','#4fc4b7','#14a3a3','#0b7f86','#0c5560'], paper:['#ffffd9','#edf8b1','#c7e9b4','#7fcdbb','#41b6c4','#1d91c0','#225ea8','#253494','#081d58']};
+
+// ---------- state ----------
+const DEF = {fams:FAMS, sizes:SIZES, hidden:[], q:'', policy:'reflection', palette:'vivid', crit:'quality', view:'policy', labels:'auto', top:true,
+  x:'time', k:1, sx:'time', hk:1, hc:'quality', sort:'q1', dir:-1, drill:''};
+const S = {};
+function setDefaults(keys) { for (const k of keys) { const v = DEF[k]; S[k] = Array.isArray(v) ? new Set(v) : v; } }
+setDefaults(Object.keys(DEF));
+function shade(hex, t) { const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(t < 0 ? v * (1 + t) : v + (255 - v) * t)); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); }
+const LABSHADE = {};
+D.models.slice().sort((a, b) => a.order - b.order).forEach(m => { const peers = D.models.filter(x => x.provider === m.provider).sort((a, b) => a.order - b.order), i = peers.indexOf(m); LABSHADE[m.id] = peers.length < 2 ? 0 : -0.45 + 0.9 * i / (peers.length - 1); });
+const color = m => S.palette === 'paper' ? m.color : S.palette === 'provider' ? shade(PROVIDER[m.provider], LABSHADE[m.id]) : VIVID[m.id];
+const dash = m => S.palette === 'provider' ? DASH[m.dash] : 'solid';
+const matches = m => !S.q || (m.label + ' ' + m.agent + ' ' + m.provider).toLowerCase().includes(S.q.toLowerCase());
+const active = () => MODELS.filter(m => !S.hidden.has(m.id) && matches(m));
+const isMobile = () => innerWidth < 720;
+let SEL = [];
+const computeSel = () => { SEL = CASES.map((c, i) => i).filter(i => S.fams.has(CASES[i].f) && S.sizes.has(CASES[i].size)); };
+const famList = () => FAMS.filter(f => S.fams.has(f));
+const run = (m, mode, i) => D.runs[m][mode][i];
+const firstAt = (m, mode, i, crit) => run(m, mode, i)[CRIT[crit][2]];
+function solved(m, mode, crit, k, sel = SEL) { let n = 0; for (const i of sel) { const f = firstAt(m, mode, i, crit); if (f > 0 && f <= k) n++; } return n; }
+function meanCost(m, mode, field, k, sel = SEL) {
+  if (!sel.length) return null; let s = 0;
+  for (const i of sel) { const a = run(m, mode, i)[FLD[field]]; if (a == null || a[k - 1] == null) return null; s += a[k - 1]; }
+  return s / sel.length;
+}
+const showLabels = () => S.labels === 'on' || (S.labels === 'auto' && active().length <= 4 && !isMobile());
+const pct = (v, d = 1) => v == null || isNaN(v) ? '–' : (100 * v).toFixed(d) + '%';
+const fmtTok = v => v == null ? 'n/a' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : (v / 1e3).toFixed(0) + 'k';
+function famText() {
+  const f = famList();
+  if (f.length === 9) return 'all families';
+  if (f.length === 5 && f.every(x => x.startsWith('bd'))) return 'Benders families';
+  if (f.length === 4 && f.every(x => x.startsWith('cg'))) return 'column generation families';
+  return f.map(short).join(', ');
+}
+const sizeText = () => S.sizes.size === 3 ? 'all sizes' : SIZES.filter(s => S.sizes.has(s)).join(' + ');
+const policyText = () => S.policy === 'reflection' ? 'reflection' : 'plain regeneration';
+function summaryText() { return `${active().length} of ${MODELS.length} configurations · ${famText()} · ${sizeText()} · ${SEL.length} instances · ${policyText()}`; }
+
+// ---------- generic helpers ----------
+const FONT = 'Inter, system-ui, sans-serif';
+const axisBase = {axisLine:{lineStyle:{color:'#c9d6d4'}}, axisTick:{show:false}, axisLabel:{color:'#4f605e', fontFamily:FONT, fontSize:12}, splitLine:{lineStyle:{color:'#e6f3f1'}}, nameTextStyle:{color:'#10201f', fontFamily:FONT, fontSize:13, fontWeight:600}};
+const tipBase = {backgroundColor:'#fff', borderColor:'#e2e9e8', borderWidth:1, textStyle:{color:'#10201f', fontFamily:FONT, fontSize:12.5}, extraCssText:'border-radius:10px;box-shadow:0 8px 24px rgba(16,32,31,.12);', confine:true};
+const sliderBase = {type:'slider', borderColor:'transparent', backgroundColor:'#eef3f2', fillerColor:'rgba(15,163,163,.25)', dataBackground:{lineStyle:{opacity:0}, areaStyle:{opacity:0}}, selectedDataBackground:{lineStyle:{opacity:0}, areaStyle:{opacity:0}}, handleIcon:'path://M10,0A10,10,0,1,1,0,10,10,10,0,0,1,10,0Z', handleSize:'110%', handleStyle:{color:'#0fa3a3', borderColor:'#fff', borderWidth:2}, moveHandleSize:0, textStyle:{color:'#4f605e', fontFamily:FONT}, brushSelect:false, filterMode:'none'};
+const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:6px"></span>`;
+const tbl = (head, rows) => `<table style="border-collapse:collapse;font-size:12px">${head ? '<tr style="color:#5f706e">' + head.map((h, i) => `<td style="padding:1px 6px;text-align:${i ? 'right' : 'left'}">${h}</td>`).join('') + '</tr>' : ''}${rows.map(r => '<tr>' + r.map((c, i) => `<td style="padding:1px 6px;text-align:${i ? 'right' : 'left'};${i ? 'font-variant-numeric:tabular-nums' : ''}">${c}</td>`).join('') + '</tr>').join('')}</table>`;
+const charts = {};
+function mk(id) { const c = EC.init(document.getElementById(id), null, {renderer:'svg'}); charts[id] = c; return c; }
+function empty(id, msg) {
+  const ov = document.querySelector(`.emptyov[data-for=${id}]`); if (!ov) return;
+  ov.classList.toggle('on', !!msg);
+  ov.innerHTML = msg ? `<div>${msg}<br><button class="btn soft sm" style="margin-top:10px">Show all models</button></div>` : '';
+  if (msg) ov.querySelector('button').onclick = () => { S.hidden.clear(); S.q = ''; $('#search').value = ''; update(); };
+}
+function markerSVG(m, col) {
+  const s = sym(m), inner = s === 'circle' ? '<circle cx="5" cy="5" r="4.2"/>' : s === 'rect' ? '<rect x="1" y="1" width="8" height="8"/>' : `<path d="${s.slice(7)}"/>`;
+  const d = S.palette === 'provider' ? SVGDASH[m.dash] : '';
+  return `<svg width="28" height="12" viewBox="0 0 28 12" aria-hidden="true"><line x1="0" y1="6" x2="28" y2="6" stroke="${col}" stroke-width="2" ${d ? `stroke-dasharray="${d}"` : ''}/><g transform="translate(9,1)" fill="${col}" stroke="#fff" stroke-width=".8">${inner}</g></svg>`;
+}
+
+// ---------- chart 1: success curves ----------
+let lastY = '';
+function drawCurves() {
+  const c = charts.chart1, ms = active(), crit = S.crit, view = S.view, [L, name] = CRIT[crit], N = SEL.length, labels = showLabels();
+  const series = []; let minY = 100;
+  for (const m of ms) {
+    const col = color(m), modes = view === 'both' ? MODES : view === 'gain' ? ['gain'] : [S.policy];
+    for (const mode of modes) {
+      const data = [];
+      for (let k = 1; k <= 10; k++) {
+        const v = mode === 'gain' ? 100 * (solved(m.id, 'reflection', crit, k) - solved(m.id, 'plain', crit, k)) / N : 100 * solved(m.id, mode, crit, k) / N;
+        minY = Math.min(minY, v); data.push({value:[k, +v.toFixed(2)]});
+      }
+      const last = mode === modes[modes.length - 1], plainBoth = mode === 'plain' && view === 'both';
+      if (labels && last && view !== 'gain') data[0].label = {show:true, position:'left', distance:8, formatter:m.label, color:col, fontFamily:FONT, fontWeight:600, fontSize:11.5};
+      series.push({id:m.id + '|' + mode, name:m.label, type:'line', data, symbol:sym(m), symbolSize:5.5, showAllSymbol:true,
+        lineStyle:{width:2, color:col, type:plainBoth ? [5, 4] : view === 'both' ? 'solid' : dash(m), opacity:plainBoth ? .7 : 1},
+        itemStyle:{color:plainBoth ? '#fff' : col, borderColor:col, borderWidth:1.5},
+        emphasis:{focus:'series', lineStyle:{width:3}}, blur:{lineStyle:{opacity:.12}, itemStyle:{opacity:.12}},
+        endLabel:{show:labels && last && view === 'gain', formatter:m.label, color:col, fontFamily:FONT, fontWeight:600, fontSize:11.5},
+        labelLayout:{moveOverlap:'shiftY'}});
+    }
+  }
+  const gain = view === 'gain', leftLabels = labels && !gain;
+  const ymin = gain ? Math.min(-5, Math.floor(minY / 5) * 5) : S.top && ms.length ? Math.max(0, Math.floor((minY - 2) / 5) * 5) : 0;
+  $('#c1y').textContent = gain ? `Reflection − plain, ${L}@k (percentage points)` : `${name} success, ${L}@k`;
+  $('#c1title').textContent = gain ? `What reflection adds over plain regeneration (${L})` : `${name} success by attempt budget`;
+  $('#c1count').textContent = `${ms.length} configurations · ${N} instances`;
+  c.setOption({
+    animationDurationUpdate:400, textStyle:{fontFamily:FONT},
+    grid:{left:leftLabels ? 128 : 16, right:gain && labels ? 150 : 70, top:14, bottom:72, containLabel:!leftLabels},
+    xAxis:{...axisBase, type:'value', min:1, max:10, interval:1, name:'Attempt budget k', nameLocation:'middle', nameGap:28},
+    yAxis:{...axisBase, type:'value', position:leftLabels ? 'right' : 'left', min:ymin, max:gain ? null : 100, axisLabel:{...axisBase.axisLabel, formatter:v => gain ? (v > 0 ? '+' : '') + v : v + '%'}},
+    tooltip:{...tipBase, trigger:'axis', axisPointer:{type:'line', lineStyle:{color:'#9fb3b1', type:'dashed'}}, formatter:ps => {
+      if (!ps.length) return '';
+      const k = Math.round(ps[0].value[0]);
+      const rows = ms.map(m => {
+        const p = solved(m.id, 'plain', crit, k), r = solved(m.id, 'reflection', crit, k);
+        if (view === 'policy') { const s = S.policy === 'plain' ? p : r; return {key:s, cells:[dot(color(m)) + m.label, pct(s / N), `${s}/${N}`]}; }
+        let ro = 0, po = 0; for (const i of SEL) { const fp = firstAt(m.id, 'plain', i, crit), fr = firstAt(m.id, 'reflection', i, crit); const a = fp > 0 && fp <= k, b = fr > 0 && fr <= k; if (b && !a) ro++; if (a && !b) po++; }
+        const d = (100 * (r - p) / N);
+        return view === 'both' ? {key:r, cells:[dot(color(m)) + m.label, pct(p / N), pct(r / N), (d > 0 ? '+' : '') + d.toFixed(1)]}
+                               : {key:r - p, cells:[dot(color(m)) + m.label, (d > 0 ? '+' : '') + d.toFixed(1), ro, po]};
+      }).sort((a, b) => b.key - a.key).map(x => x.cells);
+      const head = view === 'policy' ? null : view === 'both' ? ['', 'Plain', 'Reflection', 'Δ pts'] : ['', 'Δ pts', 'R only', 'P only'];
+      return `<b>${L}@${k}</b> · ${N} instances<br>` + tbl(head, rows);
+    }},
+    dataZoom:[{type:'inside', xAxisIndex:0, filterMode:'none', zoomOnMouseWheel:true, moveOnMouseMove:true},
+      {...sliderBase, xAxisIndex:0, height:16, bottom:4, labelFormatter:v => 'k = ' + Math.round(v)},
+      {...sliderBase, yAxisIndex:0, orient:'vertical', width:12, right:4, top:14, bottom:72, showDetail:false}],
+    series
+  }, {replaceMerge:['series']});
+  const yKey = crit + view + S.top;
+  if (lastY && yKey !== lastY) c.dispatchAction({type:'dataZoom', dataZoomIndex:2, start:0, end:100});
+  lastY = yKey;
+  empty('chart1', ms.length ? '' : (S.q && !MODELS.some(m => matches(m)) ? `No configuration matches “${esc(S.q)}”.` : 'All configurations are hidden.'));
+}
+
+// ---------- chart 2: efficiency ----------
+function costToQ(m, mode, i, tokens) { const r = run(m, mode, i); if (!r[2]) return null; const a = tokens ? r[7] : r[3]; return a == null || a[r[2] - 1] == null ? undefined : a[r[2] - 1]; }
+let effTip = () => '';
+function drawEff() {
+  const c = charts.chart2, tokens = S.x === 'tokens', [xmin, xmax] = tokens ? [1e4, 5e6] : [5, 3000], N = SEL.length, labels = showLabels();
+  const series = [], skipped = [], ms = active(), xsOf = {};
+  for (const m of ms) {
+    const vals = SEL.map(i => costToQ(m.id, S.policy, i, tokens));
+    if (vals.some(v => v === undefined)) { skipped.push(m.label); continue; }
+    const xs = vals.filter(v => v != null).sort((a, b) => a - b); xsOf[m.label] = xs;
+    const data = [[xmin, 0]]; xs.forEach((v, i) => data.push([Math.max(v, xmin), +(100 * (i + 1) / N).toFixed(2)])); data.push([xmax, +(100 * xs.length / N).toFixed(2)]);
+    const every = Math.max(1, Math.round(data.length / 6)), off = MODELS.indexOf(m) % every;
+    if (S.palette === 'provider') data.forEach((d, i, a) => { a[i] = {value:d, symbol:(i % every === off) ? sym(m) : 'none'}; });
+    const col = color(m);
+    series.push({id:m.id, name:m.label, type:'line', step:'end', data, showSymbol:S.palette === 'provider', symbol:sym(m), symbolSize:6,
+      lineStyle:{width:2, color:col, type:dash(m)}, itemStyle:{color:col}, emphasis:{focus:'series', lineStyle:{width:3}}, blur:{lineStyle:{opacity:.12}},
+      endLabel:{show:labels, formatter:m.label, color:col, fontFamily:FONT, fontWeight:600, fontSize:11.5}, labelLayout:{moveOverlap:'shiftY'}});
+  }
+  const fmt = v => tokens ? (v >= 1e6 ? +(v / 1e6).toFixed(1) + 'M' : Math.round(v / 1e3) + 'k') : (v >= 60 ? +(v / 60).toFixed(1) + ' min' : Math.round(v) + ' s');
+  effTip = t => {
+    if (t == null || !Number.isFinite(t) || !series.length) return '';
+    const rows = ms.filter(m => xsOf[m.label]).map(m => { const n = xsOf[m.label].filter(v => v <= t).length; return {n, cells:[dot(color(m)) + m.label, pct(n / N), `${n}/${N}`]}; }).sort((a, b) => b.n - a.n).map(r => r.cells);
+    return `<b>Within ${tokens ? Math.round(t).toLocaleString() + ' tokens' : (t >= 60 ? (t / 60).toFixed(1) + ' min' : t.toFixed(0) + ' s')} per instance</b><br>` + tbl(null, rows);
+  };
+  $('#c2title').textContent = `Quality success by ${tokens ? 'token' : 'agent time'} budget per instance`;
+  $('#c2count').textContent = `${series.length} configurations · ${N} instances · ${policyText()}` + (skipped.length ? ` · ${skipped.join(', ')}: no comparable token counts` : '');
+  c.setOption({
+    textStyle:{fontFamily:FONT}, grid:{left:16, right:labels ? 140 : 24, top:14, bottom:72, containLabel:true},
+    xAxis:{...axisBase, type:'log', min:xmin, max:xmax, logBase:10, name:tokens ? 'Context + output tokens per instance (log scale)' : 'Agent time per instance (log scale)', nameLocation:'middle', nameGap:28, axisLabel:{...axisBase.axisLabel, formatter:fmt}},
+    yAxis:{...axisBase, type:'value', min:0, max:100, axisLabel:{...axisBase.axisLabel, formatter:'{value}%'}},
+    tooltip:{trigger:'axis', showContent:false, axisPointer:{type:'line', snap:false, lineStyle:{color:'#9fb3b1', type:'dashed'}}},
+    dataZoom:[{type:'inside', xAxisIndex:0, filterMode:'none'}, {...sliderBase, xAxisIndex:0, height:16, bottom:4, labelFormatter:v => fmt(v)}],
+    series
+  }, {replaceMerge:['series']});
+  empty('chart2', series.length ? '' : ms.length ? 'No comparable token counts for the selected configurations.' : 'All configurations are hidden.');
+}
+
+// ---------- compare ----------
+function barOption(items, fmt, axisFmt, vertical, tip) {
+  const names = items.map(i => i.m.label), data = items.map(i => ({value:i.v, itemStyle:{color:color(i.m), borderRadius:vertical ? [4, 4, 0, 0] : [0, 4, 4, 0]}}));
+  const cat = {...axisBase, type:'category', data:names, splitLine:{show:false}, axisLabel:{...axisBase.axisLabel, interval:0, fontSize:11.5, ...(vertical ? {width:84, overflow:'break', lineHeight:14} : {})}};
+  const val = {...axisBase, type:'value', splitNumber:vertical ? 5 : 3, axisLabel:{...axisBase.axisLabel, formatter:axisFmt}};
+  return {textStyle:{fontFamily:FONT}, grid:{left:8, right:vertical ? 8 : 52, top:24, bottom:4, containLabel:true},
+    xAxis:vertical ? cat : val, yAxis:vertical ? val : {...cat, inverse:true},
+    tooltip:{...tipBase, trigger:'item', formatter:p => `<b>${p.name}</b><br>${fmt(p.value)}${tip ? '<br><span style="color:#5f706e">' + tip(p.dataIndex) + '</span>' : ''}`},
+    series:[{type:'bar', barMaxWidth:vertical ? 30 : 15, data, label:{show:true, position:vertical ? 'top' : 'right', formatter:p => fmt(p.value), fontSize:11, color:'#10201f', fontWeight:600, fontFamily:FONT}}]};
+}
+function drawCompare() {
+  const ms = active(), k = S.k, pol = S.policy, N = SEL.length, kTxt = k === 1 ? 'first attempt' : `first ${k} attempts`;
+  const polTxt = k === 1 ? '' : pol === 'reflection' ? ', with reflection' : ', plain retries';
+  $('#b1t').textContent = `Quality success, Q@${k}${polTxt}`;
+  $('#b2t').textContent = `Agent time per instance, ${kTxt}`;
+  $('#b3t').textContent = `Tokens per instance, ${kTxt}`;
+  $('#stt').textContent = `Where the time goes, ${kTxt}`;
+  if (!ms.length) { ['bars1', 'bars2', 'bars3', 'scatter', 'stages'].forEach(id => charts[id].setOption({title:{text:'No configurations selected', left:'center', top:'middle', textStyle:{fontFamily:FONT, fontSize:14, color:'#5f706e', fontWeight:500}}, series:[]}, true)); return; }
+  const rowH = Math.max(200, 48 + 27 * ms.length);
+  ['bars1', 'bars2', 'bars3'].forEach(id => { charts[id].getDom().style.height = rowH + 'px'; charts[id].resize(); });
+  const q = ms.map(m => ({m, s:solved(m.id, pol, 'quality', k)})).map(x => ({...x, v:+(100 * x.s / N).toFixed(1)})).sort((a, b) => b.v - a.v);
+  charts.bars1.setOption(barOption(q, v => v.toFixed(1) + '%', '{value}%', false, i => `${q[i].s} of ${N} instances`), true);
+  const t = ms.map(m => ({m, v:meanCost(m.id, pol, 'agent', k)})).filter(x => x.v != null).map(x => ({m:x.m, v:+x.v.toFixed(0)})).sort((a, b) => a.v - b.v);
+  charts.bars2.setOption(barOption(t, v => v + ' s', '{value}', false), true);
+  const tk = ms.map(m => ({m, v:meanCost(m.id, pol, 'tok', k)})).filter(x => x.v != null).map(x => ({m:x.m, v:+(x.v / 1000).toFixed(0)})).sort((a, b) => a.v - b.v);
+  if (tk.length) charts.bars3.setOption(barOption(tk, v => v + 'k', '{value}k', false), true);
+  else charts.bars3.setOption({title:{text:'No comparable token counts for the selection', left:'center', top:'middle', textStyle:{fontFamily:FONT, fontSize:14, color:'#5f706e', fontWeight:500}}, series:[]}, true);
+  const tokens = S.sx === 'tokens';
+  const pts = ms.map(m => ({m, x:meanCost(m.id, pol, tokens ? 'tok' : 'agent', k), y:100 * solved(m.id, pol, 'quality', k) / N})).filter(p => p.x != null);
+  const front = [], onFront = new Set(); let best = -1;
+  pts.slice().sort((a, b) => a.x - b.x || b.y - a.y).forEach(p => { if (p.y > best) { front.push([p.x, p.y]); onFront.add(p.m.id); best = p.y; } });
+  if (front.length) front.push([Math.max(...pts.map(p => p.x)) * 1.04, best]);
+  $('#sct').textContent = `Q@${k} vs. ${tokens ? 'tokens' : 'agent time'}`;
+  if (!pts.length) { charts.scatter.setOption({title:{text:'No comparable token counts for the selection', left:'center', top:'middle', textStyle:{fontFamily:FONT, fontSize:14, color:'#5f706e', fontWeight:500}}, series:[]}, true); }
+  else
+  charts.scatter.setOption({
+    textStyle:{fontFamily:FONT}, grid:{left:12, right:110, top:20, bottom:40, containLabel:true},
+    xAxis:{...axisBase, type:'value', scale:true, name:tokens ? 'Tokens per instance' : 'Agent time per instance (s)', nameLocation:'middle', nameGap:26, axisLabel:{...axisBase.axisLabel, formatter:v => tokens ? fmtTok(v) : v}},
+    yAxis:{...axisBase, type:'value', max:100, scale:true, axisLabel:{...axisBase.axisLabel, formatter:'{value}%'}},
+    tooltip:{...tipBase, trigger:'item', formatter:p => p.seriesType === 'scatter' ? `<b>${p.data.name}</b><br>Q@${k}: ${p.value[1].toFixed(1)}% (${p.data.s}/${N})<br>${tokens ? 'Tokens: ' + fmtTok(p.value[0]) : 'Agent time: ' + p.value[0].toFixed(0) + ' s'}` : ''},
+    series:[
+      {type:'line', data:front, step:'end', showSymbol:false, silent:true, lineStyle:{color:'#0fa3a3', type:'dashed', width:1.5}, z:1},
+      {type:'scatter', symbolSize:12, z:3, data:pts.map(p => ({name:p.m.label, value:[p.x, p.y], symbol:sym(p.m), itemStyle:{color:color(p.m), borderColor:'#fff', borderWidth:1},
+        label:{show:onFront.has(p.m.id)}, s:solved(p.m.id, pol, 'quality', k)})),
+        label:{position:'right', formatter:p => p.data.name, fontSize:11.5, color:'#10201f', fontFamily:FONT}, labelLayout:{hideOverlap:true}, emphasis:{label:{show:true}}}]
+  }, true);
+  const stages = [['Generation', '#0fa3a3', (m, i) => run(m, pol, i)[3][k - 1] - run(m, pol, i)[4][k - 1]], ['Reflection', '#6ff0cf', (m, i) => run(m, pol, i)[4][k - 1]], ['Judge', '#7a3fe0', (m, i) => run(m, pol, i)[5][k - 1]], ['Solver', '#f2a20c', (m, i) => run(m, pol, i)[6][k - 1]]];
+  charts.stages.setOption({
+    textStyle:{fontFamily:FONT}, grid:{left:8, right:24, top:34, bottom:24, containLabel:true},
+    legend:{top:0, icon:'roundRect', itemWidth:12, itemHeight:12, textStyle:{fontFamily:FONT, color:'#10201f'}},
+    xAxis:{...axisBase, type:'value', axisLabel:{...axisBase.axisLabel, formatter:'{value} s'}},
+    yAxis:{...axisBase, type:'category', inverse:true, data:ms.map(m => m.label), splitLine:{show:false}},
+    tooltip:{...tipBase, trigger:'axis', axisPointer:{type:'shadow'}, formatter:ps => `<b>${ps[0].name}</b><br>` + ps.map(p => `${p.marker}${p.seriesName}: <b>${p.value.toFixed(0)} s</b>`).join('<br>') + `<br>Total: <b>${ps.reduce((a, p) => a + p.value, 0).toFixed(0)} s</b>`},
+    series:stages.map(([nm, col, f]) => ({name:nm, type:'bar', stack:'t', barMaxWidth:16, itemStyle:{color:col}, data:ms.map(m => N ? +(SEL.reduce((a, i) => a + f(m.id, i), 0) / N).toFixed(2) : 0)}))
+  }, true);
+}
+
+// ---------- heatmap + drill ----------
+function drawHeat() {
+  const ms = active(), fs = famList(), k = S.hk, crit = S.hc;
+  const denom = f => SEL.filter(x => CASES[x].f === f).length, per = Math.max(...fs.map(denom));
+  if (!S.drill || !ms.some(m => m.id === S.drill.split('~')[0]) || !fs.includes(S.drill.split('~')[1])) S.drill = ms.length ? ms[0].id + '~' + fs[0] : '';
+  const [dm, df] = S.drill.split('~');
+  const data = [];
+  ms.forEach((m, i) => fs.forEach((f, j) => {
+    const sel = SEL.filter(x => CASES[x].f === f), v = solved(m.id, S.policy, crit, k, sel), on = m.id === dm && f === df;
+    data.push({value:[j, i, v], label:{color:v / denom(f) >= .75 ? '#fff' : '#10201f'}, itemStyle:on ? {borderColor:'#10201f', borderWidth:3} : undefined});
+  }));
+  charts.heat.getDom().style.height = Math.max(260, 96 + 34 * ms.length) + 'px'; charts.heat.resize();
+  charts.heat.setOption({
+    textStyle:{fontFamily:FONT}, grid:{left:8, right:8, top:30, bottom:52, containLabel:true},
+    xAxis:{type:'category', data:fs.map(short), position:'top', axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#10201f', fontWeight:600, fontFamily:FONT}},
+    yAxis:{type:'category', data:ms.map(m => m.label), inverse:true, axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#10201f', fontFamily:FONT, fontSize:12.5}},
+    visualMap:{min:0, max:per, calculable:false, orient:'horizontal', left:'center', bottom:4, itemWidth:12, itemHeight:220, text:[`${per} / ${per}`, '0'], textStyle:{color:'#4f605e', fontFamily:FONT}, inRange:{color:S.palette === 'paper' ? HEAT.paper : HEAT.vivid}},
+    tooltip:{...tipBase, formatter:p => `<b>${ms[p.value[1]].label}</b> · ${FAMNAME[fs[p.value[0]]]}<br>${CRIT[crit][0]}@${k}: <b>${p.value[2]} / ${denom(fs[p.value[0]])}</b><br><span style="color:#5f706e">Click for instances</span>`},
+    series:[{type:'heatmap', data, itemStyle:{borderColor:'#fff', borderWidth:2, borderRadius:4},
+      label:{show:true, fontFamily:FONT, fontWeight:600, fontSize:12.5, formatter:p => p.value[2]}, emphasis:{itemStyle:{borderColor:'#10201f', borderWidth:2}}}]
+  }, true);
+  empty('heat', ms.length ? '' : 'All configurations are hidden.');
+  drawDrill();
+}
+function drawDrill() {
+  const el = $('#drill');
+  if (!S.drill) { el.innerHTML = '<p class="note">Select at least one configuration.</p>'; return; }
+  const [mid, f] = S.drill.split('~'), m = BYID[mid], crit = S.hc, L = CRIT[crit][0], k = S.hk, pol = S.policy;
+  const shade = a => a === 1 ? ['#0b7f86', '#fff'] : a <= 3 ? ['#4fc4b7', '#08302b'] : ['#cdf1ea', '#08302b'];
+  const seeds = [...new Set(CASES.filter(c => c.f === f).map(c => c.seed))].sort((a, b) => a - b);
+  let inK = 0, later = 0, never = 0, h = `<div class="dgrid" style="grid-template-columns:62px repeat(${seeds.length},1fr)"><div></div>` + seeds.map(x => `<div class="h">seed ${x}</div>`).join('');
+  for (const size of SIZES) {
+    h += `<div class="rh">${size}</div>`;
+    for (const seed of seeds) {
+      const i = CASES.findIndex(c => c.f === f && c.size === size && c.seed === seed);
+      if (i < 0) { h += '<div></div>'; continue; }
+      const p = firstAt(mid, 'plain', i, crit), r = firstAt(mid, 'reflection', i, crit), a = pol === 'reflection' ? r : p;
+      const outside = !S.sizes.has(size);
+      if (!outside) { if (a && a <= k) inK++; else if (a) later++; else never++; }
+      const cls = ['dcell', outside ? 'outside' : '', a && a > k ? 'later' : ''].join(' ');
+      const [bg, fg] = a ? shade(a) : ['#f1f3f3', '#5f706e'];
+      h += `<div class="${cls}" style="background:${bg};color:${fg}" title="${CASES[i].id} · plain: ${p || 'not within 10'} · reflection: ${r || 'not within 10'}"><b>${a || '✕'}</b>P ${p || '✕'} · R ${r || '✕'}</div>`;
+    }
+  }
+  h += '</div>';
+  const n = inK + later + never;
+  const ms = active(), fs = famList();
+  const pick = `<div class="pick"><select class="sel" id="dm" data-fk="dm" aria-label="Configuration">${ms.map(x => `<option value="${x.id}" ${x.id === mid ? 'selected' : ''}>${x.label}</option>`).join('')}</select><select class="sel" id="df" data-fk="df" aria-label="Family">${fs.map(x => `<option value="${x}" ${x === f ? 'selected' : ''}>${short(x)}</option>`).join('')}</select></div>`;
+  el.innerHTML = pick + `<h4><span class="sw" style="background:${color(m)}"></span>${m.label}</h4><div class="ds">${esc(FAMNAME[f])} (${short(f)}) · first attempt that passes ${L}</div>`
+    + `<div class="sum"><b>${L}@${k}: ${inK}/${n}</b>${later ? ` · ${later} passed later` : ''}${never ? ` · ${never} not within 10` : ''}</div>` + h
+    + `<div class="dlegend"><span><i class="sw" style="background:#0b7f86"></i>attempt 1</span><span><i class="sw" style="background:#4fc4b7"></i>2–3</span><span><i class="sw" style="background:#cdf1ea"></i>4–10</span><span><i class="sw" style="border:1.5px dashed #b9c6c4;background:#fff"></i>after k = ${k}</span><span><i class="sw" style="background:#f1f3f3"></i>not within 10</span></div>`
+    + `<p class="note">Big number: ${policyText()}. P / R: both policies (attempt 1 is shared). Faded rows are outside the selected sizes.</p>`;
+  $('#dm').onchange = e => { S.drill = e.target.value + '~' + f; update(); };
+  $('#df').onchange = e => { S.drill = mid + '~' + e.target.value; update(); };
+}
+
+// ---------- table + CSV ----------
+const COLS = [
+  {key:'q1', label:'Q@1', get:m => solved(m.id, 'plain', 'quality', 1) / SEL.length, fmt:v => pct(v), bar:true},
+  {key:'q3', label:'Q@3', pol:true, get:m => solved(m.id, S.policy, 'quality', 3) / SEL.length, fmt:v => pct(v), bar:true},
+  {key:'q10', label:'Q@10', pol:true, get:m => solved(m.id, S.policy, 'quality', 10) / SEL.length, fmt:v => pct(v), bar:true},
+  {key:'v1', label:'V@1', get:m => solved(m.id, 'plain', 'verification', 1) / SEL.length, fmt:v => pct(v)},
+  {key:'time', label:'Agent time', pol:true, get:m => meanCost(m.id, S.policy, 'agent', 10), fmt:v => v == null ? '–' : v.toFixed(0) + ' s', bar:true},
+  {key:'tok', label:'Tokens', pol:true, get:m => meanCost(m.id, S.policy, 'tok', 10), fmt:fmtTok, bar:true},
+];
+function tableRows() {
+  const rows = MODELS.filter(matches).map(m => ({m, v:Object.fromEntries(COLS.map(c => [c.key, SEL.length ? c.get(m) : null]))}));
+  const key = S.sort;
+  rows.sort((a, b) => {
+    if (key === 'model') return S.dir * a.m.label.localeCompare(b.m.label);
+    if (key === 'agent') return S.dir * a.m.agent.localeCompare(b.m.agent);
+    const x = a.v[key], y = b.v[key]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    return S.dir * (x - y) || (b.v.q3 - a.v.q3) || (a.v.time - b.v.time);
+  });
+  return rows;
+}
+function drawTable() {
+  const t = $('#lb'), rows = tableRows(), polS = S.policy === 'reflection' ? 'reflection' : 'plain';
+  const max = {}; COLS.filter(c => c.bar).forEach(c => max[c.key] = Math.max(1e-9, ...rows.map(x => x.v[c.key] ?? 0)));
+  const th = (key, label, sub) => `<th aria-sort="${S.sort === key ? (S.dir < 0 ? 'descending' : 'ascending') : 'none'}"><button data-k="${key}" data-fk="sb-${key}">${label}${S.sort === key ? (S.dir < 0 ? ' ↓' : ' ↑') : ''}${sub ? `<span class="sub2">${sub}</span>` : ''}</button></th>`;
+  let h = '<thead><tr><th><span style="display:block;padding:12px 14px">#</span></th>' + th('model', 'Configuration') + th('agent', 'Agent')
+    + COLS.map(c => th(c.key, c.label, c.pol ? polS : 'shared attempt')).join('') + '</tr></thead><tbody>';
+  const keyv = x => S.sort === 'model' ? x.m.label : S.sort === 'agent' ? x.m.agent : x.v[S.sort];
+  let rank = 0;
+  rows.forEach((x, i) => {
+    if (i === 0 || keyv(x) !== keyv(rows[i - 1])) rank = i + 1;
+    const m = x.m, col = color(m), off = S.hidden.has(m.id);
+    h += `<tr data-m="${m.id}" class="${off ? 'off' : ''}"><td class="rank">${rank}</td><td><span class="mname"><button data-fk="tb-${m.id}" aria-pressed="${!off}" title="${off ? 'Show' : 'Hide'} in charts"><span class="sw" style="background:${col}"></span>${m.label}</button></span></td><td style="color:#4f605e">${m.agent}</td>`;
+    for (const c of COLS) { const v = x.v[c.key]; h += c.bar && v != null ? `<td><span class="cellbar"><i style="width:${Math.max(4, 100 * v / max[c.key])}%;background:${col}"></i><span>${c.fmt(v)}</span></span></td>` : `<td>${c.fmt(v)}</td>`; }
+    h += '</tr>';
+  });
+  if (!rows.length) h += `<tr><td colspan="9" style="text-align:center;color:#5f706e;padding:20px">No configuration matches “${esc(S.q)}”.</td></tr>`;
+  t.innerHTML = h + '</tbody>';
+  t.querySelectorAll('th button').forEach(b => b.onclick = () => { const k = b.dataset.k; if (S.sort === k) S.dir *= -1; else { S.sort = k; S.dir = ['time', 'tok', 'model', 'agent'].includes(k) ? 1 : -1; } update(); });
+  t.querySelectorAll('tbody tr[data-m]').forEach(tr => { tr.onclick = () => toggleModel(tr.dataset.m); });
+}
+function downloadCSV() {
+  const rows = tableRows().filter(x => !S.hidden.has(x.m.id)), N = SEL.length;
+  const head = ['configuration', 'agent', 'families', 'sizes', 'policy', 'instances', 'Q1_solved', 'Q3_solved', 'Q10_solved', 'V1_solved', 'mean_agent_seconds_10', 'mean_tokens_10'];
+  const lines = [head.join(',')].concat(rows.map(({m}) => [m.label, m.agent, famList().map(short).join(' '), SIZES.filter(s => S.sizes.has(s)).join(' '), S.policy, N,
+    solved(m.id, 'plain', 'quality', 1), solved(m.id, S.policy, 'quality', 3), solved(m.id, S.policy, 'quality', 10), solved(m.id, 'plain', 'verification', 1),
+    meanCost(m.id, S.policy, 'agent', 10) ?? '', meanCost(m.id, S.policy, 'tok', 10) ?? ''].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')));
+  save(new Blob([lines.join('\n') + '\n'], {type:'text/csv'}), `decompgym-results-${S.policy}.csv`);
+}
+function save(blob, name) { const a = document.createElement('a'); a.href = typeof blob === 'string' ? blob : URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+
+// ---------- legends ----------
+function drawLegends() {
+  $$('.legend').forEach(el => {
+    const cid = el.dataset.chart;
+    let h = '<div class="lt">Configuration</div>';
+    for (const m of MODELS) {
+      const on = !S.hidden.has(m.id), nm = !matches(m);
+      h += `<div class="row"><button class="it ${nm ? 'nomatch' : ''}" data-m="${m.id}" data-fk="lg-${cid}-${m.id}" aria-pressed="${on}" title="${nm ? 'Hidden by the search' : on ? 'Hide' : 'Show'} ${esc(m.label)}">${markerSVG(m, color(m))}<span>${m.label}</span></button><button class="only" data-m="${m.id}" data-fk="lo-${cid}-${m.id}" aria-label="Show only ${esc(m.label)}">only</button></div>`;
+    }
+    el.innerHTML = h + '<div class="hint">Click to hide or show. “only” isolates one configuration.</div>';
+    el.querySelectorAll('.it').forEach(it => {
+      it.onclick = () => toggleModel(it.dataset.m);
+      it.onmouseenter = () => charts[cid] && charts[cid].dispatchAction({type:'highlight', seriesName:BYID[it.dataset.m].label});
+      it.onmouseleave = () => charts[cid] && charts[cid].dispatchAction({type:'downplay'});
+    });
+    el.querySelectorAll('.only').forEach(b => b.onclick = () => isolate(b.dataset.m));
+  });
+}
+function toggleModel(id) { S.hidden.has(id) ? S.hidden.delete(id) : S.hidden.add(id); update(); }
+function isolate(id) { S.q = ''; S.hidden = new Set(MODELS.filter(m => m.id !== id).map(m => m.id)); update(); }
+
+// ---------- focus bar ----------
+function pressed(sel, test) { $$(sel).forEach(b => b.setAttribute('aria-pressed', String(test(b.dataset.v)))); }
+function drawFocus() {
+  const fs = famList();
+  const preset = fs.length === 9 ? 'all' : (fs.length === 5 && fs.every(f => f.startsWith('bd'))) ? 'bd' : (fs.length === 4 && fs.every(f => f.startsWith('cg'))) ? 'cg' : '';
+  pressed('#famPreset button', v => v === preset);
+  $('#famChips').innerHTML = FAMS.map(f => `<button class="chip" data-v="${f}" data-fk="fc-${f}" aria-pressed="${S.fams.has(f)}" title="${FAMNAME[f]}"><span class="m">${f.startsWith('bd') ? 'BD' : 'CG'}</span>${short(f)}</button>`).join('');
+  $$('#famChips .chip').forEach(b => b.onclick = () => { const f = b.dataset.v; if (S.fams.has(f)) { if (S.fams.size > 1) S.fams.delete(f); else toast('Keep at least one family'); } else S.fams.add(f); update(); });
+  $('#sizeChips').innerHTML = SIZES.map(s => `<button class="chip" data-v="${s}" data-fk="sz-${s}" aria-pressed="${S.sizes.has(s)}">${s}</button>`).join('');
+  $$('#sizeChips .chip').forEach(b => b.onclick = () => { const s = b.dataset.v; if (S.sizes.has(s)) { if (S.sizes.size > 1) S.sizes.delete(s); else toast('Keep at least one size'); } else S.sizes.add(s); update(); });
+  pressed('#policySeg button', v => v === S.policy);
+  pressed('#kSeg button', v => +v === S.k); pressed('#hkSeg button', v => +v === S.hk); pressed('#hcSeg button', v => v === S.hc); pressed('#sxSeg button', v => v === S.sx);
+  $('#paletteSel').value = S.palette;
+  if ($('#search').value.trim() !== S.q) $('#search').value = S.q;
+  const n = MODELS.length - S.hidden.size;
+  $('#modelBtn').textContent = `${n === MODELS.length ? 'All' : n} of ${MODELS.length} selected ▾`;
+  let h = '<div class="quick"><button class="chip" data-q="all" data-fk="qp-all">All</button><button class="chip" data-q="OpenAI" data-fk="qp-OpenAI">GPT only</button><button class="chip" data-q="Anthropic" data-fk="qp-Anthropic">Claude only</button><button class="chip" data-q="Google" data-fk="qp-Google">Gemini only</button></div>';
+  for (const p of ['OpenAI', 'Anthropic', 'Google']) {
+    const ms = MODELS.filter(m => m.provider === p);
+    h += `<h5>${ms[0].agent}</h5>` + ms.map(m => `<label><input type="checkbox" data-m="${m.id}" ${S.hidden.has(m.id) ? '' : 'checked'}><span class="sw" style="background:${color(m)}"></span>${m.label}</label>`).join('');
+  }
+  const box = $('#modelBox'); box.innerHTML = h.replace(/<input type="checkbox" data-m="([^"]+)"/g, '<input type="checkbox" data-m="$1" data-fk="mb-$1"');
+  box.querySelectorAll('input').forEach(i => i.onchange = () => toggleModel(i.dataset.m));
+  box.querySelectorAll('.quick .chip').forEach(b => b.onclick = () => { const q = b.dataset.q; S.q = ''; S.hidden = new Set(q === 'all' ? [] : MODELS.filter(m => m.provider !== q).map(m => m.id)); update(); });
+  $('#summary').innerHTML = `Showing <b>${active().length} of ${MODELS.length}</b> configurations${S.q ? ` matching “${esc(S.q)}”` : ''} · <b>${esc(famText())}</b> · ${esc(sizeText())} · <b>${SEL.length}</b> instances · ${policyText()}`;
+  for (const [name, v] of [['crit', S.crit], ['view', S.view], ['labels', S.labels], ['x', S.x]]) { const r = document.querySelector(`input[name=${name}][value=${v}]`); if (r) r.checked = true; }
+  $("#ztop").checked = S.top;
+}
+
+function drawStats() {
+  let s1 = 0, p2 = 0, r2 = 0; const all = CASES.map((c, i) => i);
+  for (const m of MODELS) { s1 += solved(m.id, 'plain', 'quality', 1, all); p2 += solved(m.id, 'plain', 'quality', 2, all); r2 += solved(m.id, 'reflection', 'quality', 2, all); }
+  const n = MODELS.length * CASES.length;
+  $('#stats').innerHTML = [
+    [`${CASES.length}<small>instances</small>`, '9 problem families · Benders decomposition and column generation'],
+    [`${MODELS.length}<small>configurations</small>`, `${n} paired runs through Codex, Claude Code and Antigravity`],
+    [`${(100 * s1 / n).toFixed(1)}%`, `of first attempts meet all three criteria (${s1} of ${n})`],
+    [`+${(100 * (r2 - p2) / n).toFixed(1)}<small>pts</small>`, `for reflection over plain regeneration at two attempts: Q@2 ${(100 * p2 / n).toFixed(1)}% → ${(100 * r2 / n).toFixed(1)}%`],
+  ].map(([v, k]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+  $('#snap').textContent = `${D.meta.snapshot}; ${D.meta.checked_rows} aggregate counts cross-checked against the paper report.`;
+  $('#foot').textContent = `DecompGym · ${D.meta.snapshot} · ${n} paired runs (${MODELS.length} configurations × ${CASES.length} instances), medium effort, judge GPT-6 Astra (high). Charts © the authors, CC-BY.`;
+}
+function drawAbout() {
+  const by = s => D.families.filter(f => f.id.startsWith(s));
+  $('#famCards').innerHTML = [['bd', 'Benders decomposition'], ['cg', 'Column generation']].map(([s, t]) =>
+    `<div class="card"><h4>${t}</h4><div class="cs">${by(s).length * 9} instances · 3 sizes × 3 seeds per family</div><ul>${by(s).map(f => `<li><b>${short(f.id)}</b> · ${f.name}</li>`).join('')}</ul></div>`).join('');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const steps = $$('#pipeline .step'); let i = 0, timer = null;
+  const tick = () => { steps.forEach((s, j) => s.classList.toggle('lit', j === i)); i = (i + 1) % steps.length; };
+  new IntersectionObserver(es => { const vis = es[0].isIntersecting; $('.flow').classList.toggle('paused', !vis); if (vis && !timer) timer = setInterval(tick, 1300); if (!vis && timer) { clearInterval(timer); timer = null; } }).observe($('#pipeline'));
+}
+
+// ---------- URL state (query string; the hash stays for section links) ----------
+const ENUMS = {p:['policy', MODES], c:['palette', ['vivid', 'paper', 'provider']], e:['crit', Object.keys(CRIT)], v:['view', ['policy', 'both', 'gain']], l:['labels', ['auto', 'on', 'off']],
+  x:['x', ['time', 'tokens']], sx:['sx', ['time', 'tokens']], hc:['hc', Object.keys(CRIT)], k:['k', ['1', '2', '3', '5', '10']], hk:['hk', ['1', '2', '3', '10']]};
+function encode() {
+  const p = new URLSearchParams();
+  if (S.fams.size < 9) p.set('f', famList().map(short).join(','));
+  if (S.sizes.size < 3) p.set('z', SIZES.filter(s => S.sizes.has(s)).map(s => SIZE1[s]).join(''));
+  if (S.hidden.size) p.set('h', [...S.hidden].join(','));
+  if (S.q) p.set('q', S.q);
+  for (const [k, [f]] of Object.entries(ENUMS)) if (String(S[f]) !== String(DEF[f])) p.set(k, S[f]);
+  if (S.top !== DEF.top) p.set('t', S.top ? '1' : '0');
+  if (S.drill) p.set('d', S.drill);
+  if (S.sort !== DEF.sort || S.dir !== DEF.dir) p.set('s', S.sort + '~' + S.dir);
+  return p.toString();
+}
+function decode() {
+  setDefaults(Object.keys(DEF));
+  const p = new URLSearchParams(location.search);
+  if (p.has('f')) { const want = p.get('f').split(','); const s = FAMS.filter(f => want.includes(short(f))); if (s.length) S.fams = new Set(s); }
+  if (p.has('z')) { const s = SIZES.filter(x => p.get('z').includes(SIZE1[x])); if (s.length) S.sizes = new Set(s); }
+  if (p.has('h')) S.hidden = new Set(p.get('h').split(',').filter(x => own(BYID, x)));
+  if (p.has('q')) S.q = p.get('q').slice(0, 40);
+  for (const [k, [f, allowed]] of Object.entries(ENUMS)) if (p.has(k) && allowed.includes(p.get(k))) S[f] = typeof DEF[f] === 'number' ? +p.get(k) : p.get(k);
+  if (['0', '1'].includes(p.get('t'))) S.top = p.get('t') === '1';
+  if (p.has('s')) { const [k, d] = p.get('s').split('~'); if (['model', 'agent', 'q1', 'q3', 'q10', 'v1', 'time', 'tok'].includes(k) && ['1', '-1'].includes(d)) { S.sort = k; S.dir = +d; } }
+  if (p.has('d')) { const [m, f] = p.get('d').split('~'); if (own(BYID, m) && FAMS.includes(f)) S.drill = m + '~' + f; }
+}
+const shareURL = hash => location.href.split(/[?#]/)[0] + (encode() ? '?' + encode() : '') + (hash ? '#' + hash : '');
+function syncURL() { try { const q = encode(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash); } catch (e) { /* file:// may refuse; Share still builds the link */ } }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1800); }
+
+// ---------- export a self-explaining PNG ----------
+function exportPNG(id) {
+  const opt = charts[id].getOption(), title = (id === 'chart1' ? $('#c1title') : $('#c2title')).textContent;
+  const plotted = new Set((opt.series || []).map(s => s.name)).size;
+  const how = id === 'chart1' ? (S.view === 'both' ? 'solid = reflection, dashed = plain regeneration' : S.view === 'gain' ? 'reflection minus plain regeneration' : policyText()) : policyText() + ($('#c2count').textContent.includes('no comparable') ? ' · Gemini 3.8 Flash omitted (no comparable token counts)' : '');
+  const context = `${plotted} configurations · ${famText()} · ${sizeText()} · ${SEL.length} instances · ${how}`;
+  const div = document.createElement('div'); div.style.cssText = 'position:fixed;left:-10000px;top:0;width:1400px;height:860px'; document.body.appendChild(div);
+  const c = EC.init(div, null, {renderer:'canvas'});
+  opt.animation = false;
+  opt.title = [{text:title, left:28, top:18, textStyle:{fontFamily:FONT, fontSize:24, fontWeight:700, color:'#10201f'}, subtext:context, subtextStyle:{fontFamily:FONT, fontSize:14, color:'#4f605e'}}];
+  opt.legend = [{show:true, bottom:20, left:28, right:28, itemWidth:26, itemHeight:10, textStyle:{fontFamily:FONT, fontSize:13, color:'#10201f'}}];
+  opt.graphic = [{type:'text', right:28, top:24, style:{text:'DecompGym · CC-BY · ' + D.meta.snapshot, font:'600 12px Inter, sans-serif', fill:'#4f605e'}}];
+  opt.grid = [{...opt.grid[0], top:100, bottom:150}];
+  opt.dataZoom = (opt.dataZoom || []).map(z => z.type === 'slider' ? {...z, show:false} : z);
+  opt.tooltip = [{show:false}];
+  c.setOption(opt);
+  const url = c.getDataURL({type:'png', pixelRatio:2, backgroundColor:'#fff'}); c.dispose(); div.remove();
+  const tag = id === 'chart1' ? `${CRIT[S.crit][0]}-${S.view === 'policy' ? S.policy : S.view}` : `${S.x}-${S.policy}`;
+  save(url, `decompgym-${id === 'chart1' ? 'success' : 'efficiency'}-${tag}.png`);
+}
+
+// ---------- render ----------
+function update() {
+  const fk = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.fk : null;
+  computeSel(); drawFocus(); drawTable();
+  if (EC) { drawLegends(); drawCurves(); drawEff(); drawCompare(); drawHeat(); }
+  syncURL(); setStick();
+  if (fk) { const el = document.querySelector(`[data-fk="${fk}"]`); if (el) { if (el.classList.contains('only')) el.style.visibility = 'visible'; el.focus({preventScroll:true}); } }
+}
+function setStick() {
+  const f = $('#focus'), sticky = getComputedStyle(f).position === 'sticky';
+  document.documentElement.style.setProperty('--stick', ($('#nav').offsetHeight + (sticky ? f.offsetHeight : 0) + 8) + 'px');
+}
+
+// ---------- wire up ----------
+decode(); computeSel();
+if (!EC) $('#nolib').style.display = 'block';
+else ['chart1', 'chart2', 'bars1', 'bars2', 'bars3', 'scatter', 'stages', 'heat'].forEach(mk);
+const on = (sel, ev, fn) => $$(sel).forEach(el => el.addEventListener(ev, fn));
+on('input[name=crit]', 'change', e => { S.crit = e.target.value; update(); });
+on('input[name=view]', 'change', e => { S.view = e.target.value; update(); });
+on('input[name=labels]', 'change', e => { S.labels = e.target.value; update(); });
+on('input[name=x]', 'change', e => { S.x = e.target.value; update(); });
+$("#ztop").onchange = e => { S.top = e.target.checked; update(); };
+let qt; $('#search').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim(); update(); }, 150); };
+$$('#famPreset button').forEach(b => b.onclick = () => { S.fams = new Set(FAMS.filter(f => b.dataset.v === 'all' || f.startsWith(b.dataset.v))); update(); });
+$$('#policySeg button').forEach(b => b.onclick = () => { S.policy = b.dataset.v; update(); });
+$('#paletteSel').onchange = e => { S.palette = e.target.value; update(); };
+$$('#kSeg button').forEach(b => b.onclick = () => { S.k = +b.dataset.v; update(); });
+$$('#hkSeg button').forEach(b => b.onclick = () => { S.hk = +b.dataset.v; update(); });
+$$('#hcSeg button').forEach(b => b.onclick = () => { S.hc = b.dataset.v; update(); });
+$$('#sxSeg button').forEach(b => b.onclick = () => { S.sx = b.dataset.v; update(); });
+$('#resetAll').onclick = () => { setDefaults(['fams', 'sizes', 'hidden', 'q', 'policy']); update(); toast('Filters reset'); };
+$$('[data-panel]').forEach(b => b.onclick = () => { const f = document.getElementById(b.dataset.panel); f.classList.toggle('closed'); b.setAttribute('aria-expanded', String(!f.classList.contains('closed'))); setTimeout(() => Object.values(charts).forEach(c => c.resize()), 30); });
+$$('.settings .reset').forEach(b => b.onclick = () => {
+  if (b.dataset.fig === 'fig1') { setDefaults(['crit', 'view', 'labels', 'top']); update(); charts.chart1 && [0, 1, 2].forEach(i => charts.chart1.dispatchAction({type:'dataZoom', dataZoomIndex:i, start:0, end:100})); }
+  else { setDefaults(['x']); update(); charts.chart2 && [0, 1].forEach(i => charts.chart2.dispatchAction({type:'dataZoom', dataZoomIndex:i, start:0, end:100})); }
+});
+$$('.share').forEach(b => b.onclick = () => { const url = shareURL(b.closest('section').id); (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('Link to this view copied'), () => prompt('Copy this link', url)); });
+$$('.dl').forEach(b => b.onclick = () => EC && exportPNG(b.dataset.chart));
+$('#csv').onclick = downloadCSV;
+$('#copyBib').onclick = () => navigator.clipboard && navigator.clipboard.writeText($('#bib').textContent).then(() => toast('BibTeX copied'));
+const pop = $('#modelPop');
+$('#modelBtn').onclick = e => {
+  e.stopPropagation(); const open = !pop.classList.contains('open'); pop.classList.toggle('open', open); $('#modelBtn').setAttribute('aria-expanded', String(open));
+  const box = $('#modelBox'); box.style.left = '0px';
+  if (open) { const r = box.getBoundingClientRect(); if (r.right > innerWidth - 12) box.style.left = (innerWidth - 12 - r.right) + 'px'; }
+};
+document.addEventListener('click', e => { if (!pop.contains(e.target)) { pop.classList.remove('open'); $('#modelBtn').setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') pop.classList.remove('open'); });
+$('#ftoggle').onclick = () => { const f = $('#focus'); f.classList.toggle('open'); $('#ftoggle').setAttribute('aria-expanded', String(f.classList.contains('open'))); setStick(); };
+if (EC) {
+  const tip = $('#efftip'), zr = charts.chart2.getZr();
+  zr.on('mousemove', e => {
+    const inside = charts.chart2.containPixel('grid', [e.offsetX, e.offsetY]);
+    const html = inside ? effTip(charts.chart2.convertFromPixel({xAxisIndex:0}, e.offsetX)) : '';
+    if (!html) { tip.style.display = 'none'; return; }
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight, W = charts.chart2.getWidth();
+    tip.style.left = (e.offsetX + 16 + w > W ? e.offsetX - 16 - w : e.offsetX + 16) + 'px';
+    tip.style.top = Math.max(0, Math.min(e.offsetY - h / 2, charts.chart2.getHeight() - h)) + 'px';
+  });
+  zr.on('globalout', () => { tip.style.display = 'none'; });
+}
+if (isMobile()) $$('.fig').forEach(f => { f.classList.add('closed'); f.querySelector('[data-panel]').setAttribute('aria-expanded', 'false'); });
+if (EC) charts.heat.on('click', p => { const ms = active(), fs = famList(); S.drill = ms[p.value[1]].id + '~' + fs[p.value[0]]; update(); });
+let wasMobile = isMobile();
+addEventListener('resize', () => { Object.values(charts).forEach(c => c.resize()); setStick(); if (isMobile() !== wasMobile) { wasMobile = isMobile(); update(); } });
+addEventListener('popstate', () => { decode(); update(); });
+new ResizeObserver(setStick).observe($('#focus'));
+drawStats(); drawAbout(); update();
+})();
+</script>
+</body>
+</html>

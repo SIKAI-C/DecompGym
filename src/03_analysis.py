@@ -9,7 +9,8 @@ Only the overview diagram (Figure 1) is drawn in TikZ and needs pdflatex; withou
 Ghostscript (gs), if present, adds a PNG of the diagram and lets --paper compare PDFs by their rendering.
 
 Everything is written to outputs/reports/paper/ (with the audit snapshot and QA files); the small artifacts and a
-summary page are also published to the tracked results/ folder. Nothing here calls a model or runs a solver.
+summary page are also published to the tracked results/ folder, and the website data to site/. Nothing here calls
+a model or runs a solver.
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ sys.path.insert(0, str(REPOSITORY))
 # Fixed timestamps keep the generated PDFs byte-reproducible.
 os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
 
-from src.results import failures, overview, paper_figures, prompt_excerpts, summary, verify  # noqa: E402
+from src.results import failures, overview, paper_figures, prompt_excerpts, site, summary, verify  # noqa: E402
 from src.results.campaign_report import build_campaign_report, export_campaign_report  # noqa: E402
 from src.results.snapshot import build_snapshot  # noqa: E402
 
@@ -113,6 +114,8 @@ def main(argv=None):
         print("Built from a saved audit: results/ was not updated (run without --reuse-audit to publish)", flush=True)
     else:
         summary.publish(out, args.results.resolve())
+        if args.results.resolve() == (REPOSITORY / "results").resolve():
+            site.build(out)  # the website follows the tracked results/ only, never a temporary --results
     print(json.dumps({"output": str(out), "artifacts": len(artifacts), "verification": checks["status"]}, indent=2))
     if args.paper:
         paper = args.paper.resolve()
